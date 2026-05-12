@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GymTrack</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  const firebaseConfig = { apiKey:"AIzaSyDP2XgeXRfnuu2skfXvgFf9_xkRC9pLJOQ", authDomain:"mi-gimnasio-8d528.firebaseapp.com", projectId:"mi-gimnasio-8d528", storageBucket:"mi-gimnasio-8d528.firebasestorage.app", messagingSenderId:"19052651365", appId:"1:19052651365:web:6914d31e8dbbd63330b78c" };
+  const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app);
+  window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
+  const ADMIN_EMAIL='luismolinac06@gmail.com';
+  onAuthStateChanged(auth, async(user)=>{
+    if(user){
+      document.getElementById('login-screen').style.display='none';
+      document.getElementById('user-email').textContent=user.email;
+      if(user.email===ADMIN_EMAIL){ document.getElementById('admin-screen').style.display='block'; document.getElementById('app-screen').style.display='none'; window.dispatchEvent(new Event('adminReady')); }
+      else { document.getElementById('app-screen').style.display='block'; document.getElementById('admin-screen').style.display='none'; window.dispatchEvent(new Event('firebaseReady')); }
+    } else { document.getElementById('login-screen').style.display='flex'; document.getElementById('app-screen').style.display='none'; document.getElementById('admin-screen').style.display='none'; }
+  });
+</script>
+<style>
+  :root{--bg:#0a0a0a;--surface:#141414;--surface2:#1e1e1e;--border:#2a2a2a;--accent:#e8ff3a;--text:#f0f0f0;--muted:#666;--green:#3affa3;--orange:#ffaa3a;--red:#ff4d4d;--blue:#3a9fff;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  #login-screen{display:flex;position:fixed;inset:0;background:var(--bg);z-index:999;align-items:center;justify-content:center;}
+  .login-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:100%;max-width:380px;}
+  .login-logo{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--accent);letter-spacing:3px;text-align:center;margin-bottom:4px;}
+  .login-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:32px;}
+  .login-error{background:rgba(255,77,77,0.1);border:1px solid rgba(255,77,77,0.3);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none;}
+  #app-screen{display:none;} #admin-screen{display:none;}
+  nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:4px;height:60px;position:sticky;top:0;z-index:100;overflow-x:auto;}
+  .logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent);letter-spacing:2px;margin-right:12px;white-space:nowrap;}
+  .nav-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;padding:6px 10px;border-radius:6px;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+  .nav-btn:hover{color:var(--text);background:var(--surface2);}
+  .nav-btn.active{color:var(--accent);background:rgba(232,255,58,0.08);}
+  .nav-btn.locked{color:var(--border);cursor:not-allowed;}
+  .user-info{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);white-space:nowrap;}
+  .plan-badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .plan-sencillo{background:rgba(102,102,102,0.2);color:var(--muted);}
+  .plan-pro{background:rgba(58,159,255,0.15);color:var(--blue);}
+  .plan-premium{background:rgba(232,255,58,0.15);color:var(--accent);}
+  .btn-logout{background:none;border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;}
+  .btn-logout:hover{color:var(--text);border-color:var(--text);}
+  main{padding:24px 16px;max-width:1100px;margin:0 auto;}
+  .tab{display:none;} .tab.active{display:block;}
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+  .stat-num{font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:1;}
+  .stat-num.green{color:var(--green);} .stat-num.orange{color:var(--orange);} .stat-num.red{color:var(--red);} .stat-num.accent{color:var(--accent);} .stat-num.blue{color:var(--blue);}
+  .section-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--muted);margin-bottom:12px;margin-top:24px;}
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--border);}
+  td{padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;}
+  tr:hover td{background:var(--surface2);}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
+  .badge-green{background:rgba(58,255,163,0.15);color:var(--green);} .badge-orange{background:rgba(255,170,58,0.15);color:var(--orange);} .badge-red{background:rgba(255,77,77,0.15);color:var(--red);}
+  .btn{border:none;border-radius:8px;padding:10px 20px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+  .btn-primary{background:var(--accent);color:#000;} .btn-primary:hover{background:#d4eb2a;}
+  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);} .btn-ghost:hover{border-color:var(--text);}
+  .btn-danger{background:rgba(255,77,77,0.15);color:var(--red);border:1px solid rgba(255,77,77,0.3);} .btn-danger:hover{background:rgba(255,77,77,0.25);}
+  .btn-green{background:rgba(58,255,163,0.15);color:var(--green);border:1px solid rgba(58,255,163,0.3);}
+  .btn-whatsapp{background:#25d366;color:#fff;border:none;}  .btn-whatsapp:hover{background:#1da851;}
+  .btn-sm{padding:6px 12px;font-size:12px;}
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+  .modal h2{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;margin-bottom:20px;}
+  .form-group{margin-bottom:14px;}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;}
+  input,select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;transition:border-color 0.2s;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+  select option{background:var(--surface2);}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .form-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .form-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
+  .header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
+  .page-title{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;}
+  .empty{text-align:center;padding:48px 20px;color:var(--muted);}
+  .empty-icon{font-size:40px;margin-bottom:10px;}
+  .locked-overlay{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:48px 24px;text-align:center;}
+  .locked-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:2px;margin-bottom:8px;color:var(--muted);}
+  .attend-btn{background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;}
+  .attend-btn:disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed;}
+  .today-pill{background:rgba(58,255,163,0.15);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .search-wrap{position:relative;margin-bottom:16px;}
+  .search-wrap input{padding-left:34px;}
+  .search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;}
+  .loading{text-align:center;padding:32px;color:var(--muted);}
+  /* ADMIN */
+  .admin-header{background:var(--surface);border-bottom:1px solid var(--border);padding:20px 24px;display:flex;align-items:center;gap:16px;}
+  .admin-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;color:var(--accent);}
+  .admin-main{padding:24px;max-width:900px;margin:0 auto;}
+  .admin-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:24px;}
+  .admin-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;}
+  .admin-stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;}
+  .admin-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+  .gym-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap;}
+  .gym-email{font-weight:600;font-size:14px;flex:1;min-width:160px;}
+  .plan-selector{display:flex;gap:6px;flex-wrap:wrap;}
+  .plan-opt{border:1px solid var(--border);background:none;color:var(--muted);padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.2s;}
+  .plan-opt.active-sencillo{background:rgba(102,102,102,0.2);color:var(--text);border-color:var(--muted);}
+  .plan-opt.active-pro{background:rgba(58,159,255,0.15);color:var(--blue);border-color:var(--blue);}
+  .plan-opt.active-premium{background:rgba(232,255,58,0.15);color:var(--accent);border-color:var(--accent);}
+  /* ESTADO DE CUENTA */
+  .ec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:20px;}
+  .ec-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .ec-card h3{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--muted);margin-bottom:14px;}
+  .ec-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .ec-row:last-child{border-bottom:none;}
+  .ec-val{font-weight:700;}
+  /* ALERTAS */
+  .alert-card{background:var(--surface);border-left:3px solid var(--orange);border-radius:8px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .alert-card.vencido{border-left-color:var(--red);}
+  .alert-name{font-weight:600;font-size:14px;}
+  .alert-info{font-size:12px;color:var(--muted);margin-top:2px;}
+  /* MIEMBRO NUM */
+  .num-badge{background:rgba(232,255,58,0.1);color:var(--accent);border:1px solid rgba(232,255,58,0.3);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;font-family:'Bebas Neue',sans-serif;letter-spacing:1px;}
+  /* PERFIL MODAL */
+  .perfil-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);}
+  .perfil-num{font-family:'Bebas Neue',sans-serif;font-size:48px;color:var(--accent);}
+  .perfil-nombre{font-size:20px;font-weight:700;}
+  .perfil-plan{margin-top:4px;}
+  .perfil-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .perfil-field{background:var(--surface2);border-radius:8px;padding:10px 12px;}
+  .perfil-field-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;}
+  .perfil-field-val{font-size:14px;font-weight:500;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">GymTrack</div>
+    <div class="login-sub">Sistema de control de gimnasio</div>
+    <div class="login-error" id="login-error">Email o contraseña incorrectos</div>
+    <div class="form-group"><label>Email</label><input type="email" id="login-email" placeholder="correo@gmail.com"></div>
+    <div class="form-group"><label>Contraseña</label><input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="doLogin()">Entrar</button>
+  </div>
+</div>
+
+<!-- ADMIN -->
+<div id="admin-screen">
+  <div class="admin-header">
+    <div><div class="admin-title">⚙️ Panel Admin</div><div style="color:var(--muted);font-size:12px">GymTrack — Control de clientes</div></div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <span style="font-size:11px;color:var(--muted)" id="user-email-admin"></span>
+      <button class="btn-logout" onclick="doLogout()">Cerrar sesión</button>
+    </div>
+  </div>
+  <div class="admin-main">
+    <div class="admin-stats">
+      <div class="admin-stat"><div class="admin-stat-num accent" id="a-total">0</div><div class="admin-stat-label">Clientes</div></div>
+      <div class="admin-stat"><div class="admin-stat-num" style="color:var(--muted)" id="a-sencillo">0</div><div class="admin-stat-label">Sencillo</div></div>
+      <div class="admin-stat"><div class="admin-stat-num blue" id="a-pro">0</div><div class="admin-stat-label">Pro</div></div>
+      <div class="admin-stat"><div class="admin-stat-num accent" id="a-premium">0</div><div class="admin-stat-label">Premium</div></div>
+    </div>
+    <div class="header-row">
+      <div class="page-title">Clientes</div>
+      <button class="btn btn-primary" onclick="openModal('modal-nuevo-gym')">+ Nuevo Cliente</button>
+    </div>
+    <div id="lista-gyms"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen">
+<nav>
+  <div class="logo">GymTrack</div>
+  <button class="nav-btn active" id="nav-dashboard" onclick="showTab('dashboard',event)">Dashboard</button>
+  <button class="nav-btn" id="nav-miembros" onclick="showTab('miembros',event)">Miembros</button>
+  <button class="nav-btn" id="nav-pagos" onclick="showTab('pagos',event)">Pagos</button>
+  <button class="nav-btn" id="nav-asistencia" onclick="showTab('asistencia',event)">Asistencia</button>
+  <button class="nav-btn" id="nav-alertas" onclick="showTab('alertas',event)">Alertas</button>
+  <button class="nav-btn" id="nav-estadocuenta" onclick="showTab('estadocuenta',event)">Estado de Cuenta</button>
+  <button class="nav-btn" id="nav-corte" onclick="showTab('corte',event)">Corte</button>
+  <button class="nav-btn" id="nav-reportes" onclick="showTab('reportes',event)">Reportes</button>
+  <button class="nav-btn" id="nav-empleados" onclick="showTab('empleados',event)">Empleados</button>
+  <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
+  <div class="user-info">
+    <span class="plan-badge" id="plan-badge"></span>
+    <span id="user-email" style="font-size:11px"></span>
+    <button class="btn-logout" onclick="doLogout()">Salir</button>
+  </div>
+</nav>
+<main>
+
+  <!-- DASHBOARD -->
+  <div class="tab active" id="tab-dashboard">
+    <div class="header-row"><div class="page-title">Dashboard</div><button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Actualizar</button></div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Total Miembros</div><div class="stat-num accent" id="stat-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Al Corriente</div><div class="stat-num green" id="stat-activos">—</div></div>
+      <div class="stat-card"><div class="stat-label">Por Vencer (7d)</div><div class="stat-num orange" id="stat-proximos">—</div></div>
+      <div class="stat-card"><div class="stat-label">Vencidos</div><div class="stat-num red" id="stat-vencidos">—</div></div>
+    </div>
+    <div class="section-title">Asistencia Hoy</div>
+    <div id="dash-hoy"><div class="loading">Cargando...</div></div>
+    <div class="section-title">Por Vencer Esta Semana</div>
+    <div id="dash-proximos"><div class="loading">Cargando...</div></div>
+  </div>
+
+  <!-- MIEMBROS -->
+  <div class="tab" id="tab-miembros">
+    <div class="header-row">
+      <div class="page-title">Miembros</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-excel').click()">📥 Importar Excel</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportarExcel()">📤 Exportar Excel</button>
+        <button class="btn btn-primary" onclick="openModal('modal-miembro')">+ Nuevo Miembro</button>
+      </div>
+    </div>
+    <input type="file" id="import-excel" accept=".xlsx,.xls,.csv" style="display:none" onchange="importarExcel(this)">
+    <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar miembro..." id="search-miembros" oninput="filterMiembros()"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Plan Memb.</th><th>Vencimiento</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-miembros"><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PAGOS -->
+  <div class="tab" id="tab-pagos">
+    <div class="header-row"><div class="page-title">Pagos</div><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
+        <tbody id="tabla-pagos"><tr><td colspan="6" class="loading">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ASISTENCIA -->
+  <div class="tab" id="tab-asistencia">
+    <div class="header-row"><div class="page-title">Asistencia</div><div style="font-size:12px;color:var(--muted)" id="fecha-hoy"></div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Miembro</th><th>Estado</th><th>Vence</th><th>Hoy</th></tr></thead>
+        <tbody id="tabla-asistencia"><tr><td colspan="5" class="loading">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="section-title">Historial</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Miembro</th><th>Fecha</th><th>Hora</th></tr></thead><tbody id="tabla-historial"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ALERTAS -->
+  <div class="tab" id="tab-alertas">
+    <div class="header-row">
+      <div class="page-title">Alertas</div>
+      <button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppTodos()">📱 WhatsApp a todos</button>
+    </div>
+    <div id="alertas-content"></div>
+  </div>
+
+  <!-- ESTADO DE CUENTA -->
+  <div class="tab" id="tab-estadocuenta">
+    <div class="page-title" style="margin-bottom:20px">Estado de Cuenta</div>
+    <div id="estadocuenta-content"></div>
+  </div>
+
+  <!-- CORTE -->
+  <div class="tab" id="tab-corte">
+    <div class="page-title" style="margin-bottom:20px">Corte</div>
+    <div id="corte-content"></div>
+  </div>
+
+  <!-- REPORTES -->
+  <div class="tab" id="tab-reportes">
+    <div class="page-title" style="margin-bottom:20px">Reportes</div>
+    <div id="reportes-content"></div>
+  </div>
+
+  <!-- EMPLEADOS -->
+  <div class="tab" id="tab-empleados"><div id="empleados-content"></div></div>
+
+  <!-- INVENTARIO -->
+  <div class="tab" id="tab-inventario"><div id="inventario-content"></div></div>
+
+</main>
+</div>
+
+<!-- MODAL MIEMBRO -->
+<div class="modal-overlay" id="modal-miembro">
+  <div class="modal">
+    <h2 id="modal-miembro-title">Nuevo Miembro</h2>
+    <input type="hidden" id="edit-id">
+    <div class="form-row">
+      <div class="form-group"><label>Nombre</label><input type="text" id="m-nombre" placeholder="Nombre completo"></div>
+      <div class="form-group"><label>Teléfono (con lada)</label><input type="text" id="m-tel" placeholder="5212345678"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Correo</label><input type="email" id="m-correo" placeholder="correo@gmail.com"></div>
+      <div class="form-group"><label>Edad</label><input type="number" id="m-edad" placeholder="25"></div>
+    </div>
+    <div class="form-group"><label>Dirección</label><input type="text" id="m-direccion" placeholder="Calle, Colonia, Ciudad"></div>
+    <div class="form-group"><label>Notas</label><textarea id="m-notas" rows="2" placeholder="Notas opcionales..."></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-miembro')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveMiembro()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PERFIL -->
+<div class="modal-overlay" id="modal-perfil">
+  <div class="modal">
+    <h2>Perfil del Miembro</h2>
+    <div class="perfil-header">
+      <div class="perfil-num" id="p-num">#001</div>
+      <div>
+        <div class="perfil-nombre" id="p-nombre-display"></div>
+        <div class="perfil-plan" id="p-estado-display"></div>
+      </div>
+    </div>
+    <div class="perfil-fields">
+      <div class="perfil-field"><div class="perfil-field-label">Teléfono</div><div class="perfil-field-val" id="p-tel-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Correo</div><div class="perfil-field-val" id="p-correo-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Edad</div><div class="perfil-field-val" id="p-edad-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Plan de membresía</div><div class="perfil-field-val" id="p-plan-display">—</div></div>
+      <div class="perfil-field" style="grid-column:span 2"><div class="perfil-field-label">Dirección</div><div class="perfil-field-val" id="p-dir-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Vencimiento</div><div class="perfil-field-val" id="p-vence-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Notas</div><div class="perfil-field-val" id="p-notas-display">—</div></div>
+    </div>
+    <div class="form-actions" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal('modal-perfil')">Cerrar</button>
+      <button class="btn btn-primary btn-sm" id="p-editar-btn">Editar</button>
+      <button class="btn btn-whatsapp btn-sm" id="p-wha-btn">📱 WhatsApp</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PAGO -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal">
+    <h2>Registrar Pago</h2>
+    <div class="form-group"><label>Miembro</label><select id="p-miembro"></select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto ($)</label><input type="number" id="p-monto" placeholder="500"></div>
+      <div class="form-group"><label>Plan</label>
+        <select id="p-plan">
+          <option value="15">Quincenal (15 días)</option>
+          <option value="30" selected>Mensual (30 días)</option>
+          <option value="60">Bimestral (60 días)</option>
+          <option value="90">Trimestral (90 días)</option>
+          <option value="180">Semestral (180 días)</option>
+          <option value="365">Anual (365 días)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Fecha de pago</label><input type="date" id="p-fecha"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePago()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EMPLEADO -->
+<div class="modal-overlay" id="modal-empleado">
+  <div class="modal">
+    <h2 id="modal-emp-title">Nuevo Empleado</h2>
+    <input type="hidden" id="edit-emp-id">
+    <div class="form-row">
+      <div class="form-group"><label>Nombre</label><input type="text" id="e-nombre" placeholder="Nombre completo"></div>
+      <div class="form-group"><label>Puesto</label><input type="text" id="e-puesto" placeholder="Instructor"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Teléfono</label><input type="text" id="e-tel" placeholder="812 000 0000"></div>
+      <div class="form-group"><label>Sueldo ($)</label><input type="number" id="e-sueldo" placeholder="5000"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-empleado')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEmpleado()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL INVENTARIO -->
+<div class="modal-overlay" id="modal-inventario">
+  <div class="modal">
+    <h2 id="modal-inv-title">Nuevo Artículo</h2>
+    <input type="hidden" id="edit-inv-id">
+    <div class="form-row">
+      <div class="form-group"><label>Artículo</label><input type="text" id="i-nombre" placeholder="Pesa 10kg"></div>
+      <div class="form-group"><label>Cantidad</label><input type="number" id="i-cantidad" placeholder="1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Estado</label><select id="i-estado"><option value="bueno">Bueno</option><option value="regular">Regular</option><option value="malo">Malo / Necesita reparación</option></select></div>
+      <div class="form-group"><label>Notas</label><input type="text" id="i-notas" placeholder="Opcional"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-inventario')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveInventario()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- MODAL IMPORTAR -->
+<div class="modal-overlay" id="modal-importar">
+  <div class="modal">
+    <h2>Importar Miembros</h2>
+    <div id="import-preview"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-importar')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-confirmar-import" onclick="confirmarImport()">Importar todos</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO GYM -->
+<div class="modal-overlay" id="modal-nuevo-gym">
+  <div class="modal">
+    <h2>Nuevo Cliente</h2>
+    <div class="form-group"><label>Email del gimnasio</label><input type="email" id="ng-email" placeholder="gimnasio@gmail.com"></div>
+    <div class="form-group"><label>Plan inicial</label><select id="ng-plan"><option value="sencillo">Sencillo</option><option value="pro">Pro</option><option value="premium">Premium</option></select></div>
+    <div class="form-group"><label>Nombre del gimnasio (opcional)</label><input type="text" id="ng-nombre" placeholder="Gym Fuerza MTY"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-nuevo-gym')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveNuevoGym()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[];
+let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
+let userPlan='sencillo';
+
+const PLANES={
+  sencillo:{alertas:false,estadocuenta:false,corte:false,reportes:false,empleados:false,inventario:false},
+  pro:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:false,inventario:false},
+  premium:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:true,inventario:true}
+};
+
+function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
+function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
+
+window.addEventListener('firebaseReady',async()=>{
+  db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
+  docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
+  setDoc=window._setDoc; getDoc=window._getDoc;
+  const onSnapshot=window._onSnapshot;
+  uid=window._auth.currentUser.uid;
+  document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
+    const newPlan=snap.exists()?(snap.data().plan||'sencillo'):'sencillo';
+    const newFunciones=snap.exists()?(snap.data().funciones||[]):[];
+    const changed = newPlan!==userPlan || JSON.stringify(newFunciones)!==JSON.stringify(userFunciones);
+    if(changed){
+      userPlan=newPlan; userFunciones=newFunciones;
+      applyPlan();renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();renderCorte();
+    }
+  });
+  await loadPlan(); applyPlan(); await loadAll();
+});
+
+let userFunciones = [];
+
+async function loadPlan(){
+  try{
+    const snap=await getDoc(docFn(db,'usuarios',uid));
+    if(snap.exists()){
+      userPlan=snap.data().plan||'sencillo';
+      userFunciones=snap.data().funciones||[];
+    } else {
+      const email=window._auth.currentUser.email;
+      const allSnap=await getDocs(col(db,'usuarios'));
+      const match=allSnap.docs.find(d=>d.data().email===email);
+      if(match){const data=match.data();await setDoc(docFn(db,'usuarios',uid),{...data,uid});try{await deleteDoc(docFn(db,'usuarios',match.id));}catch(e){}userPlan=data.plan||'sencillo';userFunciones=data.funciones||[];}
+      else{await setDoc(docFn(db,'usuarios',uid),{email,plan:'sencillo',funciones:[],uid,creadoEn:Date.now()});userPlan='sencillo';userFunciones=[];}
+    }
+  }catch(e){userPlan='sencillo';userFunciones=[];}
+}
+
+function applyPlan(){
+  const badge=document.getElementById('plan-badge');
+  badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
+  badge.className=`plan-badge plan-${userPlan}`;
+  // For premium all unlocked, otherwise use funciones list
+  const allFuncs=['alertas','estadocuenta','corte','reportes','empleados','inventario','miembros','pagos','asistencia','dashboard'];
+  allFuncs.forEach(id=>{
+    const btn=document.getElementById('nav-'+id);
+    if(!btn) return;
+    const activa = userPlan==='premium' || userFunciones.includes(id);
+    if(!activa) btn.classList.add('locked'); else btn.classList.remove('locked');
+  });
+}
+
+function lockedFeature(nombre,planReq){return`<div class="locked-overlay"><div style="font-size:40px;margin-bottom:12px">🔒</div><div class="locked-title">${nombre}</div><div style="color:var(--muted);font-size:14px">Requiere plan <strong>${planReq}</strong>. Contacta a tu proveedor GymTrack.</div></div>`;}
+
+window.addEventListener('adminReady',async()=>{
+  db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
+  docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
+  setDoc=window._setDoc; getDoc=window._getDoc;
+  document.getElementById('user-email-admin').textContent=window._auth.currentUser.email;
+  await loadAdminGyms();
+});
+
+async function loadAdminGyms(){
+  const snap=await getDocs(col(db,'usuarios'));
+  const gyms=snap.docs.map(d=>({id:d.id,...d.data()})).filter(g=>g.email);
+  document.getElementById('a-total').textContent=gyms.length;
+  document.getElementById('a-sencillo').textContent=gyms.filter(g=>(!g.plan||g.plan==='sencillo')).length;
+  document.getElementById('a-pro').textContent=gyms.filter(g=>g.plan==='pro').length;
+  document.getElementById('a-premium').textContent=gyms.filter(g=>g.plan==='premium').length;
+  const lista=document.getElementById('lista-gyms');
+  if(!gyms.length){lista.innerHTML='<div class="empty"><div class="empty-icon">🏋️</div><div>No hay clientes registrados</div></div>';return;}
+  const FUNCIONES_LISTA = [
+    {id:'alertas',label:'Alertas'},
+    {id:'estadocuenta',label:'Estado de Cuenta'},
+    {id:'corte',label:'Corte'},
+    {id:'reportes',label:'Reportes'},
+    {id:'empleados',label:'Empleados'},
+    {id:'inventario',label:'Inventario'},
+    {id:'miembros',label:'Miembros'},
+    {id:'pagos',label:'Pagos'},
+    {id:'asistencia',label:'Asistencia'},
+    {id:'dashboard',label:'Dashboard'},
+  ];
+  const LIMITES = {sencillo:3, pro:7, premium:10};
+  lista.innerHTML=gyms.map(g=>{
+    const plan=g.plan||'sencillo';
+    const funciones=g.funciones||[];
+    const limite=LIMITES[plan];
+    const funcsHTML = FUNCIONES_LISTA.map(f=>{
+      const activa=funciones.includes(f.id);
+      const bloqueada=!activa&&funciones.length>=limite;
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:${bloqueada?'not-allowed':'pointer'};color:${bloqueada?'var(--muted)':'var(--text)'}">
+        <input type="checkbox" data-gym="${g.id}" data-fn="${f.id}" ${activa?'checked':''} ${bloqueada?'disabled':''} onchange="toggleFuncion('${g.id}',this)" style="accent-color:var(--accent);width:14px;height:14px;">
+        ${f.label}
+      </label>`;
+    }).join('');
+    return`<div class="gym-card" style="flex-direction:column;align-items:flex-start;gap:12px">
+      <div style="display:flex;align-items:center;gap:14px;width:100%;flex-wrap:wrap">
+        <div style="flex:1"><div class="gym-email">${g.nombre||g.email}</div><div style="font-size:11px;color:var(--muted)">${g.email}</div></div>
+        <div class="plan-selector">
+          <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo (3)</button>
+          <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro (7)</button>
+          <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium (10)</button>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
+      </div>
+      <div style="width:100%">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Funciones activas: ${funciones.length}/${limite}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px">${funcsHTML}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function setPlan(uid,plan,btn){await updateDoc(docFn(db,'usuarios',uid),{plan});await loadAdminGyms();}
+
+async function toggleFuncion(gymId, checkbox){
+  const fn = checkbox.dataset.fn;
+  const snap = await getDoc(docFn(db,'usuarios',gymId));
+  if(!snap.exists()) return;
+  const data = snap.data();
+  const plan = data.plan||'sencillo';
+  const LIMITES = {sencillo:3, pro:7, premium:10};
+  let funciones = data.funciones||[];
+  if(checkbox.checked){
+    if(funciones.length >= LIMITES[plan]){ checkbox.checked=false; alert(`El plan ${plan} solo permite ${LIMITES[plan]} funciones.`); return; }
+    funciones = [...new Set([...funciones, fn])];
+  } else {
+    funciones = funciones.filter(f=>f!==fn);
+  }
+  await updateDoc(docFn(db,'usuarios',gymId),{funciones});
+  await loadAdminGyms();
+}
+async function delGym(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
+async function saveNuevoGym(){
+  const email=document.getElementById('ng-email').value.trim();
+  const plan=document.getElementById('ng-plan').value;
+  const nombre=document.getElementById('ng-nombre').value.trim();
+  if(!email)return alert('El email es obligatorio');
+  const tempId='pending_'+email.replace(/[^a-zA-Z0-9]/g,'_');
+  await setDoc(docFn(db,'usuarios',tempId),{email,plan,nombre,pendiente:true,creadoEn:Date.now()});
+  closeModal('modal-nuevo-gym');
+  await loadAdminGyms();
+}
+
+async function doLogin(){
+  const email=document.getElementById('login-email').value.trim();
+  const pass=document.getElementById('login-pass').value;
+  document.getElementById('login-error').style.display='none';
+  try{await window._signIn(window._auth,email,pass);}
+  catch(e){document.getElementById('login-error').style.display='block';}
+}
+async function doLogout(){await window._signOut(window._auth);}
+
+async function loadAll(){
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario()]);
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();
+  renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();renderEmpleados();renderInventario();
+}
+async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));}
+async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));}
+async function loadAsistencias(){const s=await getDocs(userCol('asistencias'));asistencias=s.docs.map(d=>({id:d.id,...d.data()}));}
+async function loadEmpleados(){try{const s=await getDocs(userCol('empleados'));empleados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){empleados=[];}}
+async function loadInventario(){try{const s=await getDocs(userCol('inventario'));inventario=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){inventario=[];}}
+
+function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].fechaFin:null;}
+function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
+function getUltimoPlan(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].planNombre:'—';}
+function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">Al corriente</span>';if(e==='por-vencer')return'<span class="badge badge-orange">Por vencer</span>';return'<span class="badge badge-red">Vencido</span>';}
+function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
+function fmtNum(n){return String(n).padStart(3,'0');}
+function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
+
+// DASHBOARD
+function renderDashboard(){
+  document.getElementById('stat-total').textContent=miembros.length;
+  document.getElementById('stat-activos').textContent=miembros.filter(m=>getEstado(m.id)==='activo').length;
+  document.getElementById('stat-proximos').textContent=miembros.filter(m=>getEstado(m.id)==='por-vencer').length;
+  document.getElementById('stat-vencidos').textContent=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id))).length;
+  const hoyStr=new Date().toDateString();
+  const hoyIds=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).map(a=>a.miembroId);
+  const hoyM=miembros.filter(m=>hoyIds.includes(m.id));
+  document.getElementById('dash-hoy').innerHTML=hoyM.length?`<table><thead><tr><th>#</th><th>Nombre</th><th>Estado</th></tr></thead><tbody>${hoyM.map(m=>`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td>${m.nombre} <span class="today-pill">HOY</span></td><td>${estadoBadge(getEstado(m.id))}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-icon">🏃</div><div>Nadie ha asistido hoy</div></div>';
+  const proxList=miembros.filter(m=>getEstado(m.id)==='por-vencer');
+  document.getElementById('dash-proximos').innerHTML=proxList.length?`<table><thead><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Vence</th><th>Días</th></tr></thead><tbody>${proxList.map(m=>`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td>${m.nombre}</td><td>${m.telefono||'—'}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="color:var(--orange);font-weight:700">${diasRestantes(getVencimiento(m.id))}d</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-icon">✅</div><div>Nadie por vencer esta semana</div></div>';
+}
+
+// MIEMBROS
+function renderMiembros(filter=''){
+  const tbody=document.getElementById('tabla-miembros');
+  const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
+  if(!lista.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';return;}
+  tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">+Pago</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+}
+function filterMiembros(){renderMiembros(document.getElementById('search-miembros').value);}
+
+// PAGOS
+function renderPagos(){
+  const tbody=document.getElementById('tabla-pagos');
+  const sorted=[...pagos].sort((a,b)=>b.fechaPago-a.fechaPago);
+  if(!sorted.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';return;}
+  tbody.innerHTML=sorted.map((p,i)=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${sorted.length-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+}
+
+// ASISTENCIA
+function renderAsistencia(){
+  const tbody=document.getElementById('tabla-asistencia');
+  const hoyStr=new Date().toDateString();
+  const hoyIds=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).map(a=>a.miembroId);
+  if(!miembros.length){tbody.innerHTML='<tr><td colspan="5"><div class="empty"><div class="empty-icon">📋</div><div>No hay miembros</div></div></td></tr>';}
+  else{tbody.innerHTML=miembros.map(m=>{const estado=getEstado(m.id);const yaFue=hoyIds.includes(m.id);const dis=['vencido','sin-pago'].includes(estado)?'disabled':'';return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${estadoBadge(estado)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${yaFue?'<span class="today-pill">✓ Registrado</span>':`<button class="attend-btn" ${dis} onclick="registrarAsistencia('${m.id}')">Registrar</button>`}</td></tr>`;}).join('');}
+  const hist=document.getElementById('tabla-historial');
+  const sorted=[...asistencias].sort((a,b)=>b.fecha-a.fecha).slice(0,60);
+  hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
+}
+
+// ALERTAS + WHATSAPP
+function renderAlertas(){
+  const el=document.getElementById('alertas-content');
+  if(userPlan!=='premium'&&!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas','Pro');return;}
+  const vencidos=miembros.filter(m=>getEstado(m.id)==='vencido');
+  const en3=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>=0&&d<=3;});
+  const en7=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>3&&d<=7;});
+  let html='';
+  if(!vencidos.length&&!en3.length&&!en7.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div>No hay alertas activas</div></div>';return;}
+  if(vencidos.length){html+=`<div class="section-title" style="color:var(--red)">🔴 Membresías Vencidas (${vencidos.length})</div>`;html+=vencidos.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Venció ${fmtDate(getVencimiento(m.id))} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
+  if(en3.length){html+=`<div class="section-title" style="color:var(--red);margin-top:20px">🟠 Vence en 3 días o menos (${en3.length})</div>`;html+=en3.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Vence ${fmtDate(getVencimiento(m.id))} · ${diasRestantes(getVencimiento(m.id))} días · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
+  if(en7.length){html+=`<div class="section-title" style="color:var(--orange);margin-top:20px">🟡 Vence esta semana (${en7.length})</div>`;html+=en7.map(m=>`<div class="alert-card"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Vence ${fmtDate(getVencimiento(m.id))} · ${diasRestantes(getVencimiento(m.id))} días · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
+  el.innerHTML=html;
+}
+
+function enviarWhatsApp(mid){
+  const m=miembros.find(x=>x.id===mid);if(!m||!m.telefono)return alert('Este miembro no tiene teléfono registrado');
+  const dias=diasRestantes(getVencimiento(m.id));
+  let msg='';
+  if(dias===null||dias<0) msg=`Hola ${m.nombre}! 👋 Te recordamos que tu membresía en el gimnasio ha *vencido*. ¡Renuévala hoy para seguir entrenando! 💪`;
+  else if(dias<=3) msg=`Hola ${m.nombre}! 👋 Tu membresía vence en *${dias} día${dias===1?'':'s'}* (${fmtDate(getVencimiento(m.id))}). ¡Renuévala pronto para no perder tu acceso! 💪`;
+  else msg=`Hola ${m.nombre}! 👋 Tu membresía vence el *${fmtDate(getVencimiento(m.id))}* (en ${dias} días). ¡Recuerda renovarla a tiempo! 💪`;
+  const tel=m.telefono.replace(/\D/g,'');
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+
+function enviarWhatsAppTodos(){
+  const urgentes=miembros.filter(m=>['vencido','por-vencer'].includes(getEstado(m.id))&&m.telefono);
+  if(!urgentes.length){alert('No hay miembros con alertas o sin teléfono registrado');return;}
+  if(!confirm(`¿Enviar WhatsApp a ${urgentes.length} miembro(s)?`))return;
+  urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
+}
+
+// ESTADO DE CUENTA
+function renderEstadoCuenta(){
+  const el=document.getElementById('estadocuenta-content');
+  if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta','Pro');return;}
+  const hoy=new Date();
+  const mesActual=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
+  const realMes=mesActual.reduce((s,p)=>s+p.monto,0);
+  // Proyección: miembros activos * monto promedio
+  const montosActivos=miembros.filter(m=>getEstado(m.id)==='activo').map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;});
+  const proyMes=montosActivos.reduce((s,v)=>s+v,0);
+  const totalHistorico=pagos.reduce((s,p)=>s+p.monto,0);
+  const miembrosConDeuda=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
+  const deudaPotencial=miembrosConDeuda.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
+
+  el.innerHTML=`
+  <div class="ec-grid">
+    <div class="ec-card">
+      <h3>💰 REAL — Lo cobrado</h3>
+      <div class="ec-row"><span>Este mes</span><span class="ec-val" style="color:var(--green)">$${realMes.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Pagos este mes</span><span class="ec-val">${mesActual.length}</span></div>
+      <div class="ec-row"><span>Total histórico</span><span class="ec-val">$${totalHistorico.toLocaleString()}</span></div>
+    </div>
+    <div class="ec-card">
+      <h3>📈 PROYECCIÓN — Lo esperado</h3>
+      <div class="ec-row"><span>Miembros activos</span><span class="ec-val">${miembros.filter(m=>getEstado(m.id)==='activo').length}</span></div>
+      <div class="ec-row"><span>Ingresos esperados</span><span class="ec-val" style="color:var(--accent)">$${proyMes.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Por recuperar (vencidos)</span><span class="ec-val" style="color:var(--red)">$${deudaPotencial.toLocaleString()}</span></div>
+    </div>
+  </div>
+  <div class="section-title">Detalle de Pagos Este Mes</div>
+  ${mesActual.length?`<div class="table-wrap"><table><thead><tr><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha</th></tr></thead><tbody>${mesActual.sort((a,b)=>b.fechaPago-a.fechaPago).map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">💳</div><div>Sin pagos este mes</div></div>'}`;
+}
+
+// CORTE
+function renderCorte(){
+  const el=document.getElementById('corte-content');
+  if(userPlan!=='premium'&&!userFunciones.includes('corte')){el.innerHTML=lockedFeature('Corte','Pro');return;}
+  const hoy=new Date();
+  // Semanal
+  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
+  const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
+  const totalSemana=pagosSemana.reduce((s,p)=>s+p.monto,0);
+  const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime());
+  // Mensual
+  const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+  const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
+  const totalMes=pagosMes.reduce((s,p)=>s+p.monto,0);
+  const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime());
+  // Nuevos miembros
+  const nuevosSemana=miembros.filter(m=>m.creadoEn>=inicioSemana.getTime()).length;
+  const nuevosMes=miembros.filter(m=>m.creadoEn>=inicioMes.getTime()).length;
+
+  el.innerHTML=`
+  <div class="ec-grid">
+    <div class="ec-card">
+      <h3>📅 CORTE SEMANAL</h3>
+      <div class="ec-row"><span>Ingresos semana</span><span class="ec-val" style="color:var(--green)">$${totalSemana.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosSemana.length}</span></div>
+      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana.length}</span></div>
+      <div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosSemana}</span></div>
+    </div>
+    <div class="ec-card">
+      <h3>🗓️ CORTE MENSUAL</h3>
+      <div class="ec-row"><span>Ingresos mes</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosMes.length}</span></div>
+      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistMes.length}</span></div>
+      <div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosMes}</span></div>
+    </div>
+  </div>
+  <div class="section-title">Registro Diario — Hoy</div>
+  ${renderRegistroDiario()}`;
+}
+
+function renderRegistroDiario(){
+  const hoyStr=new Date().toDateString();
+  const hoyAsist=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).sort((a,b)=>b.fecha-a.fecha);
+  const hoyPagos=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoyStr).sort((a,b)=>b.fechaPago-a.fechaPago);
+  let html='<div class="ec-grid">';
+  html+=`<div class="ec-card"><h3>🏃 Asistencias Hoy (${hoyAsist.length})</h3>`;
+  if(!hoyAsist.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin asistencias hoy</div>';
+  else html+=hoyAsist.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span style="color:var(--muted);font-size:12px">${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span></div>`;}).join('');
+  html+=`</div><div class="ec-card"><h3>💳 Pagos Hoy (${hoyPagos.length}) — $${hoyPagos.reduce((s,p)=>s+p.monto,0).toLocaleString()}</h3>`;
+  if(!hoyPagos.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin pagos hoy</div>';
+  else html+=hoyPagos.map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span class="ec-val" style="color:var(--green)">$${p.monto}</span></div>`;}).join('');
+  html+='</div></div>';
+  return html;
+}
+
+// REPORTES
+function renderReportes(){
+  const el=document.getElementById('reportes-content');
+  if(userPlan!=='premium'&&!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes','Pro');return;}
+  const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
+  const hoy=new Date();
+  const pagosMes=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
+  const ingresosMes=pagosMes.reduce((s,p)=>s+p.monto,0);
+  const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
+  const asist7=asistencias.filter(a=>a.fecha>Date.now()-7*86400000).length;
+  el.innerHTML=`<div class="ec-grid">
+    <div class="ec-card"><h3>💰 Ingresos</h3>
+      <div class="ec-row"><span>Total histórico</span><span class="ec-val" style="color:var(--green)">$${totalPagado.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Este mes</span><span class="ec-val" style="color:var(--accent)">$${ingresosMes.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Pagos este mes</span><span class="ec-val">${pagosMes.length}</span></div>
+    </div>
+    <div class="ec-card"><h3>👥 Miembros</h3>
+      <div class="ec-row"><span>Total</span><span class="ec-val">${miembros.length}</span></div>
+      <div class="ec-row"><span>Al corriente</span><span class="ec-val" style="color:var(--green)">${miembros.filter(m=>getEstado(m.id)==='activo').length}</span></div>
+      <div class="ec-row"><span>Vencidos</span><span class="ec-val" style="color:var(--red)">${miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id))).length}</span></div>
+    </div>
+    <div class="ec-card"><h3>📅 Asistencia</h3>
+      <div class="ec-row"><span>Hoy</span><span class="ec-val">${asistHoy}</span></div>
+      <div class="ec-row"><span>Últimos 7 días</span><span class="ec-val">${asist7}</span></div>
+      <div class="ec-row"><span>Total histórico</span><span class="ec-val">${asistencias.length}</span></div>
+    </div>
+  </div>`;
+}
+
+// EMPLEADOS
+function renderEmpleados(){
+  const el=document.getElementById('empleados-content');
+  if(userPlan!=='premium'&&!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Empleados','Premium');return;}
+  el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
+  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
+}
+
+// INVENTARIO
+function renderInventario(){
+  const el=document.getElementById('inventario-content');
+  if(userPlan!=='premium'&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Inventario','Premium');return;}
+  const estadoColor={bueno:'var(--green)',regular:'var(--orange)',malo:'var(--red)'};
+  el.innerHTML=`<div class="header-row"><div class="page-title">Inventario</div><button class="btn btn-primary" onclick="openModal('modal-inventario')">+ Nuevo</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
+  <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay artículos</div></div></td></tr>'}</tbody></table></div>`;
+}
+
+// VER PERFIL
+function verPerfil(id){
+  const m=miembros.find(x=>x.id===id);if(!m)return;
+  const estado=getEstado(m.id);
+  document.getElementById('p-num').textContent=`#${fmtNum(m.numero||0)}`;
+  document.getElementById('p-nombre-display').textContent=m.nombre;
+  document.getElementById('p-estado-display').innerHTML=estadoBadge(estado);
+  document.getElementById('p-tel-display').textContent=m.telefono||'—';
+  document.getElementById('p-correo-display').textContent=m.correo||'—';
+  document.getElementById('p-edad-display').textContent=m.edad?`${m.edad} años`:'—';
+  document.getElementById('p-plan-display').textContent=getUltimoPlan(m.id);
+  document.getElementById('p-dir-display').textContent=m.direccion||'—';
+  document.getElementById('p-vence-display').textContent=fmtDate(getVencimiento(m.id));
+  document.getElementById('p-notas-display').textContent=m.notas||'—';
+  document.getElementById('p-editar-btn').onclick=()=>{closeModal('modal-perfil');editMiembro(id);};
+  document.getElementById('p-wha-btn').onclick=()=>enviarWhatsApp(id);
+  openModal('modal-perfil');
+}
+
+// SAVE MIEMBRO
+async function saveMiembro(){
+  const nombre=document.getElementById('m-nombre').value.trim();
+  if(!nombre)return alert('El nombre es obligatorio');
+  const editId=document.getElementById('edit-id').value;
+  let numero;
+  if(!editId){
+    const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
+    numero=maxNum+1;
+  }
+  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim(),creadoEn:Date.now()};
+  if(!editId)data.numero=numero;
+  if(editId)await updateDoc(userDoc('miembros',editId),data);
+  else await addDoc(userCol('miembros'),data);
+  closeModal('modal-miembro');
+  await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();
+}
+async function delMiembro(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('miembros',id));await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();renderAlertas();}
+function editMiembro(id){
+  const m=miembros.find(x=>x.id===id);if(!m)return;
+  document.getElementById('modal-miembro-title').textContent='Editar Miembro';
+  document.getElementById('edit-id').value=id;
+  document.getElementById('m-nombre').value=m.nombre;
+  document.getElementById('m-tel').value=m.telefono||'';
+  document.getElementById('m-correo').value=m.correo||'';
+  document.getElementById('m-edad').value=m.edad||'';
+  document.getElementById('m-direccion').value=m.direccion||'';
+  document.getElementById('m-notas').value=m.notas||'';
+  openModal('modal-miembro');
+}
+
+// SAVE PAGO
+async function savePago(){
+  const mid=document.getElementById('p-miembro').value;
+  const monto=document.getElementById('p-monto').value;
+  const dias=parseInt(document.getElementById('p-plan').value);
+  const fechaStr=document.getElementById('p-fecha').value;
+  if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
+  const planNames={'15':'Quincenal','30':'Mensual','60':'Bimestral','90':'Trimestral','180':'Semestral','365':'Anual'};
+  const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
+  const fechaFin=fechaPago+dias*86400000;
+  await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,creadoEn:Date.now()});
+  closeModal('modal-pago');
+  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();
+}
+function preRegPago(mid){populateMiembrosSelect(mid);document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];openModal('modal-pago');}
+function populateMiembrosSelect(selectedId=''){document.getElementById('p-miembro').innerHTML=miembros.map(m=>`<option value="${m.id}" ${m.id===selectedId?'selected':''}>#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');}
+
+// ASISTENCIA
+async function registrarAsistencia(mid){await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});await loadAsistencias();renderDashboard();renderAsistencia();renderCorte();}
+
+// EMPLEADOS
+async function saveEmpleado(){const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,creadoEn:Date.now()};const editId=document.getElementById('edit-emp-id').value;if(editId)await updateDoc(userDoc('empleados',editId),data);else await addDoc(userCol('empleados'),data);closeModal('modal-empleado');await loadEmpleados();renderEmpleados();}
+async function delEmpleado(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('empleados',id));await loadEmpleados();renderEmpleados();}
+function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';openModal('modal-empleado');}
+
+// INVENTARIO
+async function saveInventario(){const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};const editId=document.getElementById('edit-inv-id').value;if(editId)await updateDoc(userDoc('inventario',editId),data);else await addDoc(userCol('inventario'),data);closeModal('modal-inventario');await loadInventario();renderInventario();}
+async function delInventario(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario();}
+function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
+
+
+// IMPORTAR / EXPORTAR EXCEL
+let datosImport = [];
+
+function importarExcel(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target.result);
+    const wb = XLSX.read(data, {type:'array'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    // Try parsing with header row auto-detection
+    // First try normal parse
+    let rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+    // If no rows or first row looks like a title (no 'nombre' column), try skipping rows
+    if(!rows.length || !Object.keys(rows[0]).some(k=>k.toLowerCase().includes('nombre')||k.toLowerCase().includes('name')||k.toLowerCase().includes('usuario')||k.toLowerCase().includes('miembro'))) {
+      // Try finding the header row manually
+      const range = XLSX.utils.decode_range(ws['!ref']||'A1');
+      let headerRow = 0;
+      for(let r=0; r<=Math.min(5, range.e.r); r++){
+        const cell = ws[XLSX.utils.encode_cell({r,c:0})];
+        if(cell && cell.v && String(cell.v).length < 30 && !String(cell.v).includes('—')){
+          // Check if this row has multiple short values (likely a header)
+          let shortCount = 0;
+          for(let c=0; c<=range.e.c; c++){
+            const cc = ws[XLSX.utils.encode_cell({r,c})];
+            if(cc && String(cc.v).length < 25) shortCount++;
+          }
+          if(shortCount >= 3){ headerRow = r; break; }
+        }
+      }
+      rows = XLSX.utils.sheet_to_json(ws, {defval:'', range: headerRow});
+    }
+    if(!rows.length){ alert('El archivo está vacío o no se pudo leer'); return; }
+    // Map columns flexibly
+    datosImport = rows.map((r,i) => {
+      const get = (alts) => { for(const a of alts){ const k=Object.keys(r).find(k=>String(k).toLowerCase().includes(a)); if(k&&r[k])return String(r[k]).trim(); } return ''; };
+      return {
+        nombre: get(['nombre','name','member','usuario','miembro','cliente']),
+        telefono: get(['tel','phone','celular','movil','cel','fono']),
+        correo: get(['correo','email','mail','e-mail']),
+        edad: get(['edad','age','años']),
+        direccion: get(['dir','address','calle','domicilio']),
+        notas: get(['nota','note','obs','comment','coment']),
+      };
+    }).filter(r=>r.nombre);
+
+    const preview = document.getElementById('import-preview');
+    preview.innerHTML = `
+      <div style="margin-bottom:14px;color:var(--muted);font-size:13px">Se encontraron <strong style="color:var(--accent)">${datosImport.length} miembros</strong>. Revisa antes de importar:</div>
+      <div style="max-height:300px;overflow-y:auto">
+        <table style="width:100%">
+          <thead><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th></tr></thead>
+          <tbody>${datosImport.map(m=>`<tr><td>${m.nombre}</td><td>${m.telefono||'—'}</td><td>${m.correo||'—'}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+    openModal('modal-importar');
+    input.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function confirmarImport(){
+  if(!datosImport.length) return;
+  const btn = document.getElementById('btn-confirmar-import');
+  btn.textContent = 'Importando...'; btn.disabled = true;
+  const maxNum = miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
+  for(let i=0; i<datosImport.length; i++){
+    const d = datosImport[i];
+    await addDoc(userCol('miembros'), {...d, numero: maxNum+i+1, creadoEn: Date.now()});
+  }
+  closeModal('modal-importar');
+  btn.textContent='Importar todos'; btn.disabled=false;
+  await loadMiembros();
+  renderDashboard(); renderMiembros(); renderAsistencia();
+  alert(`✅ ${datosImport.length} miembros importados correctamente`);
+  datosImport=[];
+}
+
+function exportarExcel(){
+  if(!miembros.length){ alert('No hay miembros para exportar'); return; }
+  const rows = miembros.map(m=>({
+    'No.': m.numero||'',
+    'Nombre': m.nombre,
+    'Teléfono': m.telefono||'',
+    'Correo': m.correo||'',
+    'Edad': m.edad||'',
+    'Dirección': m.direccion||'',
+    'Plan Membresía': getUltimoPlan(m.id),
+    'Vencimiento': fmtDate(getVencimiento(m.id)),
+    'Estado': getEstado(m.id),
+    'Notas': m.notas||'',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Miembros');
+  XLSX.writeFile(wb, `miembros_gymtrack_${new Date().toLocaleDateString('es-MX').replace(/\//g,'-')}.xlsx`);
+}
+
+// MODALES
+function openModal(id){
+  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-notas'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-pago'){populateMiembrosSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];}
+  if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-nuevo-gym'){['ng-email','ng-nombre'].forEach(x=>document.getElementById(x).value='');}
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');['edit-id','edit-emp-id','edit-inv-id'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});}
+document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
+
+// TABS
+function showTab(name,event){
+  const activa = userPlan==='premium' || userFunciones.includes(name) || ['dashboard','miembros','pagos','asistencia'].includes(name);
+  if(!activa)return;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(event)event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
