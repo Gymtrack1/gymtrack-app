@@ -956,6 +956,10 @@ function importarExcel(input){
         edad: get(['edad','age','años']),
         direccion: get(['dir','address','calle','domicilio']),
         notas: get(['nota','note','obs','comment','coment']),
+        plan: get(['plan','membresia','membership','tipo']),
+        monto: get(['monto','precio','costo','amount','price','cobro']),
+        fecha_pago: get(['fecha_pago','fechapago','fecha pago','payment','pago']),
+        fecha_vencimiento: get(['fecha_venc','vencimiento','vence','expira','expiry','hasta','vigencia']),
       };
     }).filter(r=>r.nombre);
 
@@ -964,8 +968,8 @@ function importarExcel(input){
       <div style="margin-bottom:14px;color:var(--muted);font-size:13px">Se encontraron <strong style="color:var(--accent)">${datosImport.length} miembros</strong>. Revisa antes de importar:</div>
       <div style="max-height:300px;overflow-y:auto">
         <table style="width:100%">
-          <thead><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th></tr></thead>
-          <tbody>${datosImport.map(m=>`<tr><td>${m.nombre}</td><td>${m.telefono||'—'}</td><td>${m.correo||'—'}</td></tr>`).join('')}</tbody>
+          <thead><tr><th>Nombre</th><th>Teléfono</th><th>Plan</th><th>Vence</th></tr></thead>
+          <tbody>${datosImport.map(m=>`<tr><td>${m.nombre}</td><td>${m.telefono||'—'}</td><td>${m.plan||'—'}</td><td>${m.fecha_vencimiento||'—'}</td></tr>`).join('')}</tbody>
         </table>
       </div>`;
     openModal('modal-importar');
@@ -974,19 +978,68 @@ function importarExcel(input){
   reader.readAsArrayBuffer(file);
 }
 
+function parseFecha(str){
+  if(!str) return null;
+  // Try DD/MM/YYYY or MM/DD/YYYY or YYYY-MM-DD
+  const s = String(str).trim();
+  const parts = s.split(/[\/\-\.]/);
+  if(parts.length===3){
+    let d,m,y;
+    if(parts[2].length===4){ d=parseInt(parts[0]); m=parseInt(parts[1])-1; y=parseInt(parts[2]); }
+    else { y=parseInt(parts[0]); m=parseInt(parts[1])-1; d=parseInt(parts[2]); }
+    const date = new Date(y,m,d,12,0,0);
+    if(!isNaN(date.getTime())) return date.getTime();
+  }
+  // Try Excel serial number
+  if(!isNaN(str)){
+    const excelDate = new Date((parseInt(str)-25569)*86400000);
+    if(!isNaN(excelDate.getTime())) return excelDate.getTime();
+  }
+  return null;
+}
+
 async function confirmarImport(){
   if(!datosImport.length) return;
   const btn = document.getElementById('btn-confirmar-import');
   btn.textContent = 'Importando...'; btn.disabled = true;
   const maxNum = miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
+  const planNames = {'quincenal':'Quincenal','mensual':'Mensual','bimestral':'Bimestral','trimestral':'Trimestral','semestral':'Semestral','anual':'Anual'};
+  
   for(let i=0; i<datosImport.length; i++){
     const d = datosImport[i];
-    await addDoc(userCol('miembros'), {...d, numero: maxNum+i+1, creadoEn: Date.now()});
+    // Save member
+    const miembroRef = await addDoc(userCol('miembros'), {
+      nombre: d.nombre,
+      telefono: d.telefono||'',
+      correo: d.correo||'',
+      edad: d.edad?parseInt(d.edad):null,
+      direccion: d.direccion||'',
+      notas: d.notas||'',
+      numero: maxNum+i+1,
+      creadoEn: Date.now()
+    });
+
+    // Save payment if dates exist
+    const fechaPago = parseFecha(d.fecha_pago);
+    const fechaFin = parseFecha(d.fecha_vencimiento);
+    if(fechaPago && fechaFin){
+      const planKey = (d.plan||'mensual').toLowerCase();
+      const planNombre = planNames[planKey] || d.plan || 'Mensual';
+      const monto = parseFloat(d.monto)||0;
+      await addDoc(userCol('pagos'),{
+        miembroId: miembroRef.id,
+        monto,
+        planNombre,
+        diasPlan: Math.round((fechaFin-fechaPago)/86400000),
+        fechaPago,
+        fechaFin,
+        creadoEn: Date.now()
+      });
+    }
   }
   closeModal('modal-importar');
   btn.textContent='Importar todos'; btn.disabled=false;
-  await loadMiembros();
-  renderDashboard(); renderMiembros(); renderAsistencia();
+  await loadAll();
   alert(`✅ ${datosImport.length} miembros importados correctamente`);
   datosImport=[];
 }
