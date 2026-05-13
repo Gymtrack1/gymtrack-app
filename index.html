@@ -130,6 +130,19 @@
   .perfil-field{background:var(--surface2);border-radius:8px;padding:10px 12px;}
   .perfil-field-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;}
   .perfil-field-val{font-size:14px;font-weight:500;}
+  /* TASA RENOVACION */
+  .tasa-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;}
+  .tasa-ring svg{position:absolute;top:0;left:0;transform:rotate(-90deg);}
+  .tasa-ring-num{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--accent);position:relative;z-index:1;}
+  /* INV TABS */
+  .inv-tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--surface2);padding:4px;border-radius:10px;width:fit-content;}
+  .inv-tab-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:7px 18px;border-radius:7px;cursor:pointer;transition:all 0.2s;}
+  .inv-tab-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.4);}
+  .inv-section{display:none;} .inv-section.active{display:block;}
+  /* STOCK BADGE */
+  .stock-ok{color:var(--green);font-weight:700;}
+  .stock-low{color:var(--orange);font-weight:700;}
+  .stock-out{color:var(--red);font-weight:700;}
 </style>
 </head>
 <body>
@@ -369,10 +382,10 @@
   </div>
 </div>
 
-<!-- MODAL INVENTARIO -->
+<!-- MODAL INVENTARIO EQUIPO -->
 <div class="modal-overlay" id="modal-inventario">
   <div class="modal">
-    <h2 id="modal-inv-title">Nuevo Artículo</h2>
+    <h2 id="modal-inv-title">Nuevo Artículo de Equipo</h2>
     <input type="hidden" id="edit-inv-id">
     <div class="form-row">
       <div class="form-group"><label>Artículo</label><input type="text" id="i-nombre" placeholder="Pesa 10kg"></div>
@@ -385,6 +398,56 @@
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-inventario')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveInventario()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PRODUCTO TIENDA -->
+<div class="modal-overlay" id="modal-producto">
+  <div class="modal">
+    <h2 id="modal-prod-title">Nuevo Producto</h2>
+    <input type="hidden" id="edit-prod-id">
+    <div class="form-row">
+      <div class="form-group"><label>Producto</label><input type="text" id="prod-nombre" placeholder="Proteína Whey 1kg"></div>
+      <div class="form-group"><label>Categoría</label>
+        <select id="prod-categoria">
+          <option value="suplementos">Suplementos</option>
+          <option value="bebidas">Bebidas / Aguas</option>
+          <option value="accesorios">Accesorios</option>
+          <option value="ropa">Ropa</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Precio de venta ($)</label><input type="number" id="prod-precio" placeholder="350"></div>
+      <div class="form-group"><label>Stock actual</label><input type="number" id="prod-stock" placeholder="10"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Stock mínimo (alerta)</label><input type="number" id="prod-min" placeholder="3"></div>
+      <div class="form-group"><label>Notas</label><input type="text" id="prod-notas" placeholder="Opcional"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-producto')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveProducto()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VENTA -->
+<div class="modal-overlay" id="modal-venta">
+  <div class="modal">
+    <h2>Registrar Venta</h2>
+    <div class="form-group"><label>Producto</label><select id="v-producto"></select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Cantidad</label><input type="number" id="v-cantidad" placeholder="1" min="1" value="1"></div>
+      <div class="form-group"><label>Precio unitario ($)</label><input type="number" id="v-precio" placeholder="0"></div>
+    </div>
+    <div class="form-group"><label>Miembro (opcional)</label><select id="v-miembro"><option value="">— Sin miembro —</option></select></div>
+    <div id="v-total-preview" style="text-align:right;font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);margin-top:8px">Total: $0</div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-venta')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveVenta()">Registrar Venta</button>
     </div>
   </div>
 </div>
@@ -404,7 +467,7 @@
 </div>
 
 <script>
-let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[];
+let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],ventas=[];
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 let userFunciones=[];
@@ -503,7 +566,7 @@ async function doLogin(){
 async function doLogout(){await window._signOut(window._auth);}
 
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas()]);
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();
   renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();renderEmpleados();renderInventario();
 }
@@ -512,6 +575,8 @@ async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.
 async function loadAsistencias(){const s=await getDocs(userCol('asistencias'));asistencias=s.docs.map(d=>({id:d.id,...d.data()}));}
 async function loadEmpleados(){try{const s=await getDocs(userCol('empleados'));empleados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){empleados=[];}}
 async function loadInventario(){try{const s=await getDocs(userCol('inventario'));inventario=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){inventario=[];}}
+async function loadProductos(){try{const s=await getDocs(userCol('productos'));productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
+async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
 
 function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].fechaFin:null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
@@ -520,6 +585,28 @@ function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">A
 function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
 function fmtNum(n){return String(n).padStart(3,'0');}
 function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
+
+// ── TASA DE RENOVACIÓN ──────────────────────────────────────────────────────
+function calcTasaRenovacion(){
+  const hoy=new Date();
+  const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1).getTime();
+  const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59).getTime();
+  const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1).getTime();
+  // Miembros que vencieron el mes anterior
+  const vencieronMesAnt=miembros.filter(m=>{
+    const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaFin-a.fechaFin);
+    if(!ps.length)return false;
+    // El pago más reciente ANTES del mes actual terminó en el mes anterior
+    const pagoAnt=ps.find(p=>p.fechaFin>=inicioMesAnt&&p.fechaFin<=finMesAnt);
+    return !!pagoAnt;
+  });
+  // De esos, cuántos renovaron este mes
+  const renovaron=vencieronMesAnt.filter(m=>{
+    return pagos.some(p=>p.miembroId===m.id&&p.fechaPago>=inicioMes);
+  });
+  const tasa=vencieronMesAnt.length>0?Math.round((renovaron.length/vencieronMesAnt.length)*100):null;
+  return{tasa,renovaron:renovaron.length,total:vencieronMesAnt.length};
+}
 
 // DASHBOARD
 function renderDashboard(){
@@ -597,7 +684,7 @@ function enviarWhatsAppTodos(){
   urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
 }
 
-// FINANZAS
+// ── FINANZAS ─────────────────────────────────────────────────────────────────
 function renderEstadoCuenta(){
   const el=document.getElementById('estadocuenta-content');
   if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','Pro');return;}
@@ -617,7 +704,6 @@ function renderEstadoCuenta(){
   const activos=miembros.filter(m=>getEstado(m.id)==='activo');
   const vencidos=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
   const porVencer=miembros.filter(m=>getEstado(m.id)==='por-vencer');
-  const proyeccion=activos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
   const porRecuperar=vencidos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
   const nuevosMes=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioMes.getTime()).length;
   const nuevosSemana=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioSemana.getTime()).length;
@@ -629,21 +715,51 @@ function renderEstadoCuenta(){
   const diffMes=totalMesAnt>0?Math.round(((totalMes-totalMesAnt)/totalMesAnt)*100):null;
   const diffColor=diffMes===null?'var(--muted)':diffMes>=0?'var(--green)':'var(--red)';
   const diffStr=diffMes===null?'':`<span style="color:${diffColor};font-size:12px;font-weight:700">${diffMes>=0?'▲':'▼'} ${Math.abs(diffMes)}% vs mes anterior</span>`;
+
+  // Tasa de renovación
+  const {tasa,renovaron,total}=calcTasaRenovacion();
+  const tasaColor=tasa===null?'var(--muted)':tasa>=70?'var(--green)':tasa>=40?'var(--orange)':'var(--red)';
+  const tasaNum=tasa===null?'—':tasa+'%';
+  const circumference=2*Math.PI*34;
+  const dashoffset=tasa===null?circumference:circumference-(tasa/100)*circumference;
+  const tasaCard=`<div class="stat-card" style="border-left:3px solid ${tasaColor}">
+    <div class="stat-label">Tasa de Renovación</div>
+    <div style="display:flex;align-items:center;gap:14px;margin-top:6px">
+      <div class="tasa-ring">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border)" stroke-width="6"/>
+          <circle cx="40" cy="40" r="34" fill="none" stroke="${tasaColor}" stroke-width="6"
+            stroke-dasharray="${circumference}" stroke-dashoffset="${dashoffset}"
+            stroke-linecap="round" style="transition:stroke-dashoffset 0.6s ease"/>
+        </svg>
+        <span class="tasa-ring-num" style="color:${tasaColor}">${tasaNum}</span>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${tasa===null?'Sin datos aún':renovaron+' de '+total+' renovaron'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Miembros que vencieron el mes pasado y renovaron este mes</div>
+      </div>
+    </div>
+  </div>`;
+
+  // Ventas tienda este mes
+  const ventasMes=ventas.filter(v=>v.fecha>=inicioMes.getTime());
+  const totalVentasMes=ventasMes.reduce((s,v)=>s+(v.total||0),0);
+
   el.innerHTML=`
   <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
   <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:24px">
     <div class="stat-card" style="border-left:3px solid var(--green)"><div class="stat-label">Ingresos Este Mes</div><div class="stat-num green">$${totalMes.toLocaleString()}</div><div style="margin-top:6px">${diffStr}</div></div>
-    <div class="stat-card" style="border-left:3px solid var(--accent)"><div class="stat-label">Proyección Mes</div><div class="stat-num accent">$${proyeccion.toLocaleString()}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">${activos.length} miembros activos</div></div>
+    ${tasaCard}
     <div class="stat-card" style="border-left:3px solid var(--red)"><div class="stat-label">Por Recuperar</div><div class="stat-num red">$${porRecuperar.toLocaleString()}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">${vencidos.length} membresías vencidas</div></div>
     <div class="stat-card" style="border-left:3px solid var(--blue)"><div class="stat-label">Ticket Promedio</div><div class="stat-num blue">$${ticketProm.toLocaleString()}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">${pagosMes.length} pagos este mes</div></div>
   </div>
   <div class="section-title">Resumen por Período</div>
   <div class="ec-grid" style="margin-bottom:24px">
-    <div class="ec-card"><h3>📅 HOY — ${hoy.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})}</h3><div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()}</span></div><div class="ec-row"><span>Pagos</span><span class="ec-val">${pagosHoy.length}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistHoy}</span></div></div>
-    <div class="ec-card"><h3>📆 ESTA SEMANA</h3><div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalSemana.toLocaleString()}</span></div><div class="ec-row"><span>Pagos</span><span class="ec-val">${pagosSemana.length}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana}</span></div><div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosSemana}</span></div></div>
-    <div class="ec-card"><h3>🗓️ ESTE MES</h3><div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div><div class="ec-row"><span>Mes anterior</span><span class="ec-val">$${totalMesAnt.toLocaleString()}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistMes}</span></div><div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosMes}</span></div></div>
-    <div class="ec-card"><h3>📊 HISTÓRICO</h3><div class="ec-row"><span>Total cobrado</span><span class="ec-val" style="color:var(--green)">$${totalHistorico.toLocaleString()}</span></div><div class="ec-row"><span>Total miembros</span><span class="ec-val">${miembros.length}</span></div><div class="ec-row"><span>Total pagos</span><span class="ec-val">${pagos.length}</span></div><div class="ec-row"><span>Total asistencias</span><span class="ec-val">${asistencias.length}</span></div></div>
+    <div class="ec-card"><h3>📅 HOY — ${hoy.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})}</h3><div class="ec-row"><span>Ingresos memb.</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()}</span></div><div class="ec-row"><span>Ventas tienda</span><span class="ec-val" style="color:var(--accent)">$${ventas.filter(v=>new Date(v.fecha).toDateString()===hoy.toDateString()).reduce((s,v)=>s+(v.total||0),0).toLocaleString()}</span></div><div class="ec-row"><span>Pagos</span><span class="ec-val">${pagosHoy.length}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistHoy}</span></div></div>
+    <div class="ec-card"><h3>📆 ESTA SEMANA</h3><div class="ec-row"><span>Ingresos memb.</span><span class="ec-val" style="color:var(--accent)">$${totalSemana.toLocaleString()}</span></div><div class="ec-row"><span>Ventas tienda</span><span class="ec-val" style="color:var(--accent)">$${ventas.filter(v=>v.fecha>=inicioSemana.getTime()).reduce((s,v)=>s+(v.total||0),0).toLocaleString()}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana}</span></div><div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosSemana}</span></div></div>
+    <div class="ec-card"><h3>🗓️ ESTE MES</h3><div class="ec-row"><span>Ingresos memb.</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div><div class="ec-row"><span>Ventas tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasMes.toLocaleString()}</span></div><div class="ec-row"><span>Mes anterior</span><span class="ec-val">$${totalMesAnt.toLocaleString()}</span></div><div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosMes}</span></div></div>
+    <div class="ec-card"><h3>📊 HISTÓRICO</h3><div class="ec-row"><span>Total cobrado</span><span class="ec-val" style="color:var(--green)">$${totalHistorico.toLocaleString()}</span></div><div class="ec-row"><span>Total ventas tienda</span><span class="ec-val" style="color:var(--green)">$${ventas.reduce((s,v)=>s+(v.total||0),0).toLocaleString()}</span></div><div class="ec-row"><span>Total miembros</span><span class="ec-val">${miembros.length}</span></div><div class="ec-row"><span>Total asistencias</span><span class="ec-val">${asistencias.length}</span></div></div>
   </div>
   <div class="section-title">Estado de Cartera</div>
   <div class="ec-grid" style="margin-bottom:24px">
@@ -657,21 +773,6 @@ function renderEstadoCuenta(){
 
 function renderCorte(){renderEstadoCuenta();}
 
-function renderRegistroDiario(){
-  const hoyStr=new Date().toDateString();
-  const hoyAsist=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).sort((a,b)=>b.fecha-a.fecha);
-  const hoyPagos=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoyStr).sort((a,b)=>b.fechaPago-a.fechaPago);
-  let html='<div class="ec-grid">';
-  html+=`<div class="ec-card"><h3>🏃 Asistencias Hoy (${hoyAsist.length})</h3>`;
-  if(!hoyAsist.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin asistencias hoy</div>';
-  else html+=hoyAsist.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span style="color:var(--muted);font-size:12px">${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span></div>`;}).join('');
-  html+=`</div><div class="ec-card"><h3>💳 Pagos Hoy (${hoyPagos.length}) — $${hoyPagos.reduce((s,p)=>s+p.monto,0).toLocaleString()}</h3>`;
-  if(!hoyPagos.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin pagos hoy</div>';
-  else html+=hoyPagos.map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span class="ec-val" style="color:var(--green)">$${p.monto}</span></div>`;}).join('');
-  html+='</div></div>';
-  return html;
-}
-
 // REPORTES
 function renderReportes(){
   const el=document.getElementById('reportes-content');
@@ -682,6 +783,7 @@ function renderReportes(){
   const ingresosMes=pagosMes.reduce((s,p)=>s+p.monto,0);
   const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
   const asist7=asistencias.filter(a=>a.fecha>Date.now()-7*86400000).length;
+  const {tasa,renovaron,total}=calcTasaRenovacion();
   el.innerHTML=`<div class="ec-grid">
     <div class="ec-card"><h3>💰 Ingresos</h3>
       <div class="ec-row"><span>Total histórico</span><span class="ec-val" style="color:var(--green)">$${totalPagado.toLocaleString()}</span></div>
@@ -692,6 +794,7 @@ function renderReportes(){
       <div class="ec-row"><span>Total</span><span class="ec-val">${miembros.length}</span></div>
       <div class="ec-row"><span>Al corriente</span><span class="ec-val" style="color:var(--green)">${miembros.filter(m=>getEstado(m.id)==='activo').length}</span></div>
       <div class="ec-row"><span>Vencidos</span><span class="ec-val" style="color:var(--red)">${miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id))).length}</span></div>
+      <div class="ec-row"><span>Tasa de renovación</span><span class="ec-val" style="color:${tasa===null?'var(--muted)':tasa>=70?'var(--green)':tasa>=40?'var(--orange)':'var(--red)'}">${tasa===null?'—':tasa+'%'}</span></div>
     </div>
     <div class="ec-card"><h3>📅 Asistencia</h3>
       <div class="ec-row"><span>Hoy</span><span class="ec-val">${asistHoy}</span></div>
@@ -710,14 +813,153 @@ function renderEmpleados(){
   <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
 }
 
-// INVENTARIO
-function renderInventario(){
+// ── INVENTARIO (doble sección) ────────────────────────────────────────────────
+function renderInventario(seccion='equipo'){
   const el=document.getElementById('inventario-content');
   if(userPlan!=='premium'&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Control de Inventario','Premium');return;}
   const estadoColor={bueno:'var(--green)',regular:'var(--orange)',malo:'var(--red)'};
-  el.innerHTML=`<div class="header-row"><div class="page-title">Inventario</div><button class="btn btn-primary" onclick="openModal('modal-inventario')">+ Nuevo</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
-  <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay artículos</div></div></td></tr>'}</tbody></table></div>`;
+  const catLabel={suplementos:'💊 Suplementos',bebidas:'🥤 Bebidas',accesorios:'🥊 Accesorios',ropa:'👕 Ropa',otro:'📦 Otro'};
+
+  // Alertas de stock bajo
+  const stockBajo=productos.filter(p=>(p.stockMinimo||0)>0&&(p.stock||0)<=(p.stockMinimo||0)&&(p.stock||0)>0);
+  const sinStock=productos.filter(p=>(p.stock||0)===0);
+  let alertasHtml='';
+  if(sinStock.length||stockBajo.length){
+    alertasHtml=`<div style="background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px">`;
+    if(sinStock.length) alertasHtml+=`<div style="color:var(--red);font-weight:600;margin-bottom:4px">🚨 Sin stock: ${sinStock.map(p=>p.nombre).join(', ')}</div>`;
+    if(stockBajo.length) alertasHtml+=`<div style="color:var(--orange);font-weight:600">⚠️ Stock bajo: ${stockBajo.map(p=>`${p.nombre} (${p.stock} restantes)`).join(', ')}</div>`;
+    alertasHtml+='</div>';
+  }
+
+  el.innerHTML=`
+  <div class="header-row"><div class="page-title">Inventario</div></div>
+  ${alertasHtml}
+  <div class="inv-tabs">
+    <button class="inv-tab-btn ${seccion==='equipo'?'active':''}" onclick="renderInventario('equipo')">🏋️ Equipo del Gym</button>
+    <button class="inv-tab-btn ${seccion==='tienda'?'active':''}" onclick="renderInventario('tienda')">🛒 Tienda / Venta</button>
+  </div>
+
+  <!-- EQUIPO -->
+  <div class="inv-section ${seccion==='equipo'?'active':''}">
+    <div class="header-row" style="margin-bottom:12px">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Equipo y Maquinaria</div>
+      <button class="btn btn-primary btn-sm" onclick="openModal('modal-inventario')">+ Agregar Equipo</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
+    <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
+  </div>
+
+  <!-- TIENDA -->
+  <div class="inv-section ${seccion==='tienda'?'active':''}">
+    <div class="header-row" style="margin-bottom:12px">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Productos en Venta</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openVentaModal()">💰 Registrar Venta</button>
+        <button class="btn btn-primary btn-sm" onclick="openModal('modal-producto')">+ Agregar Producto</button>
+      </div>
+    </div>
+    ${productos.length?`
+    <div class="table-wrap"><table><thead><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr></thead>
+    <tbody>${productos.map(p=>{
+      const stockClass=(p.stock||0)===0?'stock-out':(p.stockMinimo&&p.stock<=p.stockMinimo)?'stock-low':'stock-ok';
+      const stockIcon=(p.stock||0)===0?'🚨':(p.stockMinimo&&p.stock<=p.stockMinimo)?'⚠️':'';
+      return`<tr>
+        <td><strong>${p.nombre}</strong>${p.notas?`<div style="font-size:11px;color:var(--muted)">${p.notas}</div>`:''}}</td>
+        <td><span style="font-size:12px;color:var(--muted)">${catLabel[p.categoria]||p.categoria||'—'}</span></td>
+        <td style="font-weight:700;color:var(--accent)">$${(p.precio||0).toLocaleString()}</td>
+        <td><span class="${stockClass}">${stockIcon} ${p.stock||0}</span>${p.stockMinimo?`<span style="font-size:11px;color:var(--muted);margin-left:4px">/ mín ${p.stockMinimo}</span>`:''}</td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-green btn-sm" onclick="ventaRapida('${p.id}')">+Vender</button>
+          <button class="btn btn-ghost btn-sm" onclick="editProducto('${p.id}')">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="delProducto('${p.id}')">✕</button>
+        </td>
+      </tr>`;}).join('')}</tbody></table></div>
+    <div class="section-title" style="margin-top:24px">Últimas Ventas</div>
+    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembros.find(x=>x.id===v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
+    `:'<div class="empty"><div class="empty-icon">🛒</div><div>No hay productos registrados</div><div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="openModal(\'modal-producto\')">+ Agregar Producto</button></div></div>'}
+  </div>`;
+}
+
+// ── PRODUCTOS / VENTAS ────────────────────────────────────────────────────────
+async function saveProducto(){
+  const nombre=document.getElementById('prod-nombre').value.trim();
+  if(!nombre)return alert('El nombre es obligatorio');
+  const data={
+    nombre,
+    categoria:document.getElementById('prod-categoria').value,
+    precio:parseFloat(document.getElementById('prod-precio').value)||0,
+    stock:parseInt(document.getElementById('prod-stock').value)||0,
+    stockMinimo:parseInt(document.getElementById('prod-min').value)||0,
+    notas:document.getElementById('prod-notas').value.trim(),
+    creadoEn:Date.now()
+  };
+  const editId=document.getElementById('edit-prod-id').value;
+  if(editId)await updateDoc(userDoc('productos',editId),data);
+  else await addDoc(userCol('productos'),data);
+  closeModal('modal-producto');
+  await loadProductos();renderInventario('tienda');
+}
+async function delProducto(id){if(!confirm('¿Eliminar producto?'))return;await deleteDoc(userDoc('productos',id));await loadProductos();renderInventario('tienda');}
+function editProducto(id){
+  const p=productos.find(x=>x.id===id);if(!p)return;
+  document.getElementById('modal-prod-title').textContent='Editar Producto';
+  document.getElementById('edit-prod-id').value=id;
+  document.getElementById('prod-nombre').value=p.nombre;
+  document.getElementById('prod-categoria').value=p.categoria||'otro';
+  document.getElementById('prod-precio').value=p.precio||'';
+  document.getElementById('prod-stock').value=p.stock||'';
+  document.getElementById('prod-min').value=p.stockMinimo||'';
+  document.getElementById('prod-notas').value=p.notas||'';
+  openModal('modal-producto');
+}
+
+function openVentaModal(){
+  document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}">${p.nombre} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
+  document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');
+  // Auto fill precio
+  const firstProd=productos[0];
+  if(firstProd) document.getElementById('v-precio').value=firstProd.precio||0;
+  updateVentaTotal();
+  openModal('modal-venta');
+}
+
+function ventaRapida(prodId){
+  document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}" ${p.id===prodId?'selected':''}>${p.nombre} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
+  document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');
+  const p=productos.find(x=>x.id===prodId);
+  if(p) document.getElementById('v-precio').value=p.precio||0;
+  document.getElementById('v-cantidad').value=1;
+  updateVentaTotal();
+  openModal('modal-venta');
+}
+
+function updateVentaTotal(){
+  const cant=parseInt(document.getElementById('v-cantidad').value)||0;
+  const precio=parseFloat(document.getElementById('v-precio').value)||0;
+  document.getElementById('v-total-preview').textContent=`Total: $${(cant*precio).toLocaleString()}`;
+}
+document.getElementById('v-cantidad').addEventListener('input',updateVentaTotal);
+document.getElementById('v-precio').addEventListener('input',updateVentaTotal);
+document.getElementById('v-producto').addEventListener('change',function(){
+  const p=productos.find(x=>x.id===this.value);
+  if(p){document.getElementById('v-precio').value=p.precio||0;updateVentaTotal();}
+});
+
+async function saveVenta(){
+  const prodId=document.getElementById('v-producto').value;
+  const cantidad=parseInt(document.getElementById('v-cantidad').value)||0;
+  const precio=parseFloat(document.getElementById('v-precio').value)||0;
+  const miembroId=document.getElementById('v-miembro').value;
+  if(!prodId||cantidad<1)return alert('Selecciona un producto y cantidad válida');
+  const prod=productos.find(x=>x.id===prodId);
+  if(!prod)return;
+  if((prod.stock||0)<cantidad)return alert(`Stock insuficiente. Solo hay ${prod.stock||0} unidades.`);
+  const total=cantidad*precio;
+  await addDoc(userCol('ventas'),{productoId:prodId,productoNombre:prod.nombre,cantidad,precioUnitario:precio,total,miembroId:miembroId||null,fecha:Date.now()});
+  // Descontar stock
+  await updateDoc(userDoc('productos',prodId),{stock:(prod.stock||0)-cantidad});
+  closeModal('modal-venta');
+  await loadProductos();await loadVentas();renderInventario('tienda');renderEstadoCuenta();
 }
 
 // VER PERFIL
@@ -795,9 +1037,9 @@ async function saveEmpleado(){const nombre=document.getElementById('e-nombre').v
 async function delEmpleado(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('empleados',id));await loadEmpleados();renderEmpleados();}
 function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';openModal('modal-empleado');}
 
-// INVENTARIO
-async function saveInventario(){const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};const editId=document.getElementById('edit-inv-id').value;if(editId)await updateDoc(userDoc('inventario',editId),data);else await addDoc(userCol('inventario'),data);closeModal('modal-inventario');await loadInventario();renderInventario();}
-async function delInventario(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario();}
+// INVENTARIO EQUIPO
+async function saveInventario(){const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};const editId=document.getElementById('edit-inv-id').value;if(editId)await updateDoc(userDoc('inventario',editId),data);else await addDoc(userCol('inventario'),data);closeModal('modal-inventario');await loadInventario();renderInventario('equipo');}
+async function delInventario(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario('equipo');}
 function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
 
 // MODALES
@@ -805,11 +1047,12 @@ function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-pago'){populateMiembrosSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
-  if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo de Equipo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-producto'&&!document.getElementById('edit-prod-id').value){document.getElementById('modal-prod-title').textContent='Nuevo Producto';['edit-prod-id','prod-nombre','prod-precio','prod-stock','prod-min','prod-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-nuevo-gym'){['ng-email','ng-nombre'].forEach(x=>document.getElementById(x).value='');}
   document.getElementById(id).classList.add('open');
 }
-function closeModal(id){document.getElementById(id).classList.remove('open');['edit-id','edit-emp-id','edit-inv-id'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});}
+function closeModal(id){document.getElementById(id).classList.remove('open');['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});}
 document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
 
 // TABS
