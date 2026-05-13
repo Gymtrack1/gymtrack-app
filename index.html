@@ -724,21 +724,9 @@ function renderEstadoCuenta(){
   const dashoffset=tasa===null?circumference:circumference-(tasa/100)*circumference;
   const tasaCard=`<div class="stat-card" style="border-left:3px solid ${tasaColor}">
     <div class="stat-label">Tasa de Renovación</div>
-    <div style="display:flex;align-items:center;gap:14px;margin-top:6px">
-      <div class="tasa-ring">
-        <svg width="80" height="80" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border)" stroke-width="6"/>
-          <circle cx="40" cy="40" r="34" fill="none" stroke="${tasaColor}" stroke-width="6"
-            stroke-dasharray="${circumference}" stroke-dashoffset="${dashoffset}"
-            stroke-linecap="round" style="transition:stroke-dashoffset 0.6s ease"/>
-        </svg>
-        <span class="tasa-ring-num" style="color:${tasaColor}">${tasaNum}</span>
-      </div>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">${tasa===null?'Sin datos aún':renovaron+' de '+total+' renovaron'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">Miembros que vencieron el mes pasado y renovaron este mes</div>
-      </div>
-    </div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:1;color:${tasaColor};margin:6px 0 4px">${tasaNum}</div>
+    <div style="font-size:12px;font-weight:600;color:var(--text)">${tasa===null?'Sin datos aún':renovaron+' de '+total+' renovaron'}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:3px">Membresías vencidas el mes pasado que renovaron</div>
   </div>`;
 
   // Ventas tienda este mes
