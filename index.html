@@ -107,11 +107,6 @@
   .plan-opt.active-sencillo{background:rgba(102,102,102,0.2);color:var(--text);border-color:var(--muted);}
   .plan-opt.active-pro{background:rgba(58,159,255,0.15);color:var(--blue);border-color:var(--blue);}
   .plan-opt.active-premium{background:rgba(232,255,58,0.15);color:var(--accent);border-color:var(--accent);}
-  .funcion-item{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;cursor:pointer;transition:all 0.2s;font-size:13px;}
-  .funcion-item:hover{border-color:var(--muted);}
-  .fi-on{background:rgba(232,255,58,0.06);border-color:var(--accent);}
-  .fi-check{width:18px;height:18px;border-radius:4px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;flex-shrink:0;transition:all 0.2s;}
-  .fi-on .fi-check{background:var(--accent);border-color:var(--accent);}
   /* ESTADO DE CUENTA */
   .ec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:20px;}
   .ec-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
@@ -261,8 +256,6 @@
   <!-- FINANZAS -->
   <div class="tab" id="tab-estadocuenta">
     <div id="estadocuenta-content"></div>
-  </div>
-<div id="corte-content"></div>
   </div>
 
   <!-- REPORTES -->
@@ -414,8 +407,13 @@
 let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[];
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
+let userFunciones=[];
 
-// planes legacy removed - now uses funciones array
+const PLANES={
+  sencillo:{alertas:false,estadocuenta:false,corte:false,reportes:false,empleados:false,inventario:false},
+  pro:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:false,inventario:false},
+  premium:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:true,inventario:true}
+};
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
@@ -429,7 +427,7 @@ window.addEventListener('firebaseReady',async()=>{
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
     const newPlan=snap.exists()?(snap.data().plan||'sencillo'):'sencillo';
-    if(newPlan!==userPlan){userPlan=newPlan;applyPlan();renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();}
+    if(newPlan!==userPlan){userPlan=newPlan;applyPlan();renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();renderCorte();}
   });
   await loadPlan(); applyPlan(); await loadAll();
 });
@@ -449,13 +447,14 @@ async function loadPlan(){
 }
 
 function applyPlan(){
-  const p=PLANES[userPlan];
   const badge=document.getElementById('plan-badge');
   badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
   badge.className=`plan-badge plan-${userPlan}`;
-  ['alertas','estadocuenta','reportes','empleados','inventario','miembros','pagos','asistencia','dashboard'].forEach(id=>{
+  ['dashboard','miembros','pagos','asistencia','alertas','estadocuenta','reportes','empleados','inventario'].forEach(id=>{
     const btn=document.getElementById('nav-'+id);
-    if(!p[id])btn.classList.add('locked'); else btn.classList.remove('locked');
+    if(!btn)return;
+    const activa=userPlan==='premium'||userFunciones.includes(id);
+    if(!activa)btn.classList.add('locked'); else btn.classList.remove('locked');
   });
 }
 
@@ -506,7 +505,7 @@ async function doLogout(){await window._signOut(window._auth);}
 async function loadAll(){
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario()]);
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();
-  renderAlertas();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
+  renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();renderEmpleados();renderInventario();
 }
 async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));}
 async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));}
@@ -568,7 +567,7 @@ function renderAsistencia(){
 // ALERTAS + WHATSAPP
 function renderAlertas(){
   const el=document.getElementById('alertas-content');
-  if(!PLANES[userPlan].alertas){el.innerHTML=lockedFeature('Alertas','Pro');return;}
+  if(userPlan!=='premium'&&!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','Pro');return;}
   const vencidos=miembros.filter(m=>getEstado(m.id)==='vencido');
   const en3=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>=0&&d<=3;});
   const en7=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>3&&d<=7;});
@@ -598,16 +597,13 @@ function enviarWhatsAppTodos(){
   urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
 }
 
-// FINANZAS (Estado de Cuenta + Corte unificados)
+// FINANZAS
 function renderEstadoCuenta(){
   const el=document.getElementById('estadocuenta-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Finanzas','Pro');return;}
-
+  if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','Pro');return;}
   const hoy=new Date();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
-  const inicioSemana=new Date(hoy); inicioSemana.setDate(hoy.getDate()-hoy.getDay()); inicioSemana.setHours(0,0,0,0);
-
-  // — Datos —
+  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
   const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
   const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
   const pagosHoy=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoy.toDateString());
@@ -615,24 +611,17 @@ function renderEstadoCuenta(){
   const totalSemana=pagosSemana.reduce((s,p)=>s+p.monto,0);
   const totalHoy=pagosHoy.reduce((s,p)=>s+p.monto,0);
   const totalHistorico=pagos.reduce((s,p)=>s+p.monto,0);
-
   const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime()).length;
   const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime()).length;
   const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
-
   const activos=miembros.filter(m=>getEstado(m.id)==='activo');
   const vencidos=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
   const porVencer=miembros.filter(m=>getEstado(m.id)==='por-vencer');
   const proyeccion=activos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
   const porRecuperar=vencidos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
-
   const nuevosMes=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioMes.getTime()).length;
   const nuevosSemana=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioSemana.getTime()).length;
-
-  // — Ticket promedio —
   const ticketProm=pagosMes.length?Math.round(totalMes/pagosMes.length):0;
-
-  // — Mes anterior para comparativa —
   const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1);
   const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59);
   const pagosMesAnt=pagos.filter(p=>p.fechaPago>=inicioMesAnt.getTime()&&p.fechaPago<=finMesAnt.getTime());
@@ -640,101 +629,53 @@ function renderEstadoCuenta(){
   const diffMes=totalMesAnt>0?Math.round(((totalMes-totalMesAnt)/totalMesAnt)*100):null;
   const diffColor=diffMes===null?'var(--muted)':diffMes>=0?'var(--green)':'var(--red)';
   const diffStr=diffMes===null?'':`<span style="color:${diffColor};font-size:12px;font-weight:700">${diffMes>=0?'▲':'▼'} ${Math.abs(diffMes)}% vs mes anterior</span>`;
-
   el.innerHTML=`
   <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
   <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
-
-  <!-- KPIs principales -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px">
-    <div class="stat-card" style="border-left:3px solid var(--green)">
-      <div class="stat-label">Ingresos Este Mes</div>
-      <div class="stat-num green">$${totalMes.toLocaleString()}</div>
-      <div style="margin-top:6px">${diffStr}</div>
-    </div>
-    <div class="stat-card" style="border-left:3px solid var(--accent)">
-      <div class="stat-label">Proyección Mes</div>
-      <div class="stat-num accent">$${proyeccion.toLocaleString()}</div>
-      <div style="color:var(--muted);font-size:12px;margin-top:6px">${activos.length} miembros activos</div>
-    </div>
-    <div class="stat-card" style="border-left:3px solid var(--red)">
-      <div class="stat-label">Por Recuperar</div>
-      <div class="stat-num red">$${porRecuperar.toLocaleString()}</div>
-      <div style="color:var(--muted);font-size:12px;margin-top:6px">${vencidos.length} membresías vencidas</div>
-    </div>
-    <div class="stat-card" style="border-left:3px solid var(--blue)">
-      <div class="stat-label">Ticket Promedio</div>
-      <div class="stat-num blue">$${ticketProm.toLocaleString()}</div>
-      <div style="color:var(--muted);font-size:12px;margin-top:6px">${pagosMes.length} pagos este mes</div>
-    </div>
+    <div class="stat-card" style="border-left:3px solid var(--green)"><div class="stat-label">Ingresos Este Mes</div><div class="stat-num green">$${totalMes.toLocaleString()}</div><div style="margin-top:6px">${diffStr}</div></div>
+    <div class="stat-card" style="border-left:3px solid var(--accent)"><div class="stat-label">Proyección Mes</div><div class="stat-num accent">$${proyeccion.toLocaleString()}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">${activos.length} miembros activos</div></div>
+    <div class="stat-card" style="border-left:3px solid var(--red)"><div class="stat-label">Por Recuperar</div><div class="stat-num red">$${porRecuperar.toLocaleString()}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">${vencidos.length} membresías vencidas</div></div>
+    <div class="stat-card" style="border-left:3px solid var(--blue)"><div class="stat-label">Ticket Promedio</div><div class="stat-num blue">$${ticketProm.toLocaleString()}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">${pagosMes.length} pagos este mes</div></div>
   </div>
-
-  <!-- Cortes -->
   <div class="section-title">Resumen por Período</div>
   <div class="ec-grid" style="margin-bottom:24px">
-    <div class="ec-card">
-      <h3>📅 HOY — ${hoy.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})}</h3>
-      <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosHoy.length}</span></div>
-      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistHoy}</span></div>
-    </div>
-    <div class="ec-card">
-      <h3>📆 ESTA SEMANA</h3>
-      <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalSemana.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosSemana.length}</span></div>
-      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana}</span></div>
-      <div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosSemana}</span></div>
-    </div>
-    <div class="ec-card">
-      <h3>🗓️ ESTE MES</h3>
-      <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Mes anterior</span><span class="ec-val">$${totalMesAnt.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistMes}</span></div>
-      <div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosMes}</span></div>
-    </div>
-    <div class="ec-card">
-      <h3>📊 HISTÓRICO</h3>
-      <div class="ec-row"><span>Total cobrado</span><span class="ec-val" style="color:var(--green)">$${totalHistorico.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Total miembros</span><span class="ec-val">${miembros.length}</span></div>
-      <div class="ec-row"><span>Total pagos</span><span class="ec-val">${pagos.length}</span></div>
-      <div class="ec-row"><span>Total asistencias</span><span class="ec-val">${asistencias.length}</span></div>
-    </div>
+    <div class="ec-card"><h3>📅 HOY — ${hoy.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})}</h3><div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()}</span></div><div class="ec-row"><span>Pagos</span><span class="ec-val">${pagosHoy.length}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistHoy}</span></div></div>
+    <div class="ec-card"><h3>📆 ESTA SEMANA</h3><div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalSemana.toLocaleString()}</span></div><div class="ec-row"><span>Pagos</span><span class="ec-val">${pagosSemana.length}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana}</span></div><div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosSemana}</span></div></div>
+    <div class="ec-card"><h3>🗓️ ESTE MES</h3><div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div><div class="ec-row"><span>Mes anterior</span><span class="ec-val">$${totalMesAnt.toLocaleString()}</span></div><div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistMes}</span></div><div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosMes}</span></div></div>
+    <div class="ec-card"><h3>📊 HISTÓRICO</h3><div class="ec-row"><span>Total cobrado</span><span class="ec-val" style="color:var(--green)">$${totalHistorico.toLocaleString()}</span></div><div class="ec-row"><span>Total miembros</span><span class="ec-val">${miembros.length}</span></div><div class="ec-row"><span>Total pagos</span><span class="ec-val">${pagos.length}</span></div><div class="ec-row"><span>Total asistencias</span><span class="ec-val">${asistencias.length}</span></div></div>
   </div>
-
-  <!-- Estado de cartera -->
   <div class="section-title">Estado de Cartera</div>
   <div class="ec-grid" style="margin-bottom:24px">
-    <div class="ec-card">
-      <h3>💚 AL CORRIENTE (${activos.length})</h3>
-      ${activos.length?activos.slice(0,8).map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);const monto=ps.length?ps[0].monto:0;return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span class="ec-val" style="color:var(--green)">$${monto.toLocaleString()}</span></div>`;}).join('')+(activos.length>8?`<div style="color:var(--muted);font-size:12px;padding:6px 0">+${activos.length-8} más...</div>`:''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin miembros activos</div>'}
-    </div>
-    <div class="ec-card">
-      <h3>🟡 POR VENCER (${porVencer.length})</h3>
-      ${porVencer.length?porVencer.map(m=>{const d=diasRestantes(getVencimiento(m.id));return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span style="color:var(--orange);font-weight:700">${d}d</span></div>`;}).join(''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Ninguno por vencer</div>'}
-    </div>
-    <div class="ec-card">
-      <h3>🔴 VENCIDOS — $${porRecuperar.toLocaleString()} potencial</h3>
-      ${vencidos.length?vencidos.slice(0,8).map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);const monto=ps.length?ps[0].monto:0;return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span class="ec-val" style="color:var(--red)">$${monto.toLocaleString()}</span></div>`;}).join('')+(vencidos.length>8?`<div style="color:var(--muted);font-size:12px;padding:6px 0">+${vencidos.length-8} más...</div>`:''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin vencidos</div>'}
-    </div>
+    <div class="ec-card"><h3>💚 AL CORRIENTE (${activos.length})</h3>${activos.length?activos.slice(0,8).map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);const monto=ps.length?ps[0].monto:0;return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span class="ec-val" style="color:var(--green)">$${monto.toLocaleString()}</span></div>`;}).join('')+(activos.length>8?`<div style="color:var(--muted);font-size:12px;padding:6px 0">+${activos.length-8} más...</div>`:''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin miembros activos</div>'}</div>
+    <div class="ec-card"><h3>🟡 POR VENCER (${porVencer.length})</h3>${porVencer.length?porVencer.map(m=>{const d=diasRestantes(getVencimiento(m.id));return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span style="color:var(--orange);font-weight:700">${d}d</span></div>`;}).join(''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Ninguno por vencer</div>'}</div>
+    <div class="ec-card"><h3>🔴 VENCIDOS — $${porRecuperar.toLocaleString()} potencial</h3>${vencidos.length?vencidos.slice(0,8).map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);const monto=ps.length?ps[0].monto:0;return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span class="ec-val" style="color:var(--red)">$${monto.toLocaleString()}</span></div>`;}).join('')+(vencidos.length>8?`<div style="color:var(--muted);font-size:12px;padding:6px 0">+${vencidos.length-8} más...</div>`:''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin vencidos</div>'}</div>
   </div>
-
-  <!-- Detalle de pagos del mes -->
-  <div class="section-title">Pagos Registrados Este Mes (${pagosMes.length})</div>
-  ${pagosMes.length?`<div class="table-wrap"><table>
-    <thead><tr><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
-    <tbody>${pagosMes.sort((a,b)=>b.fechaPago-a.fechaPago).map(p=>{
-      const m=miembros.find(x=>x.id===p.miembroId);
-      return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td style="color:var(--green);font-weight:700">$${p.monto.toLocaleString()}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;
-    }).join('')}</tbody>
-  </table></div>`:'<div class="empty"><div class="empty-icon">💳</div><div>Sin pagos este mes</div></div>'}`;
+  <div class="section-title">Pagos Este Mes (${pagosMes.length})</div>
+  ${pagosMes.length?`<div class="table-wrap"><table><thead><tr><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead><tbody>${pagosMes.sort((a,b)=>b.fechaPago-a.fechaPago).map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td style="color:var(--green);font-weight:700">$${p.monto.toLocaleString()}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">💳</div><div>Sin pagos este mes</div></div>'}`;
 }
 
 function renderCorte(){renderEstadoCuenta();}
 
+function renderRegistroDiario(){
+  const hoyStr=new Date().toDateString();
+  const hoyAsist=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).sort((a,b)=>b.fecha-a.fecha);
+  const hoyPagos=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoyStr).sort((a,b)=>b.fechaPago-a.fechaPago);
+  let html='<div class="ec-grid">';
+  html+=`<div class="ec-card"><h3>🏃 Asistencias Hoy (${hoyAsist.length})</h3>`;
+  if(!hoyAsist.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin asistencias hoy</div>';
+  else html+=hoyAsist.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span style="color:var(--muted);font-size:12px">${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span></div>`;}).join('');
+  html+=`</div><div class="ec-card"><h3>💳 Pagos Hoy (${hoyPagos.length}) — $${hoyPagos.reduce((s,p)=>s+p.monto,0).toLocaleString()}</h3>`;
+  if(!hoyPagos.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin pagos hoy</div>';
+  else html+=hoyPagos.map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span class="ec-val" style="color:var(--green)">$${p.monto}</span></div>`;}).join('');
+  html+='</div></div>';
+  return html;
+}
+
 // REPORTES
 function renderReportes(){
   const el=document.getElementById('reportes-content');
-  if(!PLANES[userPlan].reportes){el.innerHTML=lockedFeature('Reportes','Pro');return;}
+  if(userPlan!=='premium'&&!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes y Estadísticas','Pro');return;}
   const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
   const hoy=new Date();
   const pagosMes=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
@@ -763,7 +704,7 @@ function renderReportes(){
 // EMPLEADOS
 function renderEmpleados(){
   const el=document.getElementById('empleados-content');
-  if(!PLANES[userPlan].empleados){el.innerHTML=lockedFeature('Empleados','Premium');return;}
+  if(userPlan!=='premium'&&!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','Premium');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
   <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
@@ -772,7 +713,7 @@ function renderEmpleados(){
 // INVENTARIO
 function renderInventario(){
   const el=document.getElementById('inventario-content');
-  if(!PLANES[userPlan].inventario){el.innerHTML=lockedFeature('Inventario','Premium');return;}
+  if(userPlan!=='premium'&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Control de Inventario','Premium');return;}
   const estadoColor={bueno:'var(--green)',regular:'var(--orange)',malo:'var(--red)'};
   el.innerHTML=`<div class="header-row"><div class="page-title">Inventario</div><button class="btn btn-primary" onclick="openModal('modal-inventario')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
@@ -841,13 +782,13 @@ async function savePago(){
   const fechaFin=fechaPago+dias*86400000;
   await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,creadoEn:Date.now()});
   closeModal('modal-pago');
-  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
+  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();
 }
 function preRegPago(mid){populateMiembrosSelect(mid);document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];openModal('modal-pago');}
 function populateMiembrosSelect(selectedId=''){document.getElementById('p-miembro').innerHTML=miembros.map(m=>`<option value="${m.id}" ${m.id===selectedId?'selected':''}>#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');}
 
 // ASISTENCIA
-async function registrarAsistencia(mid){await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});await loadAsistencias();renderDashboard();renderAsistencia();renderEstadoCuenta();}
+async function registrarAsistencia(mid){await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});await loadAsistencias();renderDashboard();renderAsistencia();renderCorte();}
 
 // EMPLEADOS
 async function saveEmpleado(){const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,creadoEn:Date.now()};const editId=document.getElementById('edit-emp-id').value;if(editId)await updateDoc(userDoc('empleados',editId),data);else await addDoc(userCol('empleados'),data);closeModal('modal-empleado');await loadEmpleados();renderEmpleados();}
@@ -873,9 +814,9 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('cl
 
 // TABS
 function showTab(name,event){
-  const p=PLANES[userPlan];
-  const locked={alertas:!p.alertas,estadocuenta:!p.estadocuenta,corte:!p.corte,reportes:!p.reportes,empleados:!p.empleados,inventario:!p.inventario};
-  if(locked[name])return;
+  const libre=['dashboard','miembros','pagos','asistencia'];
+  const activa=userPlan==='premium'||libre.includes(name)||userFunciones.includes(name);
+  if(!activa)return;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
