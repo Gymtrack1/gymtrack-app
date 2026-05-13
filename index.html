@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GymTrack</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -108,6 +107,11 @@
   .plan-opt.active-sencillo{background:rgba(102,102,102,0.2);color:var(--text);border-color:var(--muted);}
   .plan-opt.active-pro{background:rgba(58,159,255,0.15);color:var(--blue);border-color:var(--blue);}
   .plan-opt.active-premium{background:rgba(232,255,58,0.15);color:var(--accent);border-color:var(--accent);}
+  .funcion-item{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;cursor:pointer;transition:all 0.2s;font-size:13px;}
+  .funcion-item:hover{border-color:var(--muted);}
+  .fi-on{background:rgba(232,255,58,0.06);border-color:var(--accent);}
+  .fi-check{width:18px;height:18px;border-radius:4px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;flex-shrink:0;transition:all 0.2s;}
+  .fi-on .fi-check{background:var(--accent);border-color:var(--accent);}
   /* ESTADO DE CUENTA */
   .ec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:20px;}
   .ec-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
@@ -180,8 +184,7 @@
   <button class="nav-btn" id="nav-pagos" onclick="showTab('pagos',event)">Pagos</button>
   <button class="nav-btn" id="nav-asistencia" onclick="showTab('asistencia',event)">Asistencia</button>
   <button class="nav-btn" id="nav-alertas" onclick="showTab('alertas',event)">Alertas</button>
-  <button class="nav-btn" id="nav-estadocuenta" onclick="showTab('estadocuenta',event)">Estado de Cuenta</button>
-  <button class="nav-btn" id="nav-corte" onclick="showTab('corte',event)">Corte</button>
+  <button class="nav-btn" id="nav-estadocuenta" onclick="showTab('estadocuenta',event)">Finanzas</button>
   <button class="nav-btn" id="nav-reportes" onclick="showTab('reportes',event)">Reportes</button>
   <button class="nav-btn" id="nav-empleados" onclick="showTab('empleados',event)">Empleados</button>
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
@@ -210,15 +213,7 @@
 
   <!-- MIEMBROS -->
   <div class="tab" id="tab-miembros">
-    <div class="header-row">
-      <div class="page-title">Miembros</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-excel').click()">📥 Importar Excel</button>
-        <button class="btn btn-ghost btn-sm" onclick="exportarExcel()">📤 Exportar Excel</button>
-        <button class="btn btn-primary" onclick="openModal('modal-miembro')">+ Nuevo Miembro</button>
-      </div>
-    </div>
-    <input type="file" id="import-excel" accept=".xlsx,.xls,.csv" style="display:none" onchange="importarExcel(this)">
+    <div class="header-row"><div class="page-title">Miembros</div><button class="btn btn-primary" onclick="openModal('modal-miembro')">+ Nuevo Miembro</button></div>
     <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar miembro..." id="search-miembros" oninput="filterMiembros()"></div>
     <div class="table-wrap">
       <table>
@@ -263,16 +258,11 @@
     <div id="alertas-content"></div>
   </div>
 
-  <!-- ESTADO DE CUENTA -->
+  <!-- FINANZAS -->
   <div class="tab" id="tab-estadocuenta">
-    <div class="page-title" style="margin-bottom:20px">Estado de Cuenta</div>
     <div id="estadocuenta-content"></div>
   </div>
-
-  <!-- CORTE -->
-  <div class="tab" id="tab-corte">
-    <div class="page-title" style="margin-bottom:20px">Corte</div>
-    <div id="corte-content"></div>
+<div id="corte-content"></div>
   </div>
 
   <!-- REPORTES -->
@@ -406,19 +396,6 @@
   </div>
 </div>
 
-
-<!-- MODAL IMPORTAR -->
-<div class="modal-overlay" id="modal-importar">
-  <div class="modal">
-    <h2>Importar Miembros</h2>
-    <div id="import-preview"></div>
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-importar')">Cancelar</button>
-      <button class="btn btn-primary" id="btn-confirmar-import" onclick="confirmarImport()">Importar todos</button>
-    </div>
-  </div>
-</div>
-
 <!-- MODAL NUEVO GYM -->
 <div class="modal-overlay" id="modal-nuevo-gym">
   <div class="modal">
@@ -438,11 +415,7 @@ let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[];
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 
-const PLANES={
-  sencillo:{alertas:false,estadocuenta:false,corte:false,reportes:false,empleados:false,inventario:false},
-  pro:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:false,inventario:false},
-  premium:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:true,inventario:true}
-};
+// planes legacy removed - now uses funciones array
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
@@ -456,45 +429,33 @@ window.addEventListener('firebaseReady',async()=>{
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
     const newPlan=snap.exists()?(snap.data().plan||'sencillo'):'sencillo';
-    const newFunciones=snap.exists()?(snap.data().funciones||[]):[];
-    const changed = newPlan!==userPlan || JSON.stringify(newFunciones)!==JSON.stringify(userFunciones);
-    if(changed){
-      userPlan=newPlan; userFunciones=newFunciones;
-      applyPlan();renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();renderCorte();
-    }
+    if(newPlan!==userPlan){userPlan=newPlan;applyPlan();renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();}
   });
   await loadPlan(); applyPlan(); await loadAll();
 });
 
-let userFunciones = [];
-
 async function loadPlan(){
   try{
     const snap=await getDoc(docFn(db,'usuarios',uid));
-    if(snap.exists()){
-      userPlan=snap.data().plan||'sencillo';
-      userFunciones=snap.data().funciones||[];
-    } else {
+    if(snap.exists()){userPlan=snap.data().plan||'sencillo';}
+    else{
       const email=window._auth.currentUser.email;
       const allSnap=await getDocs(col(db,'usuarios'));
       const match=allSnap.docs.find(d=>d.data().email===email);
-      if(match){const data=match.data();await setDoc(docFn(db,'usuarios',uid),{...data,uid});try{await deleteDoc(docFn(db,'usuarios',match.id));}catch(e){}userPlan=data.plan||'sencillo';userFunciones=data.funciones||[];}
-      else{await setDoc(docFn(db,'usuarios',uid),{email,plan:'sencillo',funciones:[],uid,creadoEn:Date.now()});userPlan='sencillo';userFunciones=[];}
+      if(match){const data=match.data();await setDoc(docFn(db,'usuarios',uid),{...data,uid});try{await deleteDoc(docFn(db,'usuarios',match.id));}catch(e){}userPlan=data.plan||'sencillo';}
+      else{await setDoc(docFn(db,'usuarios',uid),{email,plan:'sencillo',uid,creadoEn:Date.now()});userPlan='sencillo';}
     }
-  }catch(e){userPlan='sencillo';userFunciones=[];}
+  }catch(e){userPlan='sencillo';}
 }
 
 function applyPlan(){
+  const p=PLANES[userPlan];
   const badge=document.getElementById('plan-badge');
   badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
   badge.className=`plan-badge plan-${userPlan}`;
-  // For premium all unlocked, otherwise use funciones list
-  const allFuncs=['alertas','estadocuenta','corte','reportes','empleados','inventario','miembros','pagos','asistencia','dashboard'];
-  allFuncs.forEach(id=>{
+  ['alertas','estadocuenta','reportes','empleados','inventario','miembros','pagos','asistencia','dashboard'].forEach(id=>{
     const btn=document.getElementById('nav-'+id);
-    if(!btn) return;
-    const activa = userPlan==='premium' || userFunciones.includes(id);
-    if(!activa) btn.classList.add('locked'); else btn.classList.remove('locked');
+    if(!p[id])btn.classList.add('locked'); else btn.classList.remove('locked');
   });
 }
 
@@ -517,68 +478,10 @@ async function loadAdminGyms(){
   document.getElementById('a-premium').textContent=gyms.filter(g=>g.plan==='premium').length;
   const lista=document.getElementById('lista-gyms');
   if(!gyms.length){lista.innerHTML='<div class="empty"><div class="empty-icon">🏋️</div><div>No hay clientes registrados</div></div>';return;}
-  const FUNCIONES_LISTA = [
-    {id:'alertas',label:'Alertas'},
-    {id:'estadocuenta',label:'Estado de Cuenta'},
-    {id:'corte',label:'Corte'},
-    {id:'reportes',label:'Reportes'},
-    {id:'empleados',label:'Empleados'},
-    {id:'inventario',label:'Inventario'},
-    {id:'miembros',label:'Miembros'},
-    {id:'pagos',label:'Pagos'},
-    {id:'asistencia',label:'Asistencia'},
-    {id:'dashboard',label:'Dashboard'},
-  ];
-  const LIMITES = {sencillo:3, pro:7, premium:10};
-  lista.innerHTML=gyms.map(g=>{
-    const plan=g.plan||'sencillo';
-    const funciones=g.funciones||[];
-    const limite=LIMITES[plan];
-    const funcsHTML = FUNCIONES_LISTA.map(f=>{
-      const activa=funciones.includes(f.id);
-      const bloqueada=!activa&&funciones.length>=limite;
-      return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:${bloqueada?'not-allowed':'pointer'};color:${bloqueada?'var(--muted)':'var(--text)'}">
-        <input type="checkbox" data-gym="${g.id}" data-fn="${f.id}" ${activa?'checked':''} ${bloqueada?'disabled':''} onchange="toggleFuncion('${g.id}',this)" style="accent-color:var(--accent);width:14px;height:14px;">
-        ${f.label}
-      </label>`;
-    }).join('');
-    return`<div class="gym-card" style="flex-direction:column;align-items:flex-start;gap:12px">
-      <div style="display:flex;align-items:center;gap:14px;width:100%;flex-wrap:wrap">
-        <div style="flex:1"><div class="gym-email">${g.nombre||g.email}</div><div style="font-size:11px;color:var(--muted)">${g.email}</div></div>
-        <div class="plan-selector">
-          <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo (3)</button>
-          <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro (7)</button>
-          <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium (10)</button>
-        </div>
-        <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
-      </div>
-      <div style="width:100%">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Funciones activas: ${funciones.length}/${limite}</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px">${funcsHTML}</div>
-      </div>
-    </div>`;
-  }).join('');
+  lista.innerHTML=gyms.map(g=>{const plan=g.plan||'sencillo';return`<div class="gym-card"><div><div class="gym-email">${g.nombre||g.email}</div><div style="font-size:11px;color:var(--muted)">${g.email}</div></div><div class="plan-selector"><button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button><button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button><button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button></div><button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button></div>`;}).join('');
 }
 
 async function setPlan(uid,plan,btn){await updateDoc(docFn(db,'usuarios',uid),{plan});await loadAdminGyms();}
-
-async function toggleFuncion(gymId, checkbox){
-  const fn = checkbox.dataset.fn;
-  const snap = await getDoc(docFn(db,'usuarios',gymId));
-  if(!snap.exists()) return;
-  const data = snap.data();
-  const plan = data.plan||'sencillo';
-  const LIMITES = {sencillo:3, pro:7, premium:10};
-  let funciones = data.funciones||[];
-  if(checkbox.checked){
-    if(funciones.length >= LIMITES[plan]){ checkbox.checked=false; alert(`El plan ${plan} solo permite ${LIMITES[plan]} funciones.`); return; }
-    funciones = [...new Set([...funciones, fn])];
-  } else {
-    funciones = funciones.filter(f=>f!==fn);
-  }
-  await updateDoc(docFn(db,'usuarios',gymId),{funciones});
-  await loadAdminGyms();
-}
 async function delGym(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
 async function saveNuevoGym(){
   const email=document.getElementById('ng-email').value.trim();
@@ -603,7 +506,7 @@ async function doLogout(){await window._signOut(window._auth);}
 async function loadAll(){
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario()]);
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();
-  renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();renderEmpleados();renderInventario();
+  renderAlertas();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
 }
 async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));}
 async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));}
@@ -665,7 +568,7 @@ function renderAsistencia(){
 // ALERTAS + WHATSAPP
 function renderAlertas(){
   const el=document.getElementById('alertas-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas','Pro');return;}
+  if(!PLANES[userPlan].alertas){el.innerHTML=lockedFeature('Alertas','Pro');return;}
   const vencidos=miembros.filter(m=>getEstado(m.id)==='vencido');
   const en3=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>=0&&d<=3;});
   const en7=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>3&&d<=7;});
@@ -695,98 +598,143 @@ function enviarWhatsAppTodos(){
   urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
 }
 
-// ESTADO DE CUENTA
+// FINANZAS (Estado de Cuenta + Corte unificados)
 function renderEstadoCuenta(){
   const el=document.getElementById('estadocuenta-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta','Pro');return;}
+  if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Finanzas','Pro');return;}
+
   const hoy=new Date();
-  const mesActual=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
-  const realMes=mesActual.reduce((s,p)=>s+p.monto,0);
-  // Proyección: miembros activos * monto promedio
-  const montosActivos=miembros.filter(m=>getEstado(m.id)==='activo').map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;});
-  const proyMes=montosActivos.reduce((s,v)=>s+v,0);
+  const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+  const inicioSemana=new Date(hoy); inicioSemana.setDate(hoy.getDate()-hoy.getDay()); inicioSemana.setHours(0,0,0,0);
+
+  // — Datos —
+  const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
+  const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
+  const pagosHoy=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoy.toDateString());
+  const totalMes=pagosMes.reduce((s,p)=>s+p.monto,0);
+  const totalSemana=pagosSemana.reduce((s,p)=>s+p.monto,0);
+  const totalHoy=pagosHoy.reduce((s,p)=>s+p.monto,0);
   const totalHistorico=pagos.reduce((s,p)=>s+p.monto,0);
-  const miembrosConDeuda=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
-  const deudaPotencial=miembrosConDeuda.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
+
+  const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime()).length;
+  const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime()).length;
+  const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
+
+  const activos=miembros.filter(m=>getEstado(m.id)==='activo');
+  const vencidos=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
+  const porVencer=miembros.filter(m=>getEstado(m.id)==='por-vencer');
+  const proyeccion=activos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
+  const porRecuperar=vencidos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
+
+  const nuevosMes=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioMes.getTime()).length;
+  const nuevosSemana=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioSemana.getTime()).length;
+
+  // — Ticket promedio —
+  const ticketProm=pagosMes.length?Math.round(totalMes/pagosMes.length):0;
+
+  // — Mes anterior para comparativa —
+  const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1);
+  const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59);
+  const pagosMesAnt=pagos.filter(p=>p.fechaPago>=inicioMesAnt.getTime()&&p.fechaPago<=finMesAnt.getTime());
+  const totalMesAnt=pagosMesAnt.reduce((s,p)=>s+p.monto,0);
+  const diffMes=totalMesAnt>0?Math.round(((totalMes-totalMesAnt)/totalMesAnt)*100):null;
+  const diffColor=diffMes===null?'var(--muted)':diffMes>=0?'var(--green)':'var(--red)';
+  const diffStr=diffMes===null?'':`<span style="color:${diffColor};font-size:12px;font-weight:700">${diffMes>=0?'▲':'▼'} ${Math.abs(diffMes)}% vs mes anterior</span>`;
 
   el.innerHTML=`
-  <div class="ec-grid">
-    <div class="ec-card">
-      <h3>💰 REAL — Lo cobrado</h3>
-      <div class="ec-row"><span>Este mes</span><span class="ec-val" style="color:var(--green)">$${realMes.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Pagos este mes</span><span class="ec-val">${mesActual.length}</span></div>
-      <div class="ec-row"><span>Total histórico</span><span class="ec-val">$${totalHistorico.toLocaleString()}</span></div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
+  <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+
+  <!-- KPIs principales -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px">
+    <div class="stat-card" style="border-left:3px solid var(--green)">
+      <div class="stat-label">Ingresos Este Mes</div>
+      <div class="stat-num green">$${totalMes.toLocaleString()}</div>
+      <div style="margin-top:6px">${diffStr}</div>
     </div>
-    <div class="ec-card">
-      <h3>📈 PROYECCIÓN — Lo esperado</h3>
-      <div class="ec-row"><span>Miembros activos</span><span class="ec-val">${miembros.filter(m=>getEstado(m.id)==='activo').length}</span></div>
-      <div class="ec-row"><span>Ingresos esperados</span><span class="ec-val" style="color:var(--accent)">$${proyMes.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Por recuperar (vencidos)</span><span class="ec-val" style="color:var(--red)">$${deudaPotencial.toLocaleString()}</span></div>
+    <div class="stat-card" style="border-left:3px solid var(--accent)">
+      <div class="stat-label">Proyección Mes</div>
+      <div class="stat-num accent">$${proyeccion.toLocaleString()}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:6px">${activos.length} miembros activos</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid var(--red)">
+      <div class="stat-label">Por Recuperar</div>
+      <div class="stat-num red">$${porRecuperar.toLocaleString()}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:6px">${vencidos.length} membresías vencidas</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid var(--blue)">
+      <div class="stat-label">Ticket Promedio</div>
+      <div class="stat-num blue">$${ticketProm.toLocaleString()}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:6px">${pagosMes.length} pagos este mes</div>
     </div>
   </div>
-  <div class="section-title">Detalle de Pagos Este Mes</div>
-  ${mesActual.length?`<div class="table-wrap"><table><thead><tr><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha</th></tr></thead><tbody>${mesActual.sort((a,b)=>b.fechaPago-a.fechaPago).map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">💳</div><div>Sin pagos este mes</div></div>'}`;
-}
 
-// CORTE
-function renderCorte(){
-  const el=document.getElementById('corte-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('corte')){el.innerHTML=lockedFeature('Corte','Pro');return;}
-  const hoy=new Date();
-  // Semanal
-  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
-  const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
-  const totalSemana=pagosSemana.reduce((s,p)=>s+p.monto,0);
-  const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime());
-  // Mensual
-  const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
-  const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
-  const totalMes=pagosMes.reduce((s,p)=>s+p.monto,0);
-  const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime());
-  // Nuevos miembros
-  const nuevosSemana=miembros.filter(m=>m.creadoEn>=inicioSemana.getTime()).length;
-  const nuevosMes=miembros.filter(m=>m.creadoEn>=inicioMes.getTime()).length;
-
-  el.innerHTML=`
-  <div class="ec-grid">
+  <!-- Cortes -->
+  <div class="section-title">Resumen por Período</div>
+  <div class="ec-grid" style="margin-bottom:24px">
     <div class="ec-card">
-      <h3>📅 CORTE SEMANAL</h3>
-      <div class="ec-row"><span>Ingresos semana</span><span class="ec-val" style="color:var(--green)">$${totalSemana.toLocaleString()}</span></div>
+      <h3>📅 HOY — ${hoy.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'})}</h3>
+      <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosHoy.length}</span></div>
+      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistHoy}</span></div>
+    </div>
+    <div class="ec-card">
+      <h3>📆 ESTA SEMANA</h3>
+      <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalSemana.toLocaleString()}</span></div>
       <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosSemana.length}</span></div>
-      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana.length}</span></div>
+      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistSemana}</span></div>
       <div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosSemana}</span></div>
     </div>
     <div class="ec-card">
-      <h3>🗓️ CORTE MENSUAL</h3>
-      <div class="ec-row"><span>Ingresos mes</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Pagos registrados</span><span class="ec-val">${pagosMes.length}</span></div>
-      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistMes.length}</span></div>
+      <h3>🗓️ ESTE MES</h3>
+      <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${totalMes.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Mes anterior</span><span class="ec-val">$${totalMesAnt.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Asistencias</span><span class="ec-val">${asistMes}</span></div>
       <div class="ec-row"><span>Nuevos miembros</span><span class="ec-val">${nuevosMes}</span></div>
     </div>
+    <div class="ec-card">
+      <h3>📊 HISTÓRICO</h3>
+      <div class="ec-row"><span>Total cobrado</span><span class="ec-val" style="color:var(--green)">$${totalHistorico.toLocaleString()}</span></div>
+      <div class="ec-row"><span>Total miembros</span><span class="ec-val">${miembros.length}</span></div>
+      <div class="ec-row"><span>Total pagos</span><span class="ec-val">${pagos.length}</span></div>
+      <div class="ec-row"><span>Total asistencias</span><span class="ec-val">${asistencias.length}</span></div>
+    </div>
   </div>
-  <div class="section-title">Registro Diario — Hoy</div>
-  ${renderRegistroDiario()}`;
+
+  <!-- Estado de cartera -->
+  <div class="section-title">Estado de Cartera</div>
+  <div class="ec-grid" style="margin-bottom:24px">
+    <div class="ec-card">
+      <h3>💚 AL CORRIENTE (${activos.length})</h3>
+      ${activos.length?activos.slice(0,8).map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);const monto=ps.length?ps[0].monto:0;return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span class="ec-val" style="color:var(--green)">$${monto.toLocaleString()}</span></div>`;}).join('')+(activos.length>8?`<div style="color:var(--muted);font-size:12px;padding:6px 0">+${activos.length-8} más...</div>`:''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin miembros activos</div>'}
+    </div>
+    <div class="ec-card">
+      <h3>🟡 POR VENCER (${porVencer.length})</h3>
+      ${porVencer.length?porVencer.map(m=>{const d=diasRestantes(getVencimiento(m.id));return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span style="color:var(--orange);font-weight:700">${d}d</span></div>`;}).join(''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Ninguno por vencer</div>'}
+    </div>
+    <div class="ec-card">
+      <h3>🔴 VENCIDOS — $${porRecuperar.toLocaleString()} potencial</h3>
+      ${vencidos.length?vencidos.slice(0,8).map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);const monto=ps.length?ps[0].monto:0;return`<div class="ec-row"><span>#${fmtNum(m.numero||0)} ${m.nombre}</span><span class="ec-val" style="color:var(--red)">$${monto.toLocaleString()}</span></div>`;}).join('')+(vencidos.length>8?`<div style="color:var(--muted);font-size:12px;padding:6px 0">+${vencidos.length-8} más...</div>`:''):'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin vencidos</div>'}
+    </div>
+  </div>
+
+  <!-- Detalle de pagos del mes -->
+  <div class="section-title">Pagos Registrados Este Mes (${pagosMes.length})</div>
+  ${pagosMes.length?`<div class="table-wrap"><table>
+    <thead><tr><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
+    <tbody>${pagosMes.sort((a,b)=>b.fechaPago-a.fechaPago).map(p=>{
+      const m=miembros.find(x=>x.id===p.miembroId);
+      return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td style="color:var(--green);font-weight:700">$${p.monto.toLocaleString()}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;
+    }).join('')}</tbody>
+  </table></div>`:'<div class="empty"><div class="empty-icon">💳</div><div>Sin pagos este mes</div></div>'}`;
 }
 
-function renderRegistroDiario(){
-  const hoyStr=new Date().toDateString();
-  const hoyAsist=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).sort((a,b)=>b.fecha-a.fecha);
-  const hoyPagos=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoyStr).sort((a,b)=>b.fechaPago-a.fechaPago);
-  let html='<div class="ec-grid">';
-  html+=`<div class="ec-card"><h3>🏃 Asistencias Hoy (${hoyAsist.length})</h3>`;
-  if(!hoyAsist.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin asistencias hoy</div>';
-  else html+=hoyAsist.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span style="color:var(--muted);font-size:12px">${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span></div>`;}).join('');
-  html+=`</div><div class="ec-card"><h3>💳 Pagos Hoy (${hoyPagos.length}) — $${hoyPagos.reduce((s,p)=>s+p.monto,0).toLocaleString()}</h3>`;
-  if(!hoyPagos.length)html+='<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin pagos hoy</div>';
-  else html+=hoyPagos.map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<div class="ec-row"><span>${m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'—'}</span><span class="ec-val" style="color:var(--green)">$${p.monto}</span></div>`;}).join('');
-  html+='</div></div>';
-  return html;
-}
+function renderCorte(){renderEstadoCuenta();}
 
 // REPORTES
 function renderReportes(){
   const el=document.getElementById('reportes-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes','Pro');return;}
+  if(!PLANES[userPlan].reportes){el.innerHTML=lockedFeature('Reportes','Pro');return;}
   const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
   const hoy=new Date();
   const pagosMes=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
@@ -815,7 +763,7 @@ function renderReportes(){
 // EMPLEADOS
 function renderEmpleados(){
   const el=document.getElementById('empleados-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Empleados','Premium');return;}
+  if(!PLANES[userPlan].empleados){el.innerHTML=lockedFeature('Empleados','Premium');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
   <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
@@ -824,7 +772,7 @@ function renderEmpleados(){
 // INVENTARIO
 function renderInventario(){
   const el=document.getElementById('inventario-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Inventario','Premium');return;}
+  if(!PLANES[userPlan].inventario){el.innerHTML=lockedFeature('Inventario','Premium');return;}
   const estadoColor={bueno:'var(--green)',regular:'var(--orange)',malo:'var(--red)'};
   el.innerHTML=`<div class="header-row"><div class="page-title">Inventario</div><button class="btn btn-primary" onclick="openModal('modal-inventario')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
@@ -893,13 +841,13 @@ async function savePago(){
   const fechaFin=fechaPago+dias*86400000;
   await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,creadoEn:Date.now()});
   closeModal('modal-pago');
-  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();
+  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
 }
 function preRegPago(mid){populateMiembrosSelect(mid);document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];openModal('modal-pago');}
 function populateMiembrosSelect(selectedId=''){document.getElementById('p-miembro').innerHTML=miembros.map(m=>`<option value="${m.id}" ${m.id===selectedId?'selected':''}>#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');}
 
 // ASISTENCIA
-async function registrarAsistencia(mid){await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});await loadAsistencias();renderDashboard();renderAsistencia();renderCorte();}
+async function registrarAsistencia(mid){await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});await loadAsistencias();renderDashboard();renderAsistencia();renderEstadoCuenta();}
 
 // EMPLEADOS
 async function saveEmpleado(){const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,creadoEn:Date.now()};const editId=document.getElementById('edit-emp-id').value;if(editId)await updateDoc(userDoc('empleados',editId),data);else await addDoc(userCol('empleados'),data);closeModal('modal-empleado');await loadEmpleados();renderEmpleados();}
@@ -910,159 +858,6 @@ function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;docu
 async function saveInventario(){const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};const editId=document.getElementById('edit-inv-id').value;if(editId)await updateDoc(userDoc('inventario',editId),data);else await addDoc(userCol('inventario'),data);closeModal('modal-inventario');await loadInventario();renderInventario();}
 async function delInventario(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario();}
 function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
-
-
-// IMPORTAR / EXPORTAR EXCEL
-let datosImport = [];
-
-function importarExcel(input){
-  const file = input.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const data = new Uint8Array(e.target.result);
-    const wb = XLSX.read(data, {type:'array'});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    // Try parsing with header row auto-detection
-    // First try normal parse
-    let rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-    // If no rows or first row looks like a title (no 'nombre' column), try skipping rows
-    if(!rows.length || !Object.keys(rows[0]).some(k=>k.toLowerCase().includes('nombre')||k.toLowerCase().includes('name')||k.toLowerCase().includes('usuario')||k.toLowerCase().includes('miembro'))) {
-      // Try finding the header row manually
-      const range = XLSX.utils.decode_range(ws['!ref']||'A1');
-      let headerRow = 0;
-      for(let r=0; r<=Math.min(5, range.e.r); r++){
-        const cell = ws[XLSX.utils.encode_cell({r,c:0})];
-        if(cell && cell.v && String(cell.v).length < 30 && !String(cell.v).includes('—')){
-          // Check if this row has multiple short values (likely a header)
-          let shortCount = 0;
-          for(let c=0; c<=range.e.c; c++){
-            const cc = ws[XLSX.utils.encode_cell({r,c})];
-            if(cc && String(cc.v).length < 25) shortCount++;
-          }
-          if(shortCount >= 3){ headerRow = r; break; }
-        }
-      }
-      rows = XLSX.utils.sheet_to_json(ws, {defval:'', range: headerRow});
-    }
-    if(!rows.length){ alert('El archivo está vacío o no se pudo leer'); return; }
-    // Map columns flexibly
-    datosImport = rows.map((r,i) => {
-      const get = (alts) => { for(const a of alts){ const k=Object.keys(r).find(k=>String(k).toLowerCase().includes(a)); if(k&&r[k])return String(r[k]).trim(); } return ''; };
-      return {
-        nombre: get(['nombre','name','member','usuario','miembro','cliente']),
-        telefono: get(['tel','phone','celular','movil','cel','fono']),
-        correo: get(['correo','email','mail','e-mail']),
-        edad: get(['edad','age','años']),
-        direccion: get(['dir','address','calle','domicilio']),
-        notas: get(['nota','note','obs','comment','coment']),
-        plan: get(['plan','membresia','membership','tipo']),
-        monto: get(['monto','precio','costo','amount','price','cobro']),
-        fecha_pago: get(['fecha_pago','fechapago','fecha pago','payment','pago']),
-        fecha_vencimiento: get(['fecha_venc','vencimiento','vence','expira','expiry','hasta','vigencia']),
-      };
-    }).filter(r=>r.nombre);
-
-    const preview = document.getElementById('import-preview');
-    preview.innerHTML = `
-      <div style="margin-bottom:14px;color:var(--muted);font-size:13px">Se encontraron <strong style="color:var(--accent)">${datosImport.length} miembros</strong>. Revisa antes de importar:</div>
-      <div style="max-height:300px;overflow-y:auto">
-        <table style="width:100%">
-          <thead><tr><th>Nombre</th><th>Teléfono</th><th>Plan</th><th>Vence</th></tr></thead>
-          <tbody>${datosImport.map(m=>`<tr><td>${m.nombre}</td><td>${m.telefono||'—'}</td><td>${m.plan||'—'}</td><td>${m.fecha_vencimiento||'—'}</td></tr>`).join('')}</tbody>
-        </table>
-      </div>`;
-    openModal('modal-importar');
-    input.value='';
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function parseFecha(str){
-  if(!str) return null;
-  // Try DD/MM/YYYY or MM/DD/YYYY or YYYY-MM-DD
-  const s = String(str).trim();
-  const parts = s.split(/[\/\-\.]/);
-  if(parts.length===3){
-    let d,m,y;
-    if(parts[2].length===4){ d=parseInt(parts[0]); m=parseInt(parts[1])-1; y=parseInt(parts[2]); }
-    else { y=parseInt(parts[0]); m=parseInt(parts[1])-1; d=parseInt(parts[2]); }
-    const date = new Date(y,m,d,12,0,0);
-    if(!isNaN(date.getTime())) return date.getTime();
-  }
-  // Try Excel serial number
-  if(!isNaN(str)){
-    const excelDate = new Date((parseInt(str)-25569)*86400000);
-    if(!isNaN(excelDate.getTime())) return excelDate.getTime();
-  }
-  return null;
-}
-
-async function confirmarImport(){
-  if(!datosImport.length) return;
-  const btn = document.getElementById('btn-confirmar-import');
-  btn.textContent = 'Importando...'; btn.disabled = true;
-  const maxNum = miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
-  const planNames = {'quincenal':'Quincenal','mensual':'Mensual','bimestral':'Bimestral','trimestral':'Trimestral','semestral':'Semestral','anual':'Anual'};
-  
-  for(let i=0; i<datosImport.length; i++){
-    const d = datosImport[i];
-    // Save member
-    const miembroRef = await addDoc(userCol('miembros'), {
-      nombre: d.nombre,
-      telefono: d.telefono||'',
-      correo: d.correo||'',
-      edad: d.edad?parseInt(d.edad):null,
-      direccion: d.direccion||'',
-      notas: d.notas||'',
-      numero: maxNum+i+1,
-      creadoEn: Date.now()
-    });
-
-    // Save payment if dates exist
-    const fechaPago = parseFecha(d.fecha_pago);
-    const fechaFin = parseFecha(d.fecha_vencimiento);
-    if(fechaPago && fechaFin){
-      const planKey = (d.plan||'mensual').toLowerCase();
-      const planNombre = planNames[planKey] || d.plan || 'Mensual';
-      const monto = parseFloat(d.monto)||0;
-      await addDoc(userCol('pagos'),{
-        miembroId: miembroRef.id,
-        monto,
-        planNombre,
-        diasPlan: Math.round((fechaFin-fechaPago)/86400000),
-        fechaPago,
-        fechaFin,
-        creadoEn: Date.now()
-      });
-    }
-  }
-  closeModal('modal-importar');
-  btn.textContent='Importar todos'; btn.disabled=false;
-  await loadAll();
-  alert(`✅ ${datosImport.length} miembros importados correctamente`);
-  datosImport=[];
-}
-
-function exportarExcel(){
-  if(!miembros.length){ alert('No hay miembros para exportar'); return; }
-  const rows = miembros.map(m=>({
-    'No.': m.numero||'',
-    'Nombre': m.nombre,
-    'Teléfono': m.telefono||'',
-    'Correo': m.correo||'',
-    'Edad': m.edad||'',
-    'Dirección': m.direccion||'',
-    'Plan Membresía': getUltimoPlan(m.id),
-    'Vencimiento': fmtDate(getVencimiento(m.id)),
-    'Estado': getEstado(m.id),
-    'Notas': m.notas||'',
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Miembros');
-  XLSX.writeFile(wb, `miembros_gymtrack_${new Date().toLocaleDateString('es-MX').replace(/\//g,'-')}.xlsx`);
-}
 
 // MODALES
 function openModal(id){
@@ -1078,8 +873,9 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('cl
 
 // TABS
 function showTab(name,event){
-  const activa = userPlan==='premium' || userFunciones.includes(name) || ['dashboard','miembros','pagos','asistencia'].includes(name);
-  if(!activa)return;
+  const p=PLANES[userPlan];
+  const locked={alertas:!p.alertas,estadocuenta:!p.estadocuenta,corte:!p.corte,reportes:!p.reportes,empleados:!p.empleados,inventario:!p.inventario};
+  if(locked[name])return;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
