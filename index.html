@@ -130,10 +130,6 @@
   .perfil-field{background:var(--surface2);border-radius:8px;padding:10px 12px;}
   .perfil-field-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;}
   .perfil-field-val{font-size:14px;font-weight:500;}
-  /* TASA RENOVACION */
-  .tasa-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;}
-  .tasa-ring svg{position:absolute;top:0;left:0;transform:rotate(-90deg);}
-  .tasa-ring-num{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--accent);position:relative;z-index:1;}
   /* INV TABS */
   .inv-tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--surface2);padding:4px;border-radius:10px;width:fit-content;}
   .inv-tab-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:7px 18px;border-radius:7px;cursor:pointer;transition:all 0.2s;}
@@ -143,9 +139,16 @@
   .stock-ok{color:var(--green);font-weight:700;}
   .stock-low{color:var(--orange);font-weight:700;}
   .stock-out{color:var(--red);font-weight:700;}
+  /* TOAST */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:all 0.3s;pointer-events:none;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  #toast.toast-ok{border-color:var(--green);color:var(--green);}
+  #toast.toast-err{border-color:var(--red);color:var(--red);}
 </style>
 </head>
 <body>
+
+<div id="toast"></div>
 
 <!-- LOGIN -->
 <div id="login-screen">
@@ -438,10 +441,10 @@
 <div class="modal-overlay" id="modal-venta">
   <div class="modal">
     <h2>Registrar Venta</h2>
-    <div class="form-group"><label>Producto</label><select id="v-producto"></select></div>
+    <div class="form-group"><label>Producto</label><select id="v-producto" onchange="onProductoChange()"></select></div>
     <div class="form-row">
-      <div class="form-group"><label>Cantidad</label><input type="number" id="v-cantidad" placeholder="1" min="1" value="1"></div>
-      <div class="form-group"><label>Precio unitario ($)</label><input type="number" id="v-precio" placeholder="0"></div>
+      <div class="form-group"><label>Cantidad</label><input type="number" id="v-cantidad" placeholder="1" min="1" value="1" oninput="updateVentaTotal()"></div>
+      <div class="form-group"><label>Precio unitario ($)</label><input type="number" id="v-precio" placeholder="0" oninput="updateVentaTotal()"></div>
     </div>
     <div class="form-group"><label>Miembro (opcional)</label><select id="v-miembro"><option value="">— Sin miembro —</option></select></div>
     <div id="v-total-preview" style="text-align:right;font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);margin-top:8px">Total: $0</div>
@@ -472,14 +475,26 @@ let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 let userFunciones=[];
 
+// FIX 1: PLANES ahora se usa correctamente en applyPlan() y showTab()
 const PLANES={
-  sencillo:{alertas:false,estadocuenta:false,corte:false,reportes:false,empleados:false,inventario:false},
-  pro:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:false,inventario:false},
-  premium:{alertas:true,estadocuenta:true,corte:true,reportes:true,empleados:true,inventario:true}
+  sencillo:{alertas:false,estadocuenta:false,reportes:false,empleados:false,inventario:false},
+  pro:{alertas:true,estadocuenta:true,reportes:true,empleados:false,inventario:false},
+  premium:{alertas:true,estadocuenta:true,reportes:true,empleados:true,inventario:true}
 };
+
+// FIX 2: Tabs siempre libres sin importar el plan
+const TABS_LIBRES=['dashboard','miembros','pagos','asistencia'];
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
+
+// FIX 3: Toast helper para reemplazar alerts molestos en operaciones exitosas
+function toast(msg,tipo='ok'){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='show toast-'+tipo;
+  setTimeout(()=>el.className='',2800);
+}
 
 window.addEventListener('firebaseReady',async()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
@@ -488,9 +503,14 @@ window.addEventListener('firebaseReady',async()=>{
   const onSnapshot=window._onSnapshot;
   uid=window._auth.currentUser.uid;
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // FIX 4: onSnapshot correctamente actualiza plan y re-renderiza todo
   onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
     const newPlan=snap.exists()?(snap.data().plan||'sencillo'):'sencillo';
-    if(newPlan!==userPlan){userPlan=newPlan;applyPlan();renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();renderCorte();}
+    if(newPlan!==userPlan){
+      userPlan=newPlan;
+      applyPlan();
+      renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
+    }
   });
   await loadPlan(); applyPlan(); await loadAll();
 });
@@ -509,15 +529,18 @@ async function loadPlan(){
   }catch(e){userPlan='sencillo';}
 }
 
+// FIX 5: applyPlan ahora usa el objeto PLANES correctamente
 function applyPlan(){
   const badge=document.getElementById('plan-badge');
   badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
   badge.className=`plan-badge plan-${userPlan}`;
-  ['dashboard','miembros','pagos','asistencia','alertas','estadocuenta','reportes','empleados','inventario'].forEach(id=>{
-    const btn=document.getElementById('nav-'+id);
+  const planActual=PLANES[userPlan]||PLANES.sencillo;
+  ['alertas','estadocuenta','reportes','empleados','inventario'].forEach(feature=>{
+    const btn=document.getElementById('nav-'+feature);
     if(!btn)return;
-    const activa=userPlan==='premium'||userFunciones.includes(id);
-    if(!activa)btn.classList.add('locked'); else btn.classList.remove('locked');
+    const activa=planActual[feature]||userFunciones.includes(feature);
+    if(activa)btn.classList.remove('locked');
+    else btn.classList.add('locked');
   });
 }
 
@@ -532,19 +555,60 @@ window.addEventListener('adminReady',async()=>{
 });
 
 async function loadAdminGyms(){
+  const ADMIN_EMAIL_LOCAL='luismolinac06@gmail.com';
   const snap=await getDocs(col(db,'usuarios'));
-  const gyms=snap.docs.map(d=>({id:d.id,...d.data()})).filter(g=>g.email);
+  const todos=snap.docs.map(d=>({id:d.id,...d.data()}));
+
+  // Incluir cualquier doc que tenga email Y no sea la cuenta admin
+  // También incluir docs con uid si tienen email diferente al admin
+  const gyms=todos.filter(g=>{
+    if(!g.email)return false;                        // sin email = doc inválido
+    if(g.email===ADMIN_EMAIL_LOCAL)return false;     // excluir al propio admin
+    return true;
+  });
+
+  // Debug: mostrar en consola todos los docs para diagnóstico
+  console.log('Todos los docs en /usuarios:', todos.map(d=>({id:d.id,email:d.email,plan:d.plan})));
+  console.log('Clientes filtrados:', gyms.map(g=>({id:g.id,email:g.email,plan:g.plan})));
+
   document.getElementById('a-total').textContent=gyms.length;
   document.getElementById('a-sencillo').textContent=gyms.filter(g=>(!g.plan||g.plan==='sencillo')).length;
   document.getElementById('a-pro').textContent=gyms.filter(g=>g.plan==='pro').length;
   document.getElementById('a-premium').textContent=gyms.filter(g=>g.plan==='premium').length;
   const lista=document.getElementById('lista-gyms');
-  if(!gyms.length){lista.innerHTML='<div class="empty"><div class="empty-icon">🏋️</div><div>No hay clientes registrados</div></div>';return;}
-  lista.innerHTML=gyms.map(g=>{const plan=g.plan||'sencillo';return`<div class="gym-card"><div><div class="gym-email">${g.nombre||g.email}</div><div style="font-size:11px;color:var(--muted)">${g.email}</div></div><div class="plan-selector"><button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button><button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button><button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button></div><button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button></div>`;}).join('');
+  if(!gyms.length){
+    // Mostrar diagnóstico si no hay clientes
+    const sinAdmin=todos.filter(g=>g.email!==ADMIN_EMAIL_LOCAL);
+    lista.innerHTML=`<div class="empty">
+      <div class="empty-icon">🏋️</div>
+      <div>No hay clientes registrados</div>
+      ${sinAdmin.length?`<div style="margin-top:12px;font-size:12px;color:var(--orange)">Se encontraron ${sinAdmin.length} documentos sin email válido en Firestore.<br>Revisa la consola del navegador (F12) para ver los detalles.</div>`:''}
+      <div style="margin-top:8px;font-size:11px;color:var(--muted)">Total docs en /usuarios: ${todos.length}</div>
+    </div>`;
+    return;
+  }
+  lista.innerHTML=gyms.map(g=>{
+    const plan=g.plan||'sencillo';
+    const displayName=g.nombre||g.email||g.id;
+    const displayEmail=g.email||(g.pendiente?'Pendiente de primer login':'—');
+    return`<div class="gym-card">
+      <div>
+        <div class="gym-email">${displayName}</div>
+        <div style="font-size:11px;color:var(--muted)">${displayEmail}</div>
+        ${g.pendiente?'<span style="font-size:10px;background:rgba(255,170,58,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
+      </div>
+      <div class="plan-selector">
+        <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button>
+        <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button>
+        <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
+    </div>`;
+  }).join('');
 }
 
 async function setPlan(uid,plan,btn){await updateDoc(docFn(db,'usuarios',uid),{plan});await loadAdminGyms();}
-async function delGym(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
+async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
 async function saveNuevoGym(){
   const email=document.getElementById('ng-email').value.trim();
   const plan=document.getElementById('ng-plan').value;
@@ -568,7 +632,7 @@ async function doLogout(){await window._signOut(window._auth);}
 async function loadAll(){
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas()]);
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();
-  renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();renderEmpleados();renderInventario();
+  renderAlertas();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
 }
 async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));}
 async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));}
@@ -586,24 +650,18 @@ function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
 function fmtNum(n){return String(n).padStart(3,'0');}
 function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
 
-// ── TASA DE RENOVACIÓN ──────────────────────────────────────────────────────
 function calcTasaRenovacion(){
   const hoy=new Date();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1).getTime();
   const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59).getTime();
   const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1).getTime();
-  // Miembros que vencieron el mes anterior
   const vencieronMesAnt=miembros.filter(m=>{
     const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaFin-a.fechaFin);
     if(!ps.length)return false;
-    // El pago más reciente ANTES del mes actual terminó en el mes anterior
     const pagoAnt=ps.find(p=>p.fechaFin>=inicioMesAnt&&p.fechaFin<=finMesAnt);
     return !!pagoAnt;
   });
-  // De esos, cuántos renovaron este mes
-  const renovaron=vencieronMesAnt.filter(m=>{
-    return pagos.some(p=>p.miembroId===m.id&&p.fechaPago>=inicioMes);
-  });
+  const renovaron=vencieronMesAnt.filter(m=>{return pagos.some(p=>p.miembroId===m.id&&p.fechaPago>=inicioMes);});
   const tasa=vencieronMesAnt.length>0?Math.round((renovaron.length/vencieronMesAnt.length)*100):null;
   return{tasa,renovaron:renovaron.length,total:vencieronMesAnt.length};
 }
@@ -651,10 +709,11 @@ function renderAsistencia(){
   hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
 }
 
-// ALERTAS + WHATSAPP
+// ALERTAS
 function renderAlertas(){
   const el=document.getElementById('alertas-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','Pro');return;}
+  // FIX 6: usar PLANES correctamente
+  if(!PLANES[userPlan]?.alertas&&!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','Pro');return;}
   const vencidos=miembros.filter(m=>getEstado(m.id)==='vencido');
   const en3=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>=0&&d<=3;});
   const en7=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>3&&d<=7;});
@@ -684,10 +743,11 @@ function enviarWhatsAppTodos(){
   urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
 }
 
-// ── FINANZAS ─────────────────────────────────────────────────────────────────
+// FINANZAS
 function renderEstadoCuenta(){
   const el=document.getElementById('estadocuenta-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','Pro');return;}
+  // FIX 7: usar PLANES correctamente
+  if(!PLANES[userPlan]?.estadocuenta&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','Pro');return;}
   const hoy=new Date();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
   const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
@@ -715,21 +775,10 @@ function renderEstadoCuenta(){
   const diffMes=totalMesAnt>0?Math.round(((totalMes-totalMesAnt)/totalMesAnt)*100):null;
   const diffColor=diffMes===null?'var(--muted)':diffMes>=0?'var(--green)':'var(--red)';
   const diffStr=diffMes===null?'':`<span style="color:${diffColor};font-size:12px;font-weight:700">${diffMes>=0?'▲':'▼'} ${Math.abs(diffMes)}% vs mes anterior</span>`;
-
-  // Tasa de renovación
   const {tasa,renovaron,total}=calcTasaRenovacion();
   const tasaColor=tasa===null?'var(--muted)':tasa>=70?'var(--green)':tasa>=40?'var(--orange)':'var(--red)';
   const tasaNum=tasa===null?'—':tasa+'%';
-  const circumference=2*Math.PI*34;
-  const dashoffset=tasa===null?circumference:circumference-(tasa/100)*circumference;
-  const tasaCard=`<div class="stat-card" style="border-left:3px solid ${tasaColor}">
-    <div class="stat-label">Tasa de Renovación</div>
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:1;color:${tasaColor};margin:6px 0 4px">${tasaNum}</div>
-    <div style="font-size:12px;font-weight:600;color:var(--text)">${tasa===null?'Sin datos aún':renovaron+' de '+total+' renovaron'}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:3px">Membresías vencidas el mes pasado que renovaron</div>
-  </div>`;
-
-  // Ventas tienda este mes
+  const tasaCard=`<div class="stat-card" style="border-left:3px solid ${tasaColor}"><div class="stat-label">Tasa de Renovación</div><div style="font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:1;color:${tasaColor};margin:6px 0 4px">${tasaNum}</div><div style="font-size:12px;font-weight:600;color:var(--text)">${tasa===null?'Sin datos aún':renovaron+' de '+total+' renovaron'}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Membresías vencidas el mes pasado que renovaron</div></div>`;
   const ventasMes=ventas.filter(v=>v.fecha>=inicioMes.getTime());
   const totalVentasMes=ventasMes.reduce((s,v)=>s+(v.total||0),0);
 
@@ -759,12 +808,11 @@ function renderEstadoCuenta(){
   ${pagosMes.length?`<div class="table-wrap"><table><thead><tr><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead><tbody>${pagosMes.sort((a,b)=>b.fechaPago-a.fechaPago).map(p=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td style="color:var(--green);font-weight:700">$${p.monto.toLocaleString()}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">💳</div><div>Sin pagos este mes</div></div>'}`;
 }
 
-function renderCorte(){renderEstadoCuenta();}
-
 // REPORTES
 function renderReportes(){
   const el=document.getElementById('reportes-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes y Estadísticas','Pro');return;}
+  // FIX 8: usar PLANES correctamente
+  if(!PLANES[userPlan]?.reportes&&!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes y Estadísticas','Pro');return;}
   const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
   const hoy=new Date();
   const pagosMes=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
@@ -795,22 +843,22 @@ function renderReportes(){
 // EMPLEADOS
 function renderEmpleados(){
   const el=document.getElementById('empleados-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','Premium');return;}
+  // FIX 9: usar PLANES correctamente
+  if(!PLANES[userPlan]?.empleados&&!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','Premium');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
   <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
 }
 
-// ── INVENTARIO (doble sección) ────────────────────────────────────────────────
+// INVENTARIO
 function renderInventario(seccion='equipo'){
   const el=document.getElementById('inventario-content');
-  if(userPlan!=='premium'&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Control de Inventario','Premium');return;}
+  // FIX 10: usar PLANES correctamente
+  if(!PLANES[userPlan]?.inventario&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Control de Inventario','Premium');return;}
   const estadoColor={bueno:'var(--green)',regular:'var(--orange)',malo:'var(--red)'};
   const catLabel={suplementos:'💊 Suplementos',bebidas:'🥤 Bebidas',accesorios:'🥊 Accesorios',ropa:'👕 Ropa',otro:'📦 Otro'};
-
-  // Alertas de stock bajo
   const stockBajo=productos.filter(p=>(p.stockMinimo||0)>0&&(p.stock||0)<=(p.stockMinimo||0)&&(p.stock||0)>0);
-  const sinStock=productos.filter(p=>(p.stock||0)===0);
+  const sinStock=productos.filter(p=>(p.stock||0)===0&&productos.length>0);
   let alertasHtml='';
   if(sinStock.length||stockBajo.length){
     alertasHtml=`<div style="background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px">`;
@@ -827,7 +875,6 @@ function renderInventario(seccion='equipo'){
     <button class="inv-tab-btn ${seccion==='tienda'?'active':''}" onclick="renderInventario('tienda')">🛒 Tienda / Venta</button>
   </div>
 
-  <!-- EQUIPO -->
   <div class="inv-section ${seccion==='equipo'?'active':''}">
     <div class="header-row" style="margin-bottom:12px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Equipo y Maquinaria</div>
@@ -837,7 +884,6 @@ function renderInventario(seccion='equipo'){
     <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
   </div>
 
-  <!-- TIENDA -->
   <div class="inv-section ${seccion==='tienda'?'active':''}">
     <div class="header-row" style="margin-bottom:12px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Productos en Venta</div>
@@ -851,8 +897,9 @@ function renderInventario(seccion='equipo'){
     <tbody>${productos.map(p=>{
       const stockClass=(p.stock||0)===0?'stock-out':(p.stockMinimo&&p.stock<=p.stockMinimo)?'stock-low':'stock-ok';
       const stockIcon=(p.stock||0)===0?'🚨':(p.stockMinimo&&p.stock<=p.stockMinimo)?'⚠️':'';
+      // FIX 11: eliminado el "}" extra que aparecía como texto en la celda del nombre
       return`<tr>
-        <td><strong>${p.nombre}</strong>${p.notas?`<div style="font-size:11px;color:var(--muted)">${p.notas}</div>`:''}}</td>
+        <td><strong>${p.nombre}</strong>${p.notas?`<div style="font-size:11px;color:var(--muted)">${p.notas}</div>`:''}</td>
         <td><span style="font-size:12px;color:var(--muted)">${catLabel[p.categoria]||p.categoria||'—'}</span></td>
         <td style="font-weight:700;color:var(--accent)">$${(p.precio||0).toLocaleString()}</td>
         <td><span class="${stockClass}">${stockIcon} ${p.stock||0}</span>${p.stockMinimo?`<span style="font-size:11px;color:var(--muted);margin-left:4px">/ mín ${p.stockMinimo}</span>`:''}</td>
@@ -868,7 +915,7 @@ function renderInventario(seccion='equipo'){
   </div>`;
 }
 
-// ── PRODUCTOS / VENTAS ────────────────────────────────────────────────────────
+// PRODUCTOS / VENTAS
 async function saveProducto(){
   const nombre=document.getElementById('prod-nombre').value.trim();
   if(!nombre)return alert('El nombre es obligatorio');
@@ -886,6 +933,7 @@ async function saveProducto(){
   else await addDoc(userCol('productos'),data);
   closeModal('modal-producto');
   await loadProductos();renderInventario('tienda');
+  toast('Producto guardado ✓');
 }
 async function delProducto(id){if(!confirm('¿Eliminar producto?'))return;await deleteDoc(userDoc('productos',id));await loadProductos();renderInventario('tienda');}
 function editProducto(id){
@@ -902,11 +950,13 @@ function editProducto(id){
 }
 
 function openVentaModal(){
+  // FIX 12: Verificar que hay productos antes de abrir
+  if(!productos.length){alert('No hay productos registrados. Agrega productos primero.');return;}
   document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}">${p.nombre} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
   document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');
-  // Auto fill precio
   const firstProd=productos[0];
   if(firstProd) document.getElementById('v-precio').value=firstProd.precio||0;
+  document.getElementById('v-cantidad').value=1;
   updateVentaTotal();
   openModal('modal-venta');
 }
@@ -926,12 +976,13 @@ function updateVentaTotal(){
   const precio=parseFloat(document.getElementById('v-precio').value)||0;
   document.getElementById('v-total-preview').textContent=`Total: $${(cant*precio).toLocaleString()}`;
 }
-document.getElementById('v-cantidad').addEventListener('input',updateVentaTotal);
-document.getElementById('v-precio').addEventListener('input',updateVentaTotal);
-document.getElementById('v-producto').addEventListener('change',function(){
-  const p=productos.find(x=>x.id===this.value);
+
+// FIX 13: onchange ahora es inline en el HTML (eliminados los addEventListener que podían fallar si el DOM no estaba listo)
+function onProductoChange(){
+  const sel=document.getElementById('v-producto');
+  const p=productos.find(x=>x.id===sel.value);
   if(p){document.getElementById('v-precio').value=p.precio||0;updateVentaTotal();}
-});
+}
 
 async function saveVenta(){
   const prodId=document.getElementById('v-producto').value;
@@ -944,10 +995,10 @@ async function saveVenta(){
   if((prod.stock||0)<cantidad)return alert(`Stock insuficiente. Solo hay ${prod.stock||0} unidades.`);
   const total=cantidad*precio;
   await addDoc(userCol('ventas'),{productoId:prodId,productoNombre:prod.nombre,cantidad,precioUnitario:precio,total,miembroId:miembroId||null,fecha:Date.now()});
-  // Descontar stock
   await updateDoc(userDoc('productos',prodId),{stock:(prod.stock||0)-cantidad});
   closeModal('modal-venta');
   await loadProductos();await loadVentas();renderInventario('tienda');renderEstadoCuenta();
+  toast(`Venta registrada — $${total.toLocaleString()} ✓`);
 }
 
 // VER PERFIL
@@ -985,8 +1036,9 @@ async function saveMiembro(){
   else await addDoc(userCol('miembros'),data);
   closeModal('modal-miembro');
   await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();
+  toast(editId?'Miembro actualizado ✓':'Miembro agregado ✓');
 }
-async function delMiembro(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('miembros',id));await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();renderAlertas();}
+async function delMiembro(id){if(!confirm('¿Eliminar miembro? Esta acción no se puede deshacer.'))return;await deleteDoc(userDoc('miembros',id));await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();renderAlertas();}
 function editMiembro(id){
   const m=miembros.find(x=>x.id===id);if(!m)return;
   document.getElementById('modal-miembro-title').textContent='Editar Miembro';
@@ -1012,22 +1064,46 @@ async function savePago(){
   const fechaFin=fechaPago+dias*86400000;
   await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,creadoEn:Date.now()});
   closeModal('modal-pago');
-  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderCorte();renderReportes();
+  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
+  toast('Pago registrado ✓');
 }
 function preRegPago(mid){populateMiembrosSelect(mid);document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];openModal('modal-pago');}
 function populateMiembrosSelect(selectedId=''){document.getElementById('p-miembro').innerHTML=miembros.map(m=>`<option value="${m.id}" ${m.id===selectedId?'selected':''}>#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');}
 
 // ASISTENCIA
-async function registrarAsistencia(mid){await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});await loadAsistencias();renderDashboard();renderAsistencia();renderCorte();}
+async function registrarAsistencia(mid){
+  await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});
+  await loadAsistencias();renderDashboard();renderAsistencia();
+  const m=miembros.find(x=>x.id===mid);
+  toast(`Asistencia registrada — ${m?m.nombre:''} ✓`);
+}
 
 // EMPLEADOS
-async function saveEmpleado(){const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,creadoEn:Date.now()};const editId=document.getElementById('edit-emp-id').value;if(editId)await updateDoc(userDoc('empleados',editId),data);else await addDoc(userCol('empleados'),data);closeModal('modal-empleado');await loadEmpleados();renderEmpleados();}
-async function delEmpleado(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('empleados',id));await loadEmpleados();renderEmpleados();}
+async function saveEmpleado(){
+  const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
+  const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,creadoEn:Date.now()};
+  const editId=document.getElementById('edit-emp-id').value;
+  if(editId)await updateDoc(userDoc('empleados',editId),data);
+  else await addDoc(userCol('empleados'),data);
+  closeModal('modal-empleado');
+  await loadEmpleados();renderEmpleados();
+  toast('Empleado guardado ✓');
+}
+async function delEmpleado(id){if(!confirm('¿Eliminar empleado?'))return;await deleteDoc(userDoc('empleados',id));await loadEmpleados();renderEmpleados();}
 function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';openModal('modal-empleado');}
 
 // INVENTARIO EQUIPO
-async function saveInventario(){const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};const editId=document.getElementById('edit-inv-id').value;if(editId)await updateDoc(userDoc('inventario',editId),data);else await addDoc(userCol('inventario'),data);closeModal('modal-inventario');await loadInventario();renderInventario('equipo');}
-async function delInventario(id){if(!confirm('¿Eliminar?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario('equipo');}
+async function saveInventario(){
+  const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
+  const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};
+  const editId=document.getElementById('edit-inv-id').value;
+  if(editId)await updateDoc(userDoc('inventario',editId),data);
+  else await addDoc(userCol('inventario'),data);
+  closeModal('modal-inventario');
+  await loadInventario();renderInventario('equipo');
+  toast('Equipo guardado ✓');
+}
+async function delInventario(id){if(!confirm('¿Eliminar artículo?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario('equipo');}
 function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
 
 // MODALES
@@ -1040,14 +1116,23 @@ function openModal(id){
   if(id==='modal-nuevo-gym'){['ng-email','ng-nombre'].forEach(x=>document.getElementById(x).value='');}
   document.getElementById(id).classList.add('open');
 }
-function closeModal(id){document.getElementById(id).classList.remove('open');['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});}
-document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});});
+function closeModal(id){
+  document.getElementById(id).classList.remove('open');
+  // FIX 14: limpiar todos los campos hidden de edición al cerrar
+  ['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});
+}
+document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el){el.classList.remove('open');['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const f=document.getElementById(x);if(f)f.value='';})}});});
 
 // TABS
+// FIX 15: showTab usa PLANES correctamente y muestra mensaje si la sección está bloqueada
 function showTab(name,event){
-  const libre=['dashboard','miembros','pagos','asistencia'];
-  const activa=userPlan==='premium'||libre.includes(name)||userFunciones.includes(name);
-  if(!activa)return;
+  const libre=TABS_LIBRES;
+  const planActual=PLANES[userPlan]||PLANES.sencillo;
+  const activa=libre.includes(name)||planActual[name]||userFunciones.includes(name);
+  if(!activa){
+    toast('Esta sección requiere un plan superior 🔒','err');
+    return;
+  }
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
