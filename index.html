@@ -614,10 +614,20 @@ async function saveNuevoGym(){
   const plan=document.getElementById('ng-plan').value;
   const nombre=document.getElementById('ng-nombre').value.trim();
   if(!email)return alert('El email es obligatorio');
-  const tempId='pending_'+email.replace(/[^a-zA-Z0-9]/g,'_');
-  await setDoc(docFn(db,'usuarios',tempId),{email,plan,nombre,pendiente:true,creadoEn:Date.now()});
-  closeModal('modal-nuevo-gym');
-  await loadAdminGyms();
+  const btn=document.querySelector('#modal-nuevo-gym .btn-primary');
+  btn.textContent='Guardando...'; btn.disabled=true;
+  try{
+    const tempId='pending_'+email.replace(/[^a-zA-Z0-9]/g,'_');
+    await setDoc(docFn(db,'usuarios',tempId),{email,plan,nombre:nombre||'',pendiente:true,creadoEn:Date.now()});
+    closeModal('modal-nuevo-gym');
+    await loadAdminGyms();
+    toast('Cliente agregado ✓');
+  }catch(e){
+    console.error('Error al guardar cliente:',e);
+    alert('Error al guardar: '+e.message);
+  }finally{
+    btn.textContent='Guardar'; btn.disabled=false;
+  }
 }
 
 async function doLogin(){
