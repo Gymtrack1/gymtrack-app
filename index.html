@@ -552,11 +552,11 @@ function applyPlan(){
   const badge=document.getElementById('plan-badge');
   badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
   badge.className=`plan-badge plan-${userPlan}`;
-  // Cada sección se activa solo si está en userFunciones
+  // Cada sección se activa solo si está en userFunciones (dashboard siempre libre)
   TODAS_SECCIONES.forEach(s=>{
     const btn=document.getElementById('nav-'+s.id);
     if(!btn)return;
-    if(userFunciones.includes(s.id))btn.classList.remove('locked');
+    if(userFunciones.includes(s.id)||s.id==='dashboard')btn.classList.remove('locked');
     else btn.classList.add('locked');
   });
 }
@@ -1221,7 +1221,8 @@ document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('cl
 
 // TABS
 function showTab(name,event){
-  const activa=userFunciones.includes(name);
+  // Dashboard siempre accesible como fallback
+  const activa=userFunciones.includes(name)||name==='dashboard';
   if(!activa){
     toast('Esta sección no está activada en tu plan 🔒','err');
     return;
