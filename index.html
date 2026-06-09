@@ -213,6 +213,7 @@
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
   <div class="user-info">
     <span class="plan-badge" id="plan-badge"></span>
+    <button class="btn-logout" onclick="sincronizarPlan()" title="Sincronizar plan" style="padding:4px 8px;font-size:13px;margin-right:2px">🔄</button>
     <span id="user-email" style="font-size:11px"></span>
     <button class="btn-logout" onclick="doLogout()">Salir</button>
   </div>
@@ -521,17 +522,36 @@ window.addEventListener('firebaseReady',async()=>{
   const onSnapshot=window._onSnapshot;
   uid=window._auth.currentUser.uid;
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  // FIX 4: onSnapshot correctamente actualiza plan y re-renderiza todo
+  // onSnapshot: actualiza plan en tiempo real cuando admin hace cambios
   onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
     if(!snap.exists())return;
     const data=snap.data();
+    const planAnterior=userPlan;
+    const funcionesAnterior=JSON.stringify(userFunciones);
     userPlan=data.plan||'sencillo';
     userFunciones=data.funciones||[];
+    console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
     applyPlan();
-    renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
-    renderDashboard();renderMiembros();renderPagos();renderAsistencia();
+    if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
+      renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
+      renderDashboard();renderMiembros();renderPagos();renderAsistencia();
+    }
   });
   await loadPlan(); applyPlan(); await loadAll();
+  // Auto-sincronizar cada 20 segundos como respaldo por si onSnapshot falla
+  setInterval(async()=>{
+    try{
+      const s=await getDoc(docFn(db,'usuarios',uid));
+      if(!s.exists())return;
+      const p=s.data().plan||'sencillo';
+      const f=s.data().funciones||[];
+      if(p!==userPlan||JSON.stringify(f)!==JSON.stringify(userFunciones)){
+        console.log('⏱ Auto-sync detectó cambio de plan:',p,f);
+        userPlan=p;userFunciones=f;applyPlan();
+        toast('Plan sincronizado: '+p+' ✓');
+      }
+    }catch(e){}
+  },20000);
 });
 
 async function loadPlan(){
@@ -542,8 +562,8 @@ async function loadPlan(){
       const email=window._auth.currentUser.email;
       const allSnap=await getDocs(col(db,'usuarios'));
       const match=allSnap.docs.find(d=>d.data().email===email);
-      if(match){const data=match.data();await setDoc(docFn(db,'usuarios',uid),{...data,uid});try{await deleteDoc(docFn(db,'usuarios',match.id));}catch(e){}userPlan=data.plan||'sencillo';}
-      else{await setDoc(docFn(db,'usuarios',uid),{email,plan:'sencillo',uid,creadoEn:Date.now()});userPlan='sencillo';}
+      if(match){const data=match.data();await setDoc(docFn(db,'usuarios',uid),{...data,uid});try{await deleteDoc(docFn(db,'usuarios',match.id));}catch(e){}userPlan=data.plan||'sencillo';userFunciones=data.funciones||[];}
+      else{await setDoc(docFn(db,'usuarios',uid),{email,plan:'sencillo',uid,creadoEn:Date.now()});userPlan='sencillo';userFunciones=[];}
     }
   }catch(e){userPlan='sencillo';}
 }
@@ -559,6 +579,17 @@ function applyPlan(){
     if(userFunciones.includes(s.id)||s.id==='dashboard')btn.classList.remove('locked');
     else btn.classList.add('locked');
   });
+}
+
+async function sincronizarPlan(){
+  try{
+    const s=await getDoc(docFn(db,'usuarios',uid));
+    if(!s.exists())return;
+    userPlan=s.data().plan||'sencillo';
+    userFunciones=s.data().funciones||[];
+    applyPlan();
+    toast('Plan sincronizado: '+userPlan+' ✓');
+  }catch(e){toast('Error al sincronizar: '+e.message,'err');}
 }
 
 function lockedFeature(nombre,planReq){return`<div class="locked-overlay"><div style="font-size:40px;margin-bottom:12px">🔒</div><div class="locked-title">${nombre}</div><div style="color:var(--muted);font-size:14px">Requiere plan <strong>${planReq}</strong>. Contacta a tu proveedor GymTrack.</div></div>`;}
@@ -647,9 +678,18 @@ async function loadAdminGyms(){
 
 async function setPlan(gymId,plan,btn){
   const updates={plan};
-  if(plan==='premium') updates.funciones=TODAS_SECCIONES.map(s=>s.id);
-  await updateDoc(docFn(db,'usuarios',gymId),updates);
-  await loadAdminGyms();
+  // Premium: todas las secciones automáticamente
+  if(plan==='premium'){
+    updates.funciones=TODAS_SECCIONES.map(s=>s.id);
+  } else {
+    // Sencillo/Pro: resetear funciones para que admin elija manualmente
+    updates.funciones=[];
+  }
+  try{
+    await updateDoc(docFn(db,'usuarios',gymId),updates);
+    toast('Plan actualizado a '+plan+' ✓');
+    await loadAdminGyms();
+  }catch(e){alert('Error al cambiar plan: '+e.message);}
 }
 
 async function toggleFuncion(gymId,seccionId,plan,funcionesActuales){
