@@ -59,7 +59,7 @@
   td{padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;}
   tr:hover td{background:var(--surface2);}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
-  .badge-green{background:rgba(58,255,163,0.15);color:var(--green);} .badge-orange{background:rgba(255,170,58,0.15);color:var(--orange);} .badge-red{background:rgba(255,77,77,0.15);color:var(--red);}
+  .badge-green{background:rgba(58,255,163,0.15);color:var(--green);} .badge-orange{background:rgba(255,170,58,0.15);color:var(--orange);} .badge-red{background:rgba(255,77,77,0.15);color:var(--red);} .badge-gray{background:rgba(102,102,102,0.15);color:var(--muted);}
   .btn{border:none;border-radius:8px;padding:10px 20px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;}
   .btn-primary{background:var(--accent);color:#000;} .btn-primary:hover{background:#d4eb2a;}
   .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);} .btn-ghost:hover{border-color:var(--text);}
@@ -645,7 +645,8 @@ async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=
 function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].fechaFin:null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
 function getUltimoPlan(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].planNombre:'—';}
-function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">Al corriente</span>';if(e==='por-vencer')return'<span class="badge badge-orange">Por vencer</span>';return'<span class="badge badge-red">Vencido</span>';}
+// FIX: 'sin-pago' ahora tiene su propio badge gris — distinto a 'vencido'
+function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">Al corriente</span>';if(e==='por-vencer')return'<span class="badge badge-orange">Por vencer</span>';if(e==='sin-pago')return'<span class="badge badge-gray">Sin pago</span>';return'<span class="badge badge-red">Vencido</span>';}
 function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
 function fmtNum(n){return String(n).padStart(3,'0');}
 function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
@@ -925,10 +926,11 @@ async function saveProducto(){
     precio:parseFloat(document.getElementById('prod-precio').value)||0,
     stock:parseInt(document.getElementById('prod-stock').value)||0,
     stockMinimo:parseInt(document.getElementById('prod-min').value)||0,
-    notas:document.getElementById('prod-notas').value.trim(),
-    creadoEn:Date.now()
+    notas:document.getElementById('prod-notas').value.trim()
   };
   const editId=document.getElementById('edit-prod-id').value;
+  // FIX: creadoEn solo en productos nuevos
+  if(!editId) data.creadoEn=Date.now();
   if(editId)await updateDoc(userDoc('productos',editId),data);
   else await addDoc(userCol('productos'),data);
   closeModal('modal-producto');
@@ -1030,15 +1032,29 @@ async function saveMiembro(){
     const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
     numero=maxNum+1;
   }
-  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim(),creadoEn:Date.now()};
-  if(!editId)data.numero=numero;
+  // FIX: creadoEn y numero solo se asignan al crear, nunca al editar
+  // Antes creadoEn siempre se sobreescribía, rompiendo "nuevos este mes" en Finanzas
+  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim()};
+  if(!editId){data.numero=numero;data.creadoEn=Date.now();}
   if(editId)await updateDoc(userDoc('miembros',editId),data);
   else await addDoc(userCol('miembros'),data);
   closeModal('modal-miembro');
   await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();
   toast(editId?'Miembro actualizado ✓':'Miembro agregado ✓');
 }
-async function delMiembro(id){if(!confirm('¿Eliminar miembro? Esta acción no se puede deshacer.'))return;await deleteDoc(userDoc('miembros',id));await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();renderAlertas();}
+// FIX: delMiembro ahora borra también los pagos y asistencias del miembro
+// Antes quedaban datos huérfanos que contaminaban las finanzas y estadísticas
+async function delMiembro(id){
+  if(!confirm('¿Eliminar miembro? También se borrarán sus pagos y asistencias. Esta acción no se puede deshacer.'))return;
+  const pagosMiembro=pagos.filter(p=>p.miembroId===id);
+  await Promise.all(pagosMiembro.map(p=>deleteDoc(userDoc('pagos',p.id))));
+  const asistMiembro=asistencias.filter(a=>a.miembroId===id);
+  await Promise.all(asistMiembro.map(a=>deleteDoc(userDoc('asistencias',a.id))));
+  await deleteDoc(userDoc('miembros',id));
+  await loadAll();
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
+  toast('Miembro eliminado ✓');
+}
 function editMiembro(id){
   const m=miembros.find(x=>x.id===id);if(!m)return;
   document.getElementById('modal-miembro-title').textContent='Editar Miembro';
@@ -1081,8 +1097,10 @@ async function registrarAsistencia(mid){
 // EMPLEADOS
 async function saveEmpleado(){
   const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
-  const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,creadoEn:Date.now()};
+  const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0};
   const editId=document.getElementById('edit-emp-id').value;
+  // FIX: creadoEn solo en empleados nuevos
+  if(!editId) data.creadoEn=Date.now();
   if(editId)await updateDoc(userDoc('empleados',editId),data);
   else await addDoc(userCol('empleados'),data);
   closeModal('modal-empleado');
@@ -1095,8 +1113,10 @@ function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;docu
 // INVENTARIO EQUIPO
 async function saveInventario(){
   const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
-  const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim(),creadoEn:Date.now()};
+  const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim()};
   const editId=document.getElementById('edit-inv-id').value;
+  // FIX: creadoEn solo en artículos nuevos
+  if(!editId) data.creadoEn=Date.now();
   if(editId)await updateDoc(userDoc('inventario',editId),data);
   else await addDoc(userCol('inventario'),data);
   closeModal('modal-inventario');
@@ -1136,7 +1156,10 @@ function showTab(name,event){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  if(event)event.target.classList.add('active');
+  // FIX: activar por ID para mayor robustez, con fallback a event.target
+  const navBtn=document.getElementById('nav-'+name);
+  if(navBtn)navBtn.classList.add('active');
+  else if(event)event.target.classList.add('active');
 }
 </script>
 </body>
