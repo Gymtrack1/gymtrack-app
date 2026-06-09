@@ -135,6 +135,18 @@
   .inv-tab-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:7px 18px;border-radius:7px;cursor:pointer;transition:all 0.2s;}
   .inv-tab-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.4);}
   .inv-section{display:none;} .inv-section.active{display:block;}
+  /* FUNCIONES GRID */
+  .funciones-wrap{width:100%;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;}
+  .funciones-titulo{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+  .funciones-contador{font-weight:700;font-size:12px;}
+  .funciones-contador.ok{color:var(--green);}
+  .funciones-contador.warn{color:var(--orange);}
+  .funciones-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .funcion-item{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;cursor:pointer;transition:all 0.2s;font-size:12px;font-weight:500;}
+  .funcion-item:hover{border-color:var(--muted);}
+  .funcion-item.activa{background:rgba(232,255,58,0.08);border-color:var(--accent);color:var(--accent);}
+  .funcion-item.activa input{accent-color:var(--accent);}
+  .funcion-item input{margin:0;cursor:pointer;}
   /* STOCK BADGE */
   .stock-ok{color:var(--green);font-weight:700;}
   .stock-low{color:var(--orange);font-weight:700;}
@@ -475,15 +487,21 @@ let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 let userFunciones=[];
 
-// FIX 1: PLANES ahora se usa correctamente en applyPlan() y showTab()
-const PLANES={
-  sencillo:{alertas:false,estadocuenta:false,reportes:false,empleados:false,inventario:false},
-  pro:{alertas:true,estadocuenta:true,reportes:true,empleados:false,inventario:false},
-  premium:{alertas:true,estadocuenta:true,reportes:true,empleados:true,inventario:true}
-};
+// Límite de secciones por plan
+const PLAN_LIMITE={sencillo:3,pro:6,premium:9};
 
-// FIX 2: Tabs siempre libres sin importar el plan
-const TABS_LIBRES=['dashboard','miembros','pagos','asistencia'];
+// Las 9 secciones disponibles
+const TODAS_SECCIONES=[
+  {id:'dashboard',label:'Dashboard'},
+  {id:'miembros',label:'Miembros'},
+  {id:'pagos',label:'Pagos'},
+  {id:'asistencia',label:'Asistencia'},
+  {id:'alertas',label:'Alertas'},
+  {id:'estadocuenta',label:'Finanzas'},
+  {id:'reportes',label:'Reportes'},
+  {id:'empleados',label:'Empleados'},
+  {id:'inventario',label:'Inventario'},
+];
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
@@ -505,9 +523,14 @@ window.addEventListener('firebaseReady',async()=>{
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   // FIX 4: onSnapshot correctamente actualiza plan y re-renderiza todo
   onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
-    const newPlan=snap.exists()?(snap.data().plan||'sencillo'):'sencillo';
-    if(newPlan!==userPlan){
+    if(!snap.exists())return;
+    const data=snap.data();
+    const newPlan=data.plan||'sencillo';
+    const newFunciones=data.funciones||[];
+    const changed=newPlan!==userPlan||JSON.stringify(newFunciones)!==JSON.stringify(userFunciones);
+    if(changed){
       userPlan=newPlan;
+      userFunciones=newFunciones;
       applyPlan();
       renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
     }
@@ -518,7 +541,7 @@ window.addEventListener('firebaseReady',async()=>{
 async function loadPlan(){
   try{
     const snap=await getDoc(docFn(db,'usuarios',uid));
-    if(snap.exists()){userPlan=snap.data().plan||'sencillo';}
+    if(snap.exists()){userPlan=snap.data().plan||'sencillo';userFunciones=snap.data().funciones||[];}
     else{
       const email=window._auth.currentUser.email;
       const allSnap=await getDocs(col(db,'usuarios'));
@@ -529,17 +552,15 @@ async function loadPlan(){
   }catch(e){userPlan='sencillo';}
 }
 
-// FIX 5: applyPlan ahora usa el objeto PLANES correctamente
 function applyPlan(){
   const badge=document.getElementById('plan-badge');
   badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
   badge.className=`plan-badge plan-${userPlan}`;
-  const planActual=PLANES[userPlan]||PLANES.sencillo;
-  ['alertas','estadocuenta','reportes','empleados','inventario'].forEach(feature=>{
-    const btn=document.getElementById('nav-'+feature);
+  // Cada sección se activa solo si está en userFunciones
+  TODAS_SECCIONES.forEach(s=>{
+    const btn=document.getElementById('nav-'+s.id);
     if(!btn)return;
-    const activa=planActual[feature]||userFunciones.includes(feature);
-    if(activa)btn.classList.remove('locked');
+    if(userFunciones.includes(s.id))btn.classList.remove('locked');
     else btn.classList.add('locked');
   });
 }
@@ -589,25 +610,69 @@ async function loadAdminGyms(){
   }
   lista.innerHTML=gyms.map(g=>{
     const plan=g.plan||'sencillo';
+    const funciones=g.funciones||[];
+    const limite=PLAN_LIMITE[plan]||3;
     const displayName=g.nombre||g.email||g.id;
     const displayEmail=g.email||(g.pendiente?'Pendiente de primer login':'—');
-    return`<div class="gym-card">
-      <div>
-        <div class="gym-email">${displayName}</div>
-        <div style="font-size:11px;color:var(--muted)">${displayEmail}</div>
-        ${g.pendiente?'<span style="font-size:10px;background:rgba(255,170,58,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
+    const contadorClass=funciones.length>=limite?'ok':'warn';
+    const checkboxes=TODAS_SECCIONES.map(s=>{
+      const activa=funciones.includes(s.id);
+      const disabled=plan==='premium'?'disabled':'';
+      return`<label class="funcion-item ${activa?'activa':''}" onclick="event.preventDefault();toggleFuncion('${g.id}','${s.id}','${plan}')">
+        <input type="checkbox" ${activa?'checked':''} ${disabled} style="pointer-events:none">
+        ${s.label}
+      </label>`;
+    }).join('');
+    return`<div class="gym-card" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <div class="gym-email">${displayName}</div>
+          <div style="font-size:11px;color:var(--muted)">${displayEmail}</div>
+          ${g.pendiente?'<span style="font-size:10px;background:rgba(255,170,58,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
+        </div>
+        <div class="plan-selector">
+          <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button>
+          <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button>
+          <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
       </div>
-      <div class="plan-selector">
-        <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button>
-        <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button>
-        <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button>
+      <div class="funciones-wrap">
+        <div class="funciones-titulo">
+          <span>Secciones activas</span>
+          <span class="funciones-contador ${contadorClass}">${funciones.length}/${limite} ${plan==='premium'?'(todas)':''}</span>
+        </div>
+        <div class="funciones-grid">${checkboxes}</div>
       </div>
-      <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
     </div>`;
   }).join('');
 }
 
-async function setPlan(uid,plan,btn){await updateDoc(docFn(db,'usuarios',uid),{plan});await loadAdminGyms();}
+async function setPlan(gymId,plan,btn){
+  const updates={plan};
+  if(plan==='premium') updates.funciones=TODAS_SECCIONES.map(s=>s.id);
+  await updateDoc(docFn(db,'usuarios',gymId),updates);
+  await loadAdminGyms();
+}
+
+async function toggleFuncion(gymId,seccionId,plan){
+  const snap=await getDoc(docFn(db,'usuarios',gymId));
+  const data=snap.exists()?snap.data():{};
+  let funciones=data.funciones||[];
+  const limite=PLAN_LIMITE[plan]||3;
+  if(funciones.includes(seccionId)){
+    funciones=funciones.filter(f=>f!==seccionId);
+  } else {
+    if(funciones.length>=limite){
+      toast(`Plan ${plan} solo permite ${limite} secciones 🔒`,'err');
+      await loadAdminGyms();
+      return;
+    }
+    funciones=[...funciones,seccionId];
+  }
+  await updateDoc(docFn(db,'usuarios',gymId),{funciones});
+  await loadAdminGyms();
+}
 async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
 async function saveNuevoGym(){
   const email=document.getElementById('ng-email').value.trim();
@@ -724,7 +789,7 @@ function renderAsistencia(){
 function renderAlertas(){
   const el=document.getElementById('alertas-content');
   // FIX 6: usar PLANES correctamente
-  if(!PLANES[userPlan]?.alertas&&!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','Pro');return;}
+  if(!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','tu plan actual');return;}
   const vencidos=miembros.filter(m=>getEstado(m.id)==='vencido');
   const en3=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>=0&&d<=3;});
   const en7=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>3&&d<=7;});
@@ -758,7 +823,7 @@ function enviarWhatsAppTodos(){
 function renderEstadoCuenta(){
   const el=document.getElementById('estadocuenta-content');
   // FIX 7: usar PLANES correctamente
-  if(!PLANES[userPlan]?.estadocuenta&&!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','Pro');return;}
+  if(!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','tu plan actual');return;}
   const hoy=new Date();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
   const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
@@ -823,7 +888,7 @@ function renderEstadoCuenta(){
 function renderReportes(){
   const el=document.getElementById('reportes-content');
   // FIX 8: usar PLANES correctamente
-  if(!PLANES[userPlan]?.reportes&&!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes y Estadísticas','Pro');return;}
+  if(!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes y Estadísticas','tu plan actual');return;}
   const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
   const hoy=new Date();
   const pagosMes=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
@@ -855,7 +920,7 @@ function renderReportes(){
 function renderEmpleados(){
   const el=document.getElementById('empleados-content');
   // FIX 9: usar PLANES correctamente
-  if(!PLANES[userPlan]?.empleados&&!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','Premium');return;}
+  if(!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','tu plan actual');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
   <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
@@ -865,7 +930,7 @@ function renderEmpleados(){
 function renderInventario(seccion='equipo'){
   const el=document.getElementById('inventario-content');
   // FIX 10: usar PLANES correctamente
-  if(!PLANES[userPlan]?.inventario&&!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Control de Inventario','Premium');return;}
+  if(!userFunciones.includes('inventario')){el.innerHTML=lockedFeature('Control de Inventario','tu plan actual');return;}
   const estadoColor={bueno:'var(--green)',regular:'var(--orange)',malo:'var(--red)'};
   const catLabel={suplementos:'💊 Suplementos',bebidas:'🥤 Bebidas',accesorios:'🥊 Accesorios',ropa:'👕 Ropa',otro:'📦 Otro'};
   const stockBajo=productos.filter(p=>(p.stockMinimo||0)>0&&(p.stock||0)<=(p.stockMinimo||0)&&(p.stock||0)>0);
@@ -1154,13 +1219,10 @@ function closeModal(id){
 document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el){el.classList.remove('open');['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const f=document.getElementById(x);if(f)f.value='';})}});});
 
 // TABS
-// FIX 15: showTab usa PLANES correctamente y muestra mensaje si la sección está bloqueada
 function showTab(name,event){
-  const libre=TABS_LIBRES;
-  const planActual=PLANES[userPlan]||PLANES.sencillo;
-  const activa=libre.includes(name)||planActual[name]||userFunciones.includes(name);
+  const activa=userFunciones.includes(name);
   if(!activa){
-    toast('Esta sección requiere un plan superior 🔒','err');
+    toast('Esta sección no está activada en tu plan 🔒','err');
     return;
   }
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
