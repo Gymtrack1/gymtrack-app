@@ -614,7 +614,8 @@ async function loadAdminGyms(){
     const checkboxes=TODAS_SECCIONES.map(s=>{
       const activa=funciones.includes(s.id);
       const disabled=plan==='premium'?'disabled':'';
-      return`<label class="funcion-item ${activa?'activa':''}" onclick="event.preventDefault();toggleFuncion('${g.id}','${s.id}','${plan}')">
+      const funcionesJson=JSON.stringify(funciones).replace(/"/g,"'");
+      return`<label class="funcion-item ${activa?'activa':''}" onclick="event.preventDefault();toggleFuncion('${g.id}','${s.id}','${plan}',${funcionesJson})">
         <input type="checkbox" ${activa?'checked':''} ${disabled} style="pointer-events:none">
         ${s.label}
       </label>`;
@@ -651,23 +652,27 @@ async function setPlan(gymId,plan,btn){
   await loadAdminGyms();
 }
 
-async function toggleFuncion(gymId,seccionId,plan){
-  const snap=await getDoc(docFn(db,'usuarios',gymId));
-  const data=snap.exists()?snap.data():{};
-  let funciones=data.funciones||[];
+async function toggleFuncion(gymId,seccionId,plan,funcionesActuales){
+  let funciones=Array.isArray(funcionesActuales)?[...funcionesActuales]:[];
   const limite=PLAN_LIMITE[plan]||3;
   if(funciones.includes(seccionId)){
     funciones=funciones.filter(f=>f!==seccionId);
   } else {
     if(funciones.length>=limite){
       toast(`Plan ${plan} solo permite ${limite} secciones 🔒`,'err');
-      await loadAdminGyms();
       return;
     }
     funciones=[...funciones,seccionId];
   }
-  await updateDoc(docFn(db,'usuarios',gymId),{funciones});
-  await loadAdminGyms();
+  try{
+    await updateDoc(docFn(db,'usuarios',gymId),{funciones});
+    console.log('✅ Funciones guardadas:',gymId,funciones);
+    toast('Sección actualizada ✓');
+    await loadAdminGyms();
+  }catch(e){
+    console.error('❌ Error:',e);
+    alert('Error al guardar: '+e.message);
+  }
 }
 async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
 async function saveNuevoGym(){
