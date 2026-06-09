@@ -525,15 +525,11 @@ window.addEventListener('firebaseReady',async()=>{
   onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
     if(!snap.exists())return;
     const data=snap.data();
-    const newPlan=data.plan||'sencillo';
-    const newFunciones=data.funciones||[];
-    const changed=newPlan!==userPlan||JSON.stringify(newFunciones)!==JSON.stringify(userFunciones);
-    if(changed){
-      userPlan=newPlan;
-      userFunciones=newFunciones;
-      applyPlan();
-      renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
-    }
+    userPlan=data.plan||'sencillo';
+    userFunciones=data.funciones||[];
+    applyPlan();
+    renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
+    renderDashboard();renderMiembros();renderPagos();renderAsistencia();
   });
   await loadPlan(); applyPlan(); await loadAll();
 });
