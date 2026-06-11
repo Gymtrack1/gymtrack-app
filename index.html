@@ -886,8 +886,8 @@ function exportarMiembros(){
     'Correo': m.correo||'',
     'Edad': m.edad||'',
     'Dirección': m.direccion||'',
-    'Plan Membresía': getUltimoPlan(m.id),
-    'Fecha Vencimiento': getVencimiento(m.id)?new Date(getVencimiento(m.id)).toLocaleDateString('es-MX'):'Sin pago',
+    'Plan actual': getUltimoPlan(m.id),
+    'Fecha de vencimiento': getVencimiento(m.id)?new Date(getVencimiento(m.id)).toLocaleDateString('es-MX'):'Sin pago',
     'Estado': estadoLabel[getEstado(m.id)]||getEstado(m.id),
     'Notas': m.notas||''
   }));
@@ -909,10 +909,12 @@ function descargarPlantilla(){
     'Correo':'juan@gmail.com',
     'Edad':'28',
     'Dirección':'Calle Roble 45, Col. Centro',
+    'Plan actual':'Mensual',
+    'Fecha de vencimiento':'15/08/2025',
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:16},{wch:22},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
@@ -934,16 +936,18 @@ async function importarMiembros(input){
 
       if(!filas.length){toast('El archivo está vacío','err');return;}
 
-      // Normalizar: aceptar columna "Nombre*" o "Nombre"
+      // Normalizar: acepta columnas del export y de la plantilla
       const normalizar=row=>{
         const get=(...keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!=='')return String(row[k]).trim();}return '';};
         return{
-          nombre: get('Nombre*','Nombre'),
-          telefono: get('Teléfono','Telefono','Tel'),
-          correo: get('Correo','Email','Correo electrónico'),
-          edad: get('Edad'),
-          direccion: get('Dirección','Direccion','Dirección'),
-          notas: get('Notas')
+          nombre:     get('Nombre*','Nombre'),
+          telefono:   get('Teléfono','Telefono','Tel'),
+          correo:     get('Correo','Email','Correo electrónico'),
+          edad:       get('Edad'),
+          direccion:  get('Dirección','Direccion'),
+          planActual: get('Plan actual','Plan Membresía','Plan'),
+          fechaVencimiento: get('Fecha de vencimiento','Fecha Vencimiento','Vencimiento'),
+          notas:      get('Notas')
         };
       };
 
@@ -984,27 +988,57 @@ async function importarMiembros(input){
   reader.readAsArrayBuffer(file);
 }
 
+// Convierte "dd/mm/yyyy" o "d/m/yyyy" a timestamp. Devuelve null si no puede parsear.
+function _parseFechaES(str){
+  if(!str||str==='Sin pago')return null;
+  // Si SheetJS ya devolvió un objeto Date
+  if(str instanceof Date)return str.getTime();
+  // Formato dd/mm/yyyy o d/m/yyyy
+  const m=String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m){const d=new Date(parseInt(m[3]),parseInt(m[2])-1,parseInt(m[1]),12,0,0);return isNaN(d)?null:d.getTime();}
+  // Fallback: intentar parseo nativo
+  const ts=Date.parse(str);
+  return isNaN(ts)?null:ts;
+}
+
 async function _guardarImportados(rows){
   const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
-  let contador=0;
+  let contadorM=0,contadorP=0;
   for(let i=0;i<rows.length;i++){
     const r=rows[i];
-    const data={
-      nombre: r.nombre,
-      telefono: r.telefono||'',
-      correo: r.correo||'',
-      edad: r.edad?parseInt(r.edad)||null:null,
+    const miembroRef=await addDoc(userCol('miembros'),{
+      nombre:    r.nombre,
+      telefono:  r.telefono||'',
+      correo:    r.correo||'',
+      edad:      r.edad?parseInt(r.edad)||null:null,
       direccion: r.direccion||'',
-      notas: r.notas||'',
-      numero: maxNum+i+1,
-      creadoEn: Date.now()
-    };
-    await addDoc(userCol('miembros'),data);
-    contador++;
+      notas:     r.notas||'',
+      numero:    maxNum+i+1,
+      creadoEn:  Date.now()
+    });
+    contadorM++;
+
+    // Si hay fecha de vencimiento válida, crear registro de pago
+    const fechaFin=_parseFechaES(r.fechaVencimiento);
+    if(fechaFin){
+      const planNombre=r.planActual&&r.planActual!=='—'?r.planActual:'Importado';
+      const fechaPago=fechaFin-30*86400000; // estimar fecha de pago 30 días antes
+      await addDoc(userCol('pagos'),{
+        miembroId:  miembroRef.id,
+        monto:      0,
+        planNombre,
+        diasPlan:   30,
+        fechaPago,
+        fechaFin,
+        creadoEn:   Date.now(),
+        importado:  true
+      });
+      contadorP++;
+    }
   }
-  await loadMiembros();
-  renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();
-  toast(`✓ ${contador} miembro${contador===1?'':'s'} importado${contador===1?'':'s'}`);
+  await loadMiembros();await loadPagos();
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();populateMiembrosSelect();
+  toast(`✓ ${contadorM} miembro${contadorM===1?'':'s'} importado${contadorM===1?'':'s'}${contadorP?' + '+contadorP+' pagos':''}`);
 }
 
 // PAGOS
