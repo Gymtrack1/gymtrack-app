@@ -291,6 +291,27 @@
       <div class="page-title">Alertas</div>
       <button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppTodos()">📱 WhatsApp a todos</button>
     </div>
+
+    <!-- Editor de mensaje WhatsApp (estático, siempre visible) -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--muted)">📱 MENSAJE WHATSAPP PERSONALIZADO</div>
+        <div style="font-size:11px;color:var(--muted)">Variables disponibles:
+          <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{nombre}</code>
+          <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{fecha}</code>
+          <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{dias}</code>
+        </div>
+      </div>
+      <textarea id="wamsg-textarea" rows="3" placeholder="Escribe tu mensaje aquí..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:12px;color:var(--muted);flex:1">Vista previa: <span id="wamsg-preview" style="color:var(--text);font-style:italic"></span></div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button onclick="restaurarMsgWA()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Restaurar predeterminado</button>
+          <button onclick="guardarMsgWA()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar mensaje</button>
+        </div>
+      </div>
+    </div>
+
     <div id="alertas-content"></div>
   </div>
 
@@ -1073,25 +1094,8 @@ function renderAlertas(){
   const vencidos=miembros.filter(m=>{const v=getVencimiento(m.id);return v!==null&&v<ahora;});
   const en3=miembros.filter(m=>{const v=getVencimiento(m.id);if(!v||v<ahora)return false;const d=Math.ceil((v-ahora)/86400000);return d>=0&&d<=3;});
   const en7=miembros.filter(m=>{const v=getVencimiento(m.id);if(!v||v<ahora)return false;const d=Math.ceil((v-ahora)/86400000);return d>3&&d<=7;});
-  // Editor de mensaje WhatsApp personalizado
-  const editorHtml=`
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:24px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--muted)">📱 MENSAJE WHATSAPP PERSONALIZADO</div>
-      <div style="font-size:11px;color:var(--muted)">Variables: <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">{nombre}</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">{fecha}</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">{dias}</code></div>
-    </div>
-    <textarea id="wamsg-textarea" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5">${msgWA.replace(/</g,'&lt;')}</textarea>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:12px;color:var(--muted)">Vista previa: <em style="color:var(--text)">${msgWA.replace(/\{nombre\}/g,'Juan').replace(/\{fecha\}/g,'01/08/2025').replace(/\{dias\}/g,'5 días')}</em></div>
-      <div style="display:flex;gap:8px">
-        <button onclick="document.getElementById('wamsg-textarea').value=MSG_WA_DEFAULT" style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Restaurar</button>
-        <button onclick="guardarMsgWA()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar mensaje</button>
-      </div>
-    </div>
-  </div>`;
-
-  let html=editorHtml;
-  if(!vencidos.length&&!en3.length&&!en7.length){el.innerHTML=editorHtml+'<div class="empty"><div class="empty-icon">✅</div><div>No hay alertas activas</div></div>';return;}
+  let html='';
+  if(!vencidos.length&&!en3.length&&!en7.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div>No hay alertas activas</div></div>';return;}
   if(vencidos.length){html+=`<div class="section-title" style="color:var(--red)">🔴 Membresías Vencidas (${vencidos.length})</div>`;html+=vencidos.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Venció ${fmtDate(getVencimiento(m.id))} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
   if(en3.length){html+=`<div class="section-title" style="color:var(--red);margin-top:20px">🟠 Vence en 3 días o menos (${en3.length})</div>`;html+=en3.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Vence ${fmtDate(getVencimiento(m.id))} · ${diasRestantes(getVencimiento(m.id))} días · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
   if(en7.length){html+=`<div class="section-title" style="color:var(--orange);margin-top:20px">🟡 Vence esta semana (${en7.length})</div>`;html+=en7.map(m=>`<div class="alert-card"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Vence ${fmtDate(getVencimiento(m.id))} · ${diasRestantes(getVencimiento(m.id))} días · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
@@ -1108,11 +1112,38 @@ function _aplicarMsgWA(m){
     .replace(/\{dias\}/g,diasStr);
 }
 
+function _updateMsgWAPreview(){
+  const prev=document.getElementById('wamsg-preview');
+  if(!prev)return;
+  const txt=document.getElementById('wamsg-textarea');
+  const val=txt?txt.value:msgWA;
+  prev.textContent=val
+    .replace(/\{nombre\}/g,'Juan Pérez')
+    .replace(/\{fecha\}/g,'15/08/2025')
+    .replace(/\{dias\}/g,'5 días');
+}
+
+function initMsgWAEditor(){
+  const txt=document.getElementById('wamsg-textarea');
+  if(!txt)return;
+  txt.value=msgWA;
+  _updateMsgWAPreview();
+  txt.addEventListener('input',_updateMsgWAPreview);
+}
+
+function restaurarMsgWA(){
+  const txt=document.getElementById('wamsg-textarea');
+  if(!txt)return;
+  txt.value=MSG_WA_DEFAULT;
+  _updateMsgWAPreview();
+}
+
 async function guardarMsgWA(){
   const txt=document.getElementById('wamsg-textarea');
   if(!txt)return;
   msgWA=txt.value.trim()||MSG_WA_DEFAULT;
   txt.value=msgWA;
+  _updateMsgWAPreview();
   try{
     await updateDoc(docFn(db,'usuarios',uid),{msgWhatsApp:msgWA});
     toast('Mensaje guardado ✓');
@@ -1550,10 +1581,10 @@ function showTab(name,event){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  // FIX: activar por ID para mayor robustez, con fallback a event.target
   const navBtn=document.getElementById('nav-'+name);
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
+  if(name==='alertas')initMsgWAEditor();
 }
 </script>
 </body>
