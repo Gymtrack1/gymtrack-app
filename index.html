@@ -500,6 +500,8 @@ let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 let userFunciones=[];
 let planListener=null,listenerRetries=0;
+const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
+let msgWA=MSG_WA_DEFAULT;
 
 // Límite de secciones por plan
 const PLAN_LIMITE={sencillo:3,pro:6,premium:9};
@@ -601,6 +603,8 @@ async function loadPlan(){
       userPlan = d.plan||'sencillo';
       userFunciones = (d.funciones&&d.funciones.length>0) ? d.funciones : defaultFunciones(userPlan);
 
+      // Cargar mensaje personalizado de WhatsApp si existe
+      if(d.msgWhatsApp) msgWA=d.msgWhatsApp;
       // Si le falta el email, agregarlo para que admin lo vea
       if(!d.email){
         await updateDoc(docFn(db,'usuarios',uid),{email, uid});
@@ -1069,28 +1073,69 @@ function renderAlertas(){
   const vencidos=miembros.filter(m=>{const v=getVencimiento(m.id);return v!==null&&v<ahora;});
   const en3=miembros.filter(m=>{const v=getVencimiento(m.id);if(!v||v<ahora)return false;const d=Math.ceil((v-ahora)/86400000);return d>=0&&d<=3;});
   const en7=miembros.filter(m=>{const v=getVencimiento(m.id);if(!v||v<ahora)return false;const d=Math.ceil((v-ahora)/86400000);return d>3&&d<=7;});
-  let html='';
-  if(!vencidos.length&&!en3.length&&!en7.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div>No hay alertas activas</div></div>';return;}
+  // Editor de mensaje WhatsApp personalizado
+  const editorHtml=`
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--muted)">📱 MENSAJE WHATSAPP PERSONALIZADO</div>
+      <div style="font-size:11px;color:var(--muted)">Variables: <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">{nombre}</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">{fecha}</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">{dias}</code></div>
+    </div>
+    <textarea id="wamsg-textarea" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5">${msgWA.replace(/</g,'&lt;')}</textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:12px;color:var(--muted)">Vista previa: <em style="color:var(--text)">${msgWA.replace(/\{nombre\}/g,'Juan').replace(/\{fecha\}/g,'01/08/2025').replace(/\{dias\}/g,'5 días')}</em></div>
+      <div style="display:flex;gap:8px">
+        <button onclick="document.getElementById('wamsg-textarea').value=MSG_WA_DEFAULT" style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Restaurar</button>
+        <button onclick="guardarMsgWA()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar mensaje</button>
+      </div>
+    </div>
+  </div>`;
+
+  let html=editorHtml;
+  if(!vencidos.length&&!en3.length&&!en7.length){el.innerHTML=editorHtml+'<div class="empty"><div class="empty-icon">✅</div><div>No hay alertas activas</div></div>';return;}
   if(vencidos.length){html+=`<div class="section-title" style="color:var(--red)">🔴 Membresías Vencidas (${vencidos.length})</div>`;html+=vencidos.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Venció ${fmtDate(getVencimiento(m.id))} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
   if(en3.length){html+=`<div class="section-title" style="color:var(--red);margin-top:20px">🟠 Vence en 3 días o menos (${en3.length})</div>`;html+=en3.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Vence ${fmtDate(getVencimiento(m.id))} · ${diasRestantes(getVencimiento(m.id))} días · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
   if(en7.length){html+=`<div class="section-title" style="color:var(--orange);margin-top:20px">🟡 Vence esta semana (${en7.length})</div>`;html+=en7.map(m=>`<div class="alert-card"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Vence ${fmtDate(getVencimiento(m.id))} · ${diasRestantes(getVencimiento(m.id))} días · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
   el.innerHTML=html;
 }
 
+function _aplicarMsgWA(m){
+  const dias=diasRestantes(getVencimiento(m.id));
+  const fecha=fmtDate(getVencimiento(m.id));
+  const diasStr=dias===null?'—':dias<0?`${Math.abs(dias)} días vencida`:`${dias} días`;
+  return msgWA
+    .replace(/\{nombre\}/g,m.nombre)
+    .replace(/\{fecha\}/g,fecha)
+    .replace(/\{dias\}/g,diasStr);
+}
+
+async function guardarMsgWA(){
+  const txt=document.getElementById('wamsg-textarea');
+  if(!txt)return;
+  msgWA=txt.value.trim()||MSG_WA_DEFAULT;
+  txt.value=msgWA;
+  try{
+    await updateDoc(docFn(db,'usuarios',uid),{msgWhatsApp:msgWA});
+    toast('Mensaje guardado ✓');
+  }catch(e){toast('Error al guardar: '+e.message,'err');}
+}
+
 function enviarWhatsApp(mid){
   const m=miembros.find(x=>x.id===mid);if(!m||!m.telefono)return alert('Este miembro no tiene teléfono registrado');
-  const dias=diasRestantes(getVencimiento(m.id));
-  let msg='';
-  if(dias===null||dias<0) msg=`Hola ${m.nombre}! 👋 Te recordamos que tu membresía en el gimnasio ha *vencido*. ¡Renuévala hoy para seguir entrenando! 💪`;
-  else if(dias<=3) msg=`Hola ${m.nombre}! 👋 Tu membresía vence en *${dias} día${dias===1?'':'s'}* (${fmtDate(getVencimiento(m.id))}). ¡Renuévala pronto para no perder tu acceso! 💪`;
-  else msg=`Hola ${m.nombre}! 👋 Tu membresía vence el *${fmtDate(getVencimiento(m.id))}* (en ${dias} días). ¡Recuerda renovarla a tiempo! 💪`;
+  const msg=_aplicarMsgWA(m);
   const tel=m.telefono.replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 
 function enviarWhatsAppTodos(){
-  const urgentes=miembros.filter(m=>['vencido','por-vencer'].includes(getEstado(m.id))&&m.telefono);
-  if(!urgentes.length){alert('No hay miembros con alertas o sin teléfono registrado');return;}
+  const ahora=Date.now();
+  const urgentes=miembros.filter(m=>{
+    if(!m.telefono)return false;
+    const v=getVencimiento(m.id);
+    if(!v)return false;
+    const d=Math.ceil((v-ahora)/86400000);
+    return v<ahora||d<=7;
+  });
+  if(!urgentes.length){alert('No hay miembros vencidos o por vencer con teléfono registrado');return;}
   if(!confirm(`¿Enviar WhatsApp a ${urgentes.length} miembro(s)?`))return;
   urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
 }
