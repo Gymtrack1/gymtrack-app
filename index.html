@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -201,7 +202,7 @@
 <!-- APP -->
 <div id="app-screen">
 <nav>
-  <div class="logo">GymTrack</div>
+  <div class="logo">GymTrack <span style="font-size:9px;color:#666">v3</span></div>
   <button class="nav-btn active" id="nav-dashboard" onclick="showTab('dashboard',event)">Dashboard</button>
   <button class="nav-btn" id="nav-miembros" onclick="showTab('miembros',event)">Miembros</button>
   <button class="nav-btn" id="nav-pagos" onclick="showTab('pagos',event)">Pagos</button>
@@ -504,6 +505,13 @@ const TODAS_SECCIONES=[
   {id:'inventario',label:'Inventario'},
 ];
 
+// Funciones por defecto según plan (siempre incluye las primeras N secciones)
+function defaultFunciones(plan){
+  const ids=TODAS_SECCIONES.map(s=>s.id);
+  const limite=PLAN_LIMITE[plan]||3;
+  return ids.slice(0,limite);
+}
+
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
 
@@ -529,7 +537,7 @@ window.addEventListener('firebaseReady',async()=>{
     const planAnterior=userPlan;
     const funcionesAnterior=JSON.stringify(userFunciones);
     userPlan=data.plan||'sencillo';
-    userFunciones=data.funciones||[];
+    userFunciones=(data.funciones&&data.funciones.length>0)?data.funciones:defaultFunciones(userPlan);
     console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
     applyPlan();
     if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
@@ -556,16 +564,54 @@ window.addEventListener('firebaseReady',async()=>{
 
 async function loadPlan(){
   try{
-    const snap=await getDoc(docFn(db,'usuarios',uid));
-    if(snap.exists()){userPlan=snap.data().plan||'sencillo';userFunciones=snap.data().funciones||[];}
-    else{
-      const email=window._auth.currentUser.email;
-      const allSnap=await getDocs(col(db,'usuarios'));
-      const match=allSnap.docs.find(d=>d.data().email===email);
-      if(match){const data=match.data();await setDoc(docFn(db,'usuarios',uid),{...data,uid});try{await deleteDoc(docFn(db,'usuarios',match.id));}catch(e){}userPlan=data.plan||'sencillo';userFunciones=data.funciones||[];}
-      else{await setDoc(docFn(db,'usuarios',uid),{email,plan:'sencillo',uid,creadoEn:Date.now()});userPlan='sencillo';userFunciones=[];}
+    const email = window._auth.currentUser.email;
+    const snap = await getDoc(docFn(db,'usuarios',uid));
+
+    if(snap.exists()){
+      // Documento propio encontrado — usar directo
+      const d = snap.data();
+      userPlan = d.plan||'sencillo';
+      userFunciones = (d.funciones&&d.funciones.length>0) ? d.funciones : defaultFunciones(userPlan);
+
+      // Si le falta el email, agregarlo para que admin lo vea
+      if(!d.email){
+        await updateDoc(docFn(db,'usuarios',uid),{email, uid});
+      }
+      return;
     }
-  }catch(e){userPlan='sencillo';}
+
+    // No existe doc propio — buscar por email en todos los documentos
+    const allSnap = await getDocs(col(db,'usuarios'));
+    const match = allSnap.docs.find(d => d.data().email === email);
+
+    if(match){
+      const data = match.data();
+      userPlan = data.plan||'sencillo';
+      userFunciones = (data.funciones&&data.funciones.length>0) ? data.funciones : defaultFunciones(userPlan);
+      // Migrar al doc con uid real, conservando plan y funciones
+      await setDoc(docFn(db,'usuarios',uid), {
+        ...data,
+        uid,
+        email,
+        pendiente: false,
+        migradoEn: Date.now()
+      });
+      // Borrar el doc temporal
+      try{ await deleteDoc(docFn(db,'usuarios',match.id)); }catch(e){}
+      console.log('✅ Cuenta migrada de',match.id,'a uid',uid);
+    } else {
+      // Primera vez, sin doc previo
+      userPlan = 'sencillo';
+      userFunciones = defaultFunciones('sencillo');
+      await setDoc(docFn(db,'usuarios',uid),{
+        email, plan:'sencillo', funciones:userFunciones, uid, creadoEn:Date.now()
+      });
+    }
+  }catch(e){
+    console.error('loadPlan error:',e);
+    userPlan='sencillo';
+    userFunciones=defaultFunciones('sencillo');
+  }
 }
 
 function applyPlan(){
@@ -585,10 +631,11 @@ async function sincronizarPlan(){
   try{
     const s=await getDoc(docFn(db,'usuarios',uid));
     if(!s.exists())return;
-    userPlan=s.data().plan||'sencillo';
-    userFunciones=s.data().funciones||[];
+    const d=s.data();
+    userPlan=d.plan||'sencillo';
+    userFunciones=(d.funciones&&d.funciones.length>0)?d.funciones:defaultFunciones(userPlan);
     applyPlan();
-    toast('Plan sincronizado: '+userPlan+' ✓');
+    toast('Plan: '+userPlan+' | '+userFunciones.length+' secciones ✓');
   }catch(e){toast('Error al sincronizar: '+e.message,'err');}
 }
 
@@ -677,14 +724,8 @@ async function loadAdminGyms(){
 }
 
 async function setPlan(gymId,plan,btn){
-  const updates={plan};
-  // Premium: todas las secciones automáticamente
-  if(plan==='premium'){
-    updates.funciones=TODAS_SECCIONES.map(s=>s.id);
-  } else {
-    // Sencillo/Pro: resetear funciones para que admin elija manualmente
-    updates.funciones=[];
-  }
+  // Siempre asignar funciones según plan (defaults o todas para premium)
+  const updates={plan, funciones:defaultFunciones(plan)};
   try{
     await updateDoc(docFn(db,'usuarios',gymId),updates);
     toast('Plan actualizado a '+plan+' ✓');
@@ -724,7 +765,7 @@ async function saveNuevoGym(){
   btn.textContent='Guardando...'; btn.disabled=true;
   try{
     const tempId='pending_'+email.replace(/[^a-zA-Z0-9]/g,'_');
-    await setDoc(docFn(db,'usuarios',tempId),{email,plan,nombre:nombre||'',pendiente:true,creadoEn:Date.now()});
+    await setDoc(docFn(db,'usuarios',tempId),{email,plan,nombre:nombre||'',funciones:defaultFunciones(plan),pendiente:true,creadoEn:Date.now()});
     closeModal('modal-nuevo-gym');
     await loadAdminGyms();
     toast('Cliente agregado ✓');
