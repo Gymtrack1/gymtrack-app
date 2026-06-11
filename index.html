@@ -827,7 +827,7 @@ async function loadInventario(){try{const s=await getDocs(userCol('inventario'))
 async function loadProductos(){try{const s=await getDocs(userCol('productos'));productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
 async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
 
-function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].fechaFin:null;}
+function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>Number(b.fechaFin)-Number(a.fechaFin));return ps.length?Number(ps[0].fechaFin):null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
 function getUltimoPlan(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].planNombre:'—';}
 // FIX: 'sin-pago' ahora tiene su propio badge gris — distinto a 'vencido'
@@ -1065,9 +1065,10 @@ function renderAlertas(){
   const el=document.getElementById('alertas-content');
   // FIX 6: usar PLANES correctamente
   if(!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','tu plan actual');return;}
-  const vencidos=miembros.filter(m=>getEstado(m.id)==='vencido');
-  const en3=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>=0&&d<=3;});
-  const en7=miembros.filter(m=>{const d=diasRestantes(getVencimiento(m.id));return d!==null&&d>3&&d<=7;});
+  const ahora=Date.now();
+  const vencidos=miembros.filter(m=>{const v=getVencimiento(m.id);return v!==null&&v<ahora;});
+  const en3=miembros.filter(m=>{const v=getVencimiento(m.id);if(!v||v<ahora)return false;const d=Math.ceil((v-ahora)/86400000);return d>=0&&d<=3;});
+  const en7=miembros.filter(m=>{const v=getVencimiento(m.id);if(!v||v<ahora)return false;const d=Math.ceil((v-ahora)/86400000);return d>3&&d<=7;});
   let html='';
   if(!vencidos.length&&!en3.length&&!en7.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div>No hay alertas activas</div></div>';return;}
   if(vencidos.length){html+=`<div class="section-title" style="color:var(--red)">🔴 Membresías Vencidas (${vencidos.length})</div>`;html+=vencidos.map(m=>`<div class="alert-card vencido"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">Venció ${fmtDate(getVencimiento(m.id))} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');}
