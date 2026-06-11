@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GymTrack</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -237,7 +238,18 @@
 
   <!-- MIEMBROS -->
   <div class="tab" id="tab-miembros">
-    <div class="header-row"><div class="page-title">Miembros</div><button class="btn btn-primary" onclick="openModal('modal-miembro')">+ Nuevo Miembro</button></div>
+    <div class="header-row">
+      <div class="page-title">Miembros</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="descargarPlantilla()" title="Descarga el Excel vacío con el formato correcto para importar">📋 Plantilla</button>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0" title="Importar miembros desde archivo .xlsx">
+          📥 Importar Excel
+          <input type="file" id="input-importar-xlsx" accept=".xlsx,.xls" style="display:none" onchange="importarMiembros(this)">
+        </label>
+        <button class="btn btn-ghost btn-sm" onclick="exportarMiembros()" title="Descargar todos los miembros como .xlsx">📤 Exportar Excel</button>
+        <button class="btn btn-primary" onclick="openModal('modal-miembro')">+ Nuevo Miembro</button>
+      </div>
+    </div>
     <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar miembro..." id="search-miembros" oninput="filterMiembros()"></div>
     <div class="table-wrap">
       <table>
@@ -862,6 +874,138 @@ function renderMiembros(filter=''){
   tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">+Pago</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
 }
 function filterMiembros(){renderMiembros(document.getElementById('search-miembros').value);}
+
+// EXPORTAR MIEMBROS A EXCEL
+function exportarMiembros(){
+  if(!miembros.length){toast('No hay miembros para exportar','err');return;}
+  const estadoLabel={activo:'Al corriente','por-vencer':'Por vencer',vencido:'Vencido','sin-pago':'Sin pago'};
+  const filas=miembros.map(m=>({
+    'Número': m.numero||'',
+    'Nombre': m.nombre||'',
+    'Teléfono': m.telefono||'',
+    'Correo': m.correo||'',
+    'Edad': m.edad||'',
+    'Dirección': m.direccion||'',
+    'Plan Membresía': getUltimoPlan(m.id),
+    'Fecha Vencimiento': getVencimiento(m.id)?new Date(getVencimiento(m.id)).toLocaleDateString('es-MX'):'Sin pago',
+    'Estado': estadoLabel[getEstado(m.id)]||getEstado(m.id),
+    'Notas': m.notas||''
+  }));
+  const ws=XLSX.utils.json_to_sheet(filas);
+  // Ancho de columnas
+  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:14},{wch:18},{wch:14},{wch:24}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,'Miembros',ws);
+  const fecha=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`GymTrack_Miembros_${fecha}.xlsx`);
+  toast('Exportado: '+miembros.length+' miembros ✓');
+}
+
+// DESCARGAR PLANTILLA VACÍA
+function descargarPlantilla(){
+  const ejemplo=[{
+    'Nombre*':'Juan Pérez',
+    'Teléfono':'8121234567',
+    'Correo':'juan@gmail.com',
+    'Edad':'28',
+    'Dirección':'Calle Roble 45, Col. Centro',
+    'Notas':'Fila de ejemplo — puedes borrarla'
+  }];
+  const ws=XLSX.utils.json_to_sheet(ejemplo);
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:30}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,'Miembros',ws);
+  XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
+  toast('Plantilla descargada ✓');
+}
+
+// IMPORTAR MIEMBROS DESDE EXCEL
+async function importarMiembros(input){
+  const file=input.files[0];
+  if(!file){return;}
+  input.value=''; // reset para poder volver a subir el mismo archivo
+
+  const reader=new FileReader();
+  reader.onload=async(e)=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const filas=XLSX.utils.sheet_to_json(ws,{defval:''});
+
+      if(!filas.length){toast('El archivo está vacío','err');return;}
+
+      // Normalizar: aceptar columna "Nombre*" o "Nombre"
+      const normalizar=row=>{
+        const get=(...keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!=='')return String(row[k]).trim();}return '';};
+        return{
+          nombre: get('Nombre*','Nombre'),
+          telefono: get('Teléfono','Telefono','Tel'),
+          correo: get('Correo','Email','Correo electrónico'),
+          edad: get('Edad'),
+          direccion: get('Dirección','Direccion','Dirección'),
+          notas: get('Notas')
+        };
+      };
+
+      const rows=filas.map(normalizar).filter(r=>r.nombre); // ignorar filas sin nombre
+
+      if(!rows.length){toast('No se encontró ningún miembro con nombre válido','err');return;}
+
+      // Detectar posibles duplicados
+      const duplicados=rows.filter(r=>
+        miembros.some(m=>
+          (r.nombre&&m.nombre&&m.nombre.toLowerCase()===r.nombre.toLowerCase())||
+          (r.telefono&&m.telefono&&m.telefono.replace(/\D/g,'')===r.telefono.replace(/\D/g,''))
+        )
+      );
+
+      let proceder=true;
+      if(duplicados.length){
+        const nombres=duplicados.map(d=>d.nombre).join(', ');
+        proceder=confirm(
+          `⚠️ Se detectaron ${duplicados.length} posibles duplicados:\n\n${nombres}\n\n`+
+          `¿Deseas importarlos de todas formas?\n(Presiona Cancelar para omitirlos y solo agregar los nuevos)`
+        );
+        if(!proceder){
+          // Omitir duplicados, solo importar los nuevos
+          const nuevos=rows.filter(r=>!duplicados.includes(r));
+          if(!nuevos.length){toast('No hay miembros nuevos para importar','err');return;}
+          await _guardarImportados(nuevos);
+          return;
+        }
+      }
+      await _guardarImportados(rows);
+
+    }catch(err){
+      console.error('importarMiembros error:',err);
+      toast('Error al leer el archivo: '+err.message,'err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function _guardarImportados(rows){
+  const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
+  let contador=0;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+    const data={
+      nombre: r.nombre,
+      telefono: r.telefono||'',
+      correo: r.correo||'',
+      edad: r.edad?parseInt(r.edad)||null:null,
+      direccion: r.direccion||'',
+      notas: r.notas||'',
+      numero: maxNum+i+1,
+      creadoEn: Date.now()
+    };
+    await addDoc(userCol('miembros'),data);
+    contador++;
+  }
+  await loadMiembros();
+  renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();
+  toast(`✓ ${contador} miembro${contador===1?'':'s'} importado${contador===1?'':'s'}`);
+}
 
 // PAGOS
 function renderPagos(){
