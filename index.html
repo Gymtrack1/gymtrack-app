@@ -1022,13 +1022,12 @@ async function _guardarImportados(rows){
     const fechaFin=_parseFechaES(r.fechaVencimiento);
     if(fechaFin){
       const planNombre=r.planActual&&r.planActual!=='—'?r.planActual:'Importado';
-      const fechaPago=fechaFin-30*86400000; // estimar fecha de pago 30 días antes
       await addDoc(userCol('pagos'),{
         miembroId:  miembroRef.id,
         monto:      0,
         planNombre,
         diasPlan:   30,
-        fechaPago,
+        fechaPago:  Date.now(),
         fechaFin,
         creadoEn:   Date.now(),
         importado:  true
