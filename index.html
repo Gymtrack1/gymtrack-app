@@ -213,7 +213,7 @@
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
   <div class="user-info">
     <span class="plan-badge" id="plan-badge"></span>
-    <button class="btn-logout" onclick="sincronizarPlan()" title="Sincronizar plan" style="padding:4px 8px;font-size:13px;margin-right:2px">🔄</button>
+    <button onclick="sincronizarPlan()" style="background:rgba(232,255,58,0.12);border:1px solid rgba(232,255,58,0.35);color:var(--accent);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Forzar lectura del plan desde Firestore">🔄 Sincronizar plan</button>
     <span id="user-email" style="font-size:11px"></span>
     <button class="btn-logout" onclick="doLogout()">Salir</button>
   </div>
@@ -487,6 +487,7 @@ let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 let userFunciones=[];
+let planListener=null,listenerRetries=0;
 
 // Límite de secciones por plan
 const PLAN_LIMITE={sencillo:3,pro:6,premium:9};
@@ -529,21 +530,37 @@ window.addEventListener('firebaseReady',async()=>{
   const onSnapshot=window._onSnapshot;
   uid=window._auth.currentUser.uid;
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  // onSnapshot: actualiza plan en tiempo real cuando admin hace cambios
-  onSnapshot(docFn(db,'usuarios',uid),async(snap)=>{
-    if(!snap.exists())return;
-    const data=snap.data();
-    const planAnterior=userPlan;
-    const funcionesAnterior=JSON.stringify(userFunciones);
-    userPlan=data.plan||'sencillo';
-    userFunciones=(data.funciones&&data.funciones.length>0)?data.funciones:defaultFunciones(userPlan);
-    console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
-    applyPlan();
-    if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
-      renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
-      renderDashboard();renderMiembros();renderPagos();renderAsistencia();
-    }
-  });
+  // onSnapshot con reconexión automática por si falla la conexión
+  function startPlanListener(){
+    if(planListener){try{planListener();}catch(e){}}
+    planListener=onSnapshot(
+      docFn(db,'usuarios',uid),
+      async(snap)=>{
+        listenerRetries=0;
+        if(!snap.exists())return;
+        const data=snap.data();
+        const planAnterior=userPlan;
+        const funcionesAnterior=JSON.stringify(userFunciones);
+        userPlan=data.plan||'sencillo';
+        userFunciones=(data.funciones&&data.funciones.length>0)?data.funciones:defaultFunciones(userPlan);
+        console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
+        applyPlan();
+        if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
+          toast('Plan actualizado: '+userPlan+' ✓');
+          renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
+          renderDashboard();renderMiembros();renderPagos();renderAsistencia();
+        }
+      },
+      (err)=>{
+        console.error('⚠️ onSnapshot error:',err);
+        const delay=Math.min(5000*Math.pow(2,listenerRetries),60000);
+        listenerRetries++;
+        console.log('🔁 Reconectando listener en '+(delay/1000)+'s (intento '+listenerRetries+')');
+        setTimeout(startPlanListener,delay);
+      }
+    );
+  }
+  startPlanListener();
   await loadPlan(); applyPlan(); await loadAll();
   // Auto-sincronizar cada 20 segundos como respaldo por si onSnapshot falla
   setInterval(async()=>{
@@ -702,7 +719,7 @@ async function loadAdminGyms(){
         <div style="flex:1;min-width:160px">
           <div class="gym-email">${displayName}</div>
           <div style="font-size:11px;color:var(--muted)">${displayEmail}</div>
-          ${g.pendiente?'<span style="font-size:10px;background:rgba(255,170,58,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
+          ${g.pendiente===true?'<span style="font-size:10px;background:rgba(255,170,58,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
         </div>
         <div class="plan-selector">
           <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button>
