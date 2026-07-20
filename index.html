@@ -389,7 +389,16 @@
 <div class="modal-overlay" id="modal-pago">
   <div class="modal">
     <h2>Registrar Pago</h2>
-    <div class="form-group"><label>Miembro</label><select id="p-miembro"></select></div>
+    <div class="form-group"><label>Miembro</label>
+      <div style="position:relative">
+        <input type="text" id="p-miembro-search" placeholder="Buscar por nombre o #número..." autocomplete="off"
+          oninput="filtrarMiembrosSearch(this.value)"
+          onfocus="filtrarMiembrosSearch(this.value)"
+          style="width:100%">
+        <input type="hidden" id="p-miembro">
+        <div id="p-miembro-results" style="display:none;position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:9999;margin-top:4px;box-shadow:0 4px 20px rgba(0,0,0,0.6);min-width:300px"></div>
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>Monto ($)</label><input type="number" id="p-monto" placeholder="500"></div>
       <div class="form-group"><label>Plan</label>
@@ -1510,8 +1519,46 @@ async function savePago(){
   await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Pago registrado ✓');
 }
-function preRegPago(mid){populateMiembrosSelect(mid);document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];openModal('modal-pago');}
-function populateMiembrosSelect(selectedId=''){document.getElementById('p-miembro').innerHTML=miembros.map(m=>`<option value="${m.id}" ${m.id===selectedId?'selected':''}>#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');}
+function preRegPago(mid){
+  const m=miembros.find(x=>x.id===mid);
+  document.getElementById('p-miembro').value=mid;
+  document.getElementById('p-miembro-search').value=m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'';
+  document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];
+  openModal('modal-pago');
+}
+function populateMiembrosSelect(selectedId=''){
+  // resetear buscador al abrir el modal sin miembro preseleccionado
+  if(!selectedId){
+    document.getElementById('p-miembro').value='';
+    document.getElementById('p-miembro-search').value='';
+    document.getElementById('p-miembro-results').style.display='none';
+  }
+}
+function filtrarMiembrosSearch(query){
+  const res=document.getElementById('p-miembro-results');
+  const inp=document.getElementById('p-miembro-search');
+  const rect=inp.getBoundingClientRect();
+  res.style.top=(rect.bottom+4)+'px';
+  res.style.left=rect.left+'px';
+  res.style.width=rect.width+'px';
+  const norm=s=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const q=norm(query.trim());
+  const filtrados=q?miembros.filter(m=>norm(m.nombre||'').includes(q)||String(m.numero||'').includes(q)):miembros.slice(0,10);
+  if(!filtrados.length){res.innerHTML='<div style="padding:10px 14px;color:var(--muted);font-size:13px">Sin resultados</div>';res.style.display='block';return;}
+  const e2=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  res.innerHTML=filtrados.map(m=>`<div onclick="seleccionarMiembro('${m.id}','#${fmtNum(m.numero||0)} ${m.nombre.replace(/'/g,"\\'")}');event.stopPropagation()" style="padding:9px 14px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background=''">#${fmtNum(m.numero||0)} ${e2(m.nombre)}</div>`).join('');
+  res.style.display='block';
+}
+function seleccionarMiembro(id,label){
+  document.getElementById('p-miembro').value=id;
+  document.getElementById('p-miembro-search').value=label;
+  document.getElementById('p-miembro-results').style.display='none';
+}
+// Cerrar dropdown al hacer clic fuera
+document.addEventListener('click',e=>{
+  const res=document.getElementById('p-miembro-results');
+  if(res&&!res.contains(e.target)&&e.target.id!=='p-miembro-search')res.style.display='none';
+});
 
 // ASISTENCIA
 async function registrarAsistencia(mid){
