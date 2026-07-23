@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -311,10 +310,11 @@
   <!-- ASISTENCIA -->
   <div class="tab" id="tab-asistencia">
     <div class="header-row"><div class="page-title">Asistencia</div><div style="font-size:12px;color:var(--muted)" id="fecha-hoy"></div></div>
+    <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar miembro..." id="search-asistencia" oninput="filterAsistencia()"></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Miembro</th><th>Estado</th><th>Vence</th><th>Hoy</th></tr></thead>
-        <tbody id="tabla-asistencia"><tr><td colspan="5" class="loading">Cargando...</td></tr></tbody>
+        <thead><tr><th>#</th><th>Miembro</th><th>Estado</th><th>Vence</th><th>Notas</th><th>Hoy</th></tr></thead>
+        <tbody id="tabla-asistencia"><tr><td colspan="6" class="loading">Cargando...</td></tr></tbody>
       </table>
     </div>
     <div class="section-title">Historial</div>
@@ -956,9 +956,10 @@ function renderMiembros(filter=''){
   const tbody=document.getElementById('tabla-miembros');
   const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
   if(!lista.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';return;}
-  tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">+Pago</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+  tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
 }
 function filterMiembros(){renderMiembros(document.getElementById('search-miembros').value);}
+function filterAsistencia(){renderAsistencia(document.getElementById('search-asistencia').value);}
 
 // EXPORTAR MIEMBROS A EXCEL
 function exportarMiembros(){
@@ -1134,12 +1135,13 @@ function renderPagos(){
 }
 
 // ASISTENCIA
-function renderAsistencia(){
+function renderAsistencia(filter=''){
   const tbody=document.getElementById('tabla-asistencia');
   const hoyStr=new Date().toDateString();
   const hoyIds=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).map(a=>a.miembroId);
-  if(!miembros.length){tbody.innerHTML='<tr><td colspan="5"><div class="empty"><div class="empty-icon">📋</div><div>No hay miembros</div></div></td></tr>';}
-  else{tbody.innerHTML=miembros.map(m=>{const estado=getEstado(m.id);const yaFue=hoyIds.includes(m.id);const dis=['vencido','sin-pago'].includes(estado)?'disabled':'';return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${estadoBadge(estado)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${yaFue?'<span class="today-pill">✓ Registrado</span>':`<button class="attend-btn" ${dis} onclick="registrarAsistencia('${m.id}')">Registrar</button>`}</td></tr>`;}).join('');}
+  const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
+  if(!lista.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="empty-icon">📋</div><div>No hay miembros</div></div></td></tr>';}
+  else{tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);const yaFue=hoyIds.includes(m.id);const dis=['vencido','sin-pago'].includes(estado)?'disabled':'';const notas=m.notas||'';const notasCorta=notas.length>30?notas.slice(0,30)+'…':notas;return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${estadoBadge(estado)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px" title="${notas.replace(/"/g,'&quot;')}">${notas?notasCorta:'—'}</td><td>${yaFue?'<span class="today-pill">✓ Registrado</span>':`<button class="attend-btn" ${dis} onclick="registrarAsistencia('${m.id}')">Registrar</button>`}</td></tr>`;}).join('');}
   const hist=document.getElementById('tabla-historial');
   const sorted=[...asistencias].sort((a,b)=>b.fecha-a.fecha).slice(0,60);
   hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
