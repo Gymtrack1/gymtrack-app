@@ -294,6 +294,7 @@
         <tbody id="tabla-miembros"><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="miembros-paginacion"></div>
   </div>
 
   <!-- PAGOS -->
@@ -610,6 +611,12 @@
 
 <script>
 let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],ventas=[],gastos=[];
+// Caches O(1): se recalculan cada vez que se recargan miembros/pagos (ver loadMiembros/loadPagos)
+let miembrosPorId=new Map();
+let pagosPorMiembroFin=new Map();  // miembroId -> pagos ordenados desc por fechaFin (vencimiento)
+let pagosPorMiembroPago=new Map(); // miembroId -> pagos ordenados desc por fechaPago (pago más reciente)
+let miembrosPage=1;
+const MIEMBROS_PAGE_SIZE=100;
 let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
@@ -734,7 +741,8 @@ window.addEventListener('firebaseReady',async()=>{
         if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
           toast('Plan actualizado: '+userPlan+' ✓');
           renderAlertas();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
-          renderDashboard();renderMiembros();renderPagos();renderAsistencia();
+          renderDashboard();renderPagos();renderAsistencia();
+          if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
         }
       },
       (err)=>{
@@ -993,11 +1001,38 @@ async function doLogout(){await window._signOut(window._auth);}
 
 async function loadAll(){
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos()]);
-  renderDashboard();renderMiembros();renderPagos();renderAsistencia();
+  renderDashboard();renderPagos();renderAsistencia();
   renderAlertas();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
+  // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
+  // detalle fila por fila si el usuario está viendo el Dashboard. Se renderiza al entrar a esa pestaña
+  // (activarTab) o si ya está activa en este momento (ej. tras recargar datos desde otra pestaña).
+  if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
 }
-async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));}
-async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));}
+function isTabActive(name){const el=document.getElementById('tab-'+name);return!!el&&el.classList.contains('active');}
+async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));recalcMiembrosPorId();}
+async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));recalcPagosPorMiembro();}
+
+// Reconstruye el Map miembroId->miembro. Se llama una sola vez por recarga de miembros, no por cada render.
+function recalcMiembrosPorId(){
+  miembrosPorId=new Map(miembros.map(m=>[m.id,m]));
+}
+// Reconstruye los Maps miembroId->pagos (ordenados) UNA vez por recarga de pagos, en vez de recorrer
+// el arreglo completo de pagos por cada miembro en cada render (Dashboard, Miembros, Asistencia, Alertas, Reportes).
+function recalcPagosPorMiembro(){
+  const porId=new Map();
+  for(const p of pagos){
+    let arr=porId.get(p.miembroId);
+    if(!arr){arr=[];porId.set(p.miembroId,arr);}
+    arr.push(p);
+  }
+  const finMap=new Map(),pagoMap=new Map();
+  for(const[mid,arr]of porId){
+    finMap.set(mid,[...arr].sort((a,b)=>Number(b.fechaFin)-Number(a.fechaFin)));
+    pagoMap.set(mid,[...arr].sort((a,b)=>b.fechaPago-a.fechaPago));
+  }
+  pagosPorMiembroFin=finMap;
+  pagosPorMiembroPago=pagoMap;
+}
 async function loadAsistencias(){const s=await getDocs(userCol('asistencias'));asistencias=s.docs.map(d=>({id:d.id,...d.data()}));}
 async function loadEmpleados(){try{const s=await getDocs(userCol('empleados'));empleados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){empleados=[];}}
 async function loadInventario(){try{const s=await getDocs(userCol('inventario'));inventario=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){inventario=[];}}
@@ -1005,9 +1040,9 @@ async function loadProductos(){try{const s=await getDocs(userCol('productos'));p
 async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
 async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
 
-function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>Number(b.fechaFin)-Number(a.fechaFin));return ps.length?Number(ps[0].fechaFin):null;}
+function getVencimiento(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?Number(ps[0].fechaFin):null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
-function getUltimoPlan(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].planNombre:'—';}
+function getUltimoPlan(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].planNombre:'—';}
 // FIX: 'sin-pago' ahora tiene su propio badge gris — distinto a 'vencido'
 function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">Al corriente</span>';if(e==='por-vencer')return'<span class="badge badge-orange">Por vencer</span>';if(e==='sin-pago')return'<span class="badge badge-gray">Sin pago</span>';return'<span class="badge badge-red">Vencido</span>';}
 function formaPagoBadge(fp){if(fp==='efectivo')return'<span class="badge badge-green">💵 Efectivo</span>';if(fp==='tarjeta')return'<span class="badge badge-blue">💳 Tarjeta</span>';return'<span class="badge badge-gray">Sin especificar</span>';}
@@ -1020,15 +1055,18 @@ function calcTasaRenovacion(){
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1).getTime();
   const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59).getTime();
   const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1).getTime();
-  const vencieronMesAnt=miembros.filter(m=>{
-    const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaFin-a.fechaFin);
-    if(!ps.length)return false;
-    const pagoAnt=ps.find(p=>p.fechaFin>=inicioMesAnt&&p.fechaFin<=finMesAnt);
-    return !!pagoAnt;
-  });
-  const renovaron=vencieronMesAnt.filter(m=>{return pagos.some(p=>p.miembroId===m.id&&p.fechaPago>=inicioMes);});
-  const tasa=vencieronMesAnt.length>0?Math.round((renovaron.length/vencieronMesAnt.length)*100):null;
-  return{tasa,renovaron:renovaron.length,total:vencieronMesAnt.length};
+  let totalVencieronMesAnt=0,totalRenovaron=0;
+  for(const m of miembros){
+    const psFin=pagosPorMiembroFin.get(m.id);
+    if(!psFin||!psFin.length)continue;
+    const pagoAnt=psFin.find(p=>p.fechaFin>=inicioMesAnt&&p.fechaFin<=finMesAnt);
+    if(!pagoAnt)continue;
+    totalVencieronMesAnt++;
+    const psPago=pagosPorMiembroPago.get(m.id);
+    if(psPago&&psPago.length&&psPago[0].fechaPago>=inicioMes)totalRenovaron++;
+  }
+  const tasa=totalVencieronMesAnt>0?Math.round((totalRenovaron/totalVencieronMesAnt)*100):null;
+  return{tasa,renovaron:totalRenovaron,total:totalVencieronMesAnt};
 }
 
 // DASHBOARD
@@ -1049,10 +1087,36 @@ function renderDashboard(){
 function renderMiembros(filter=''){
   const tbody=document.getElementById('tabla-miembros');
   const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
-  if(!lista.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';return;}
-  tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+  if(!lista.length){
+    tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';
+    renderMiembrosPaginacion(0,1);
+    return;
+  }
+  const totalPaginas=Math.max(1,Math.ceil(lista.length/MIEMBROS_PAGE_SIZE));
+  if(miembrosPage>totalPaginas)miembrosPage=totalPaginas;
+  if(miembrosPage<1)miembrosPage=1;
+  const start=(miembrosPage-1)*MIEMBROS_PAGE_SIZE;
+  const pagina=lista.slice(start,start+MIEMBROS_PAGE_SIZE);
+  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+  renderMiembrosPaginacion(lista.length,totalPaginas);
 }
-function filterMiembros(){renderMiembros(document.getElementById('search-miembros').value);}
+function renderMiembrosPaginacion(total,totalPaginas){
+  const el=document.getElementById('miembros-paginacion');
+  if(!el)return;
+  if(!total){el.innerHTML='';return;}
+  el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;flex-wrap:wrap">
+    <div style="font-size:12px;color:var(--muted)">${total.toLocaleString()} miembro${total===1?'':'s'} · Página ${miembrosPage} de ${totalPaginas}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="cambiarPaginaMiembros(-1)" ${miembrosPage<=1?'disabled':''}>‹ Anterior</button>
+      <button class="btn btn-ghost btn-sm" onclick="cambiarPaginaMiembros(1)" ${miembrosPage>=totalPaginas?'disabled':''}>Siguiente ›</button>
+    </div>
+  </div>`;
+}
+function cambiarPaginaMiembros(delta){
+  miembrosPage+=delta;
+  renderMiembros(document.getElementById('search-miembros').value);
+}
+function filterMiembros(){miembrosPage=1;renderMiembros(document.getElementById('search-miembros').value);}
 function filterAsistencia(){renderAsistencia(document.getElementById('search-asistencia').value);}
 
 // EXPORTAR MIEMBROS A EXCEL
@@ -1225,7 +1289,7 @@ function renderPagos(){
   const tbody=document.getElementById('tabla-pagos');
   const sorted=[...pagos].sort((a,b)=>b.fechaPago-a.fechaPago);
   if(!sorted.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';return;}
-  tbody.innerHTML=sorted.map((p,i)=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${sorted.length-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+  tbody.innerHTML=sorted.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
 }
 
 // ASISTENCIA
@@ -1238,7 +1302,7 @@ function renderAsistencia(filter=''){
   else{tbody.innerHTML=lista.map(m=>{const estado=getEstado(m.id);const yaFue=hoyIds.includes(m.id);const dis=['vencido','sin-pago'].includes(estado)?'disabled':'';const notas=m.notas||'';const notasCorta=notas.length>30?notas.slice(0,30)+'…':notas;return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${estadoBadge(estado)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px" title="${notas.replace(/"/g,'&quot;')}">${notas?notasCorta:'—'}</td><td>${yaFue?'<span class="today-pill">✓ Registrado</span>':`<button class="attend-btn" ${dis} onclick="registrarAsistencia('${m.id}')">Registrar</button>`}</td></tr>`;}).join('');}
   const hist=document.getElementById('tabla-historial');
   const sorted=[...asistencias].sort((a,b)=>b.fecha-a.fecha).slice(0,60);
-  hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembros.find(x=>x.id===a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
+  hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembrosPorId.get(a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
 }
 
 // ALERTAS
@@ -1350,10 +1414,10 @@ function renderEstadoCuenta(){
   const activos=miembros.filter(m=>getEstado(m.id)==='activo');
   const vencidos=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
   const porVencer=miembros.filter(m=>getEstado(m.id)==='por-vencer');
-  const porRecuperar=vencidos.map(m=>{const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);return ps.length?ps[0].monto:0;}).reduce((s,v)=>s+v,0);
+  const porRecuperar=vencidos.reduce((s,m)=>{const ps=pagosPorMiembroPago.get(m.id);return s+(ps&&ps.length?ps[0].monto:0);},0);
   const mrr=activos.reduce((s,m)=>{
-    const ps=pagos.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fechaPago-a.fechaPago);
-    if(!ps.length)return s;
+    const ps=pagosPorMiembroPago.get(m.id);
+    if(!ps||!ps.length)return s;
     const dias=ps[0].diasPlan||30;
     const valorMensual=(ps[0].monto/dias)*30;
     return s+valorMensual;
@@ -1567,7 +1631,7 @@ function renderInventario(seccion='equipo'){
         </td>
       </tr>`;}).join('')}</tbody></table></div>
     <div class="section-title" style="margin-top:24px">Últimas Ventas</div>
-    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembros.find(x=>x.id===v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
+    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembrosPorId.get(v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
     `:'<div class="empty"><div class="empty-icon">🛒</div><div>No hay productos registrados</div><div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="openModal(\'modal-producto\')">+ Agregar Producto</button></div></div>'}
   </div>`;
 }
@@ -1880,6 +1944,8 @@ function activarTab(name,event){
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
   if(name==='alertas')initMsgWAEditor();
+  // Detalle fila por fila de Miembros solo se construye al entrar a esta pestaña
+  if(name==='miembros')renderMiembros(document.getElementById('search-miembros').value);
 }
 
 // PIN Finanzas/Empleados
