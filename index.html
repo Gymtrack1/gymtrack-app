@@ -60,7 +60,7 @@
   td{padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;}
   tr:hover td{background:var(--surface2);}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
-  .badge-green{background:rgba(31,157,85,0.12);color:var(--green);} .badge-orange{background:rgba(217,119,6,0.15);color:var(--orange);} .badge-red{background:rgba(220,59,48,0.15);color:var(--red);} .badge-gray{background:rgba(133,132,122,0.13);color:var(--muted);}
+  .badge-green{background:rgba(31,157,85,0.12);color:var(--green);} .badge-orange{background:rgba(217,119,6,0.15);color:var(--orange);} .badge-red{background:rgba(220,59,48,0.15);color:var(--red);} .badge-gray{background:rgba(133,132,122,0.13);color:var(--muted);} .badge-blue{background:rgba(37,99,235,0.12);color:var(--blue);}
   .btn{border:none;border-radius:8px;padding:10px 20px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;}
   .btn-primary{background:var(--accent);color:#000;} .btn-primary:hover{background:#B0D400;}
   .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);} .btn-ghost:hover{border-color:var(--text);}
@@ -301,8 +301,8 @@
     <div class="header-row"><div class="page-title">Pagos</div><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
-        <tbody id="tabla-pagos"><tr><td colspan="6" class="loading">Cargando...</td></tr></tbody>
+        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
+        <tbody id="tabla-pagos"><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -450,7 +450,15 @@
         </select>
       </div>
     </div>
-    <div class="form-group"><label>Fecha de pago</label><input type="date" id="p-fecha"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha de pago</label><input type="date" id="p-fecha"></div>
+      <div class="form-group"><label>Forma de Pago</label>
+        <select id="p-forma-pago">
+          <option value="efectivo" selected>💵 Efectivo</option>
+          <option value="tarjeta">💳 Tarjeta</option>
+        </select>
+      </div>
+    </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="savePago()">Guardar</button>
@@ -539,7 +547,15 @@
       <div class="form-group"><label>Cantidad</label><input type="number" id="v-cantidad" placeholder="1" min="1" value="1" oninput="updateVentaTotal()"></div>
       <div class="form-group"><label>Precio unitario ($)</label><input type="number" id="v-precio" placeholder="0" oninput="updateVentaTotal()"></div>
     </div>
-    <div class="form-group"><label>Miembro (opcional)</label><select id="v-miembro"><option value="">— Sin miembro —</option></select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Miembro (opcional)</label><select id="v-miembro"><option value="">— Sin miembro —</option></select></div>
+      <div class="form-group"><label>Forma de Pago</label>
+        <select id="v-forma-pago">
+          <option value="efectivo" selected>💵 Efectivo</option>
+          <option value="tarjeta">💳 Tarjeta</option>
+        </select>
+      </div>
+    </div>
     <div id="v-total-preview" style="text-align:right;font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);margin-top:8px">Total: $0</div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-venta')">Cancelar</button>
@@ -562,15 +578,49 @@
   </div>
 </div>
 
+<!-- MODAL PIN FINANZAS/EMPLEADOS -->
+<div class="modal-overlay" id="modal-pin">
+  <div class="modal" style="max-width:360px">
+    <h2 id="modal-pin-title">Ingresa el PIN</h2>
+    <div id="modal-pin-desc" style="color:var(--muted);font-size:13px;margin-bottom:16px"></div>
+    <div class="form-group"><label>PIN</label><input type="password" inputmode="numeric" id="pin-input" placeholder="••••" maxlength="12" onkeydown="if(event.key==='Enter')submitPin()"></div>
+    <div class="form-group" id="pin-confirm-group" style="display:none"><label>Confirma el PIN</label><input type="password" inputmode="numeric" id="pin-confirm-input" placeholder="••••" maxlength="12" onkeydown="if(event.key==='Enter')submitPin()"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pin')">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitPin()">Continuar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL GASTO -->
+<div class="modal-overlay" id="modal-gasto">
+  <div class="modal" style="max-width:400px">
+    <h2>Registrar Gasto</h2>
+    <div class="form-group"><label>Concepto</label><input type="text" id="g-concepto" placeholder="Renta, luz, compra de pesas..."></div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto ($)</label><input type="number" id="g-monto" placeholder="500"></div>
+      <div class="form-group"><label>Fecha</label><input type="date" id="g-fecha"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-gasto')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveGasto()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <script>
-let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],ventas=[];
-let ecExpandido={semana:false,quincena:false,mes:false};
+let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],ventas=[],gastos=[];
+let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
+let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid;
 let userPlan='sencillo';
 let userFunciones=[];
 let planListener=null,listenerRetries=0;
 const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
+let pinFinanzas=null;
+const PIN_PROTEGIDO=['estadocuenta','empleados'];
+let pinTabPendiente=null,pinEventPendiente=null;
 
 // Límite de secciones por plan
 const PLAN_LIMITE={sencillo:3,pro:6,premium:9};
@@ -606,6 +656,7 @@ function toast(msg,tipo='ok'){
   setTimeout(()=>el.className='',2800);
 }
 function toggleEcPeriodo(p){ecExpandido[p]=!ecExpandido[p];renderEstadoCuenta();}
+function toggleCorte(p){corteExpandido[p]=!corteExpandido[p];renderEstadoCuenta();}
 function desglosePorPlan(pagosArr){
   if(!pagosArr.length)return'Sin pagos en este período';
   const grupos={};
@@ -616,6 +667,45 @@ function desglosePorPlan(pagosArr){
     grupos[key].count++;
   });
   return Object.entries(grupos).map(([nombre,g])=>`${nombre}: ${g.count} · $${g.monto.toLocaleString()}`).join('<br>');
+}
+function desglosePorForma(pagosArr,ventasArr){
+  let efectivo=0,tarjeta=0,sinEspecificar=0;
+  pagosArr.forEach(p=>{
+    if(p.formaPago==='efectivo')efectivo+=p.monto;
+    else if(p.formaPago==='tarjeta')tarjeta+=p.monto;
+    else sinEspecificar+=p.monto;
+  });
+  ventasArr.forEach(v=>{
+    const monto=v.total||0;
+    if(v.formaPago==='efectivo')efectivo+=monto;
+    else if(v.formaPago==='tarjeta')tarjeta+=monto;
+    else sinEspecificar+=monto;
+  });
+  return{efectivo,tarjeta,sinEspecificar,total:efectivo+tarjeta+sinEspecificar};
+}
+function corteCaja(pagosArr,ventasArr,gastosArr,incluirNomina){
+  const ingresos=pagosArr.reduce((s,p)=>s+p.monto,0)+ventasArr.reduce((s,v)=>s+(v.total||0),0);
+  const gastosManual=gastosArr.reduce((s,g)=>s+(g.monto||0),0);
+  const nomina=incluirNomina?empleados.reduce((s,e)=>s+(e.sueldo||0),0):0;
+  const gastosTotal=gastosManual+nomina;
+  return{ingresos,gastosManual,nomina,gastosTotal,neto:ingresos-gastosTotal};
+}
+function corteCajaCard(titulo,periodo,corte,gastosArr){
+  const netoColor=corte.neto>=0?'var(--green)':'var(--red)';
+  const abierto=corteExpandido[periodo];
+  const gastosOrdenados=[...gastosArr].sort((a,b)=>b.fecha-a.fecha);
+  return`<div class="ec-card"><h3>${titulo}</h3>
+    <div class="ec-row"><span>Ingresos</span><span class="ec-val" style="color:var(--accent)">$${corte.ingresos.toLocaleString()}</span></div>
+    <div class="ec-row" style="cursor:pointer" onclick="toggleCorte('${periodo}')">
+      <span>Gastos${corte.nomina>0?' (incl. nómina)':''} ${abierto?'▾':'▸'}</span>
+      <span class="ec-val" style="color:var(--red)">-$${corte.gastosTotal.toLocaleString()}</span>
+    </div>
+    <div class="ec-row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:11px"><span style="font-weight:700">Neto</span><span class="ec-val" style="color:${netoColor};font-size:15px">$${corte.neto.toLocaleString()}</span></div>
+    ${abierto?`
+    ${corte.nomina>0?`<div class="ec-row"><span>Nómina (empleados)</span><span class="ec-val" style="color:var(--red)">-$${corte.nomina.toLocaleString()}</span></div>`:''}
+    ${gastosOrdenados.length?gastosOrdenados.map(g=>`<div class="ec-row"><span>${g.concepto}</span><span style="display:flex;align-items:center;gap:8px"><span class="ec-val" style="color:var(--red)">-$${(g.monto||0).toLocaleString()}</span><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="delGasto('${g.id}')">✕</button></span></div>`).join(''):'<div style="color:var(--muted);font-size:12px;margin-top:8px">Sin gastos manuales en este período</div>'}
+    `:''}
+  </div>`;
 }
 
 window.addEventListener('firebaseReady',async()=>{
@@ -638,6 +728,7 @@ window.addEventListener('firebaseReady',async()=>{
         const funcionesAnterior=JSON.stringify(userFunciones);
         userPlan=data.plan||'sencillo';
         userFunciones=(data.funciones&&data.funciones.length>0)?data.funciones:defaultFunciones(userPlan);
+        pinFinanzas=data.pinFinanzas||null;
         console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
         applyPlan();
         if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
@@ -683,6 +774,7 @@ async function loadPlan(){
       const d = snap.data();
       userPlan = d.plan||'sencillo';
       userFunciones = (d.funciones&&d.funciones.length>0) ? d.funciones : defaultFunciones(userPlan);
+      pinFinanzas = d.pinFinanzas||null;
 
       // Cargar mensaje personalizado de WhatsApp si existe
       if(d.msgWhatsApp) msgWA=d.msgWhatsApp;
@@ -900,7 +992,7 @@ async function doLogin(){
 async function doLogout(){await window._signOut(window._auth);}
 
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos()]);
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();
   renderAlertas();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
 }
@@ -911,12 +1003,14 @@ async function loadEmpleados(){try{const s=await getDocs(userCol('empleados'));e
 async function loadInventario(){try{const s=await getDocs(userCol('inventario'));inventario=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){inventario=[];}}
 async function loadProductos(){try{const s=await getDocs(userCol('productos'));productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
 async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
+async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
 
 function getVencimiento(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>Number(b.fechaFin)-Number(a.fechaFin));return ps.length?Number(ps[0].fechaFin):null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
 function getUltimoPlan(mid){const ps=pagos.filter(p=>p.miembroId===mid).sort((a,b)=>b.fechaFin-a.fechaFin);return ps.length?ps[0].planNombre:'—';}
 // FIX: 'sin-pago' ahora tiene su propio badge gris — distinto a 'vencido'
 function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">Al corriente</span>';if(e==='por-vencer')return'<span class="badge badge-orange">Por vencer</span>';if(e==='sin-pago')return'<span class="badge badge-gray">Sin pago</span>';return'<span class="badge badge-red">Vencido</span>';}
+function formaPagoBadge(fp){if(fp==='efectivo')return'<span class="badge badge-green">💵 Efectivo</span>';if(fp==='tarjeta')return'<span class="badge badge-blue">💳 Tarjeta</span>';return'<span class="badge badge-gray">Sin especificar</span>';}
 function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
 function fmtNum(n){return String(n).padStart(3,'0');}
 function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
@@ -1130,8 +1224,8 @@ async function _guardarImportados(rows){
 function renderPagos(){
   const tbody=document.getElementById('tabla-pagos');
   const sorted=[...pagos].sort((a,b)=>b.fechaPago-a.fechaPago);
-  if(!sorted.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';return;}
-  tbody.innerHTML=sorted.map((p,i)=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${sorted.length-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+  if(!sorted.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';return;}
+  tbody.innerHTML=sorted.map((p,i)=>{const m=miembros.find(x=>x.id===p.miembroId);return`<tr><td>${sorted.length-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
 }
 
 // ASISTENCIA
@@ -1244,6 +1338,8 @@ function renderEstadoCuenta(){
   const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
   const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
   const pagosHoy=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoy.toDateString());
+  const ventasHoy=ventas.filter(v=>new Date(v.fecha).toDateString()===hoy.toDateString());
+  const totalVentasHoy=ventasHoy.reduce((s,v)=>s+(v.total||0),0);
   const totalMes=pagosMes.reduce((s,p)=>s+p.monto,0);
   const totalSemana=pagosSemana.reduce((s,p)=>s+p.monto,0);
   const totalHoy=pagosHoy.reduce((s,p)=>s+p.monto,0);
@@ -1285,12 +1381,38 @@ function renderEstadoCuenta(){
   const totalQuincena=pagosQuincena.reduce((s,p)=>s+p.monto,0);
   const ventasQuincena=ventas.filter(v=>v.fecha>=inicioQuincena.getTime());
   const totalVentasQuincena=ventasQuincena.reduce((s,v)=>s+(v.total||0),0);
+  const gastosHoy=gastos.filter(g=>new Date(g.fecha).toDateString()===hoy.toDateString());
+  const gastosSemana=gastos.filter(g=>g.fecha>=inicioSemana.getTime());
+  const gastosQuincena=gastos.filter(g=>g.fecha>=inicioQuincena.getTime());
+  const gastosMes=gastos.filter(g=>g.fecha>=inicioMes.getTime());
+  const corteHoy=corteCaja(pagosHoy,ventasHoy,gastosHoy,false);
+  const corteSemana=corteCaja(pagosSemana,ventasSemana,gastosSemana,false);
+  const corteQuincena=corteCaja(pagosQuincena,ventasQuincena,gastosQuincena,false);
+  const corteMes=corteCaja(pagosMes,ventasMes,gastosMes,true);
+  const formaHoy=desglosePorForma(pagosHoy,ventasHoy);
+  const formaSemana=desglosePorForma(pagosSemana,ventasSemana);
+  const formaQuincena=desglosePorForma(pagosQuincena,ventasQuincena);
+  const formaMes=desglosePorForma(pagosMes,ventasMes);
 
   el.innerHTML=`
   <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
   <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
   <div class="section-title">Resumen por Período</div>
   <div class="ec-grid" style="margin-bottom:24px">
+    <div class="ec-card"><h3>📅 HOY</h3>
+      <div class="ec-row" style="cursor:pointer" onclick="toggleEcPeriodo('hoy')">
+        <span>Total ingresos ${ecExpandido.hoy?'▾':'▸'}</span>
+        <span class="ec-val" style="color:var(--accent);font-size:16px">$${(totalHoy+totalVentasHoy).toLocaleString()}</span>
+      </div>
+      ${ecExpandido.hoy?`
+      <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()} (${pagosHoy.length})</span></div>
+      <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasHoy.toLocaleString()} (${ventasHoy.length})</span></div>
+      <div class="ec-row"><span>💵 Efectivo</span><span class="ec-val" style="color:var(--green)">$${formaHoy.efectivo.toLocaleString()}</span></div>
+      <div class="ec-row"><span>💳 Tarjeta</span><span class="ec-val" style="color:var(--blue)">$${formaHoy.tarjeta.toLocaleString()}</span></div>
+      ${formaHoy.sinEspecificar>0?`<div style="color:var(--muted);font-size:11px;margin-top:2px">$${formaHoy.sinEspecificar.toLocaleString()} sin especificar</div>`:''}
+      <div style="color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5">${desglosePorPlan(pagosHoy)}</div>
+      `:''}
+    </div>
     <div class="ec-card"><h3>📆 ESTA SEMANA</h3>
       <div class="ec-row" style="cursor:pointer" onclick="toggleEcPeriodo('semana')">
         <span>Total ingresos ${ecExpandido.semana?'▾':'▸'}</span>
@@ -1299,6 +1421,9 @@ function renderEstadoCuenta(){
       ${ecExpandido.semana?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalSemana.toLocaleString()} (${pagosSemana.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasSemana.toLocaleString()} (${ventasSemana.length})</span></div>
+      <div class="ec-row"><span>💵 Efectivo</span><span class="ec-val" style="color:var(--green)">$${formaSemana.efectivo.toLocaleString()}</span></div>
+      <div class="ec-row"><span>💳 Tarjeta</span><span class="ec-val" style="color:var(--blue)">$${formaSemana.tarjeta.toLocaleString()}</span></div>
+      ${formaSemana.sinEspecificar>0?`<div style="color:var(--muted);font-size:11px;margin-top:2px">$${formaSemana.sinEspecificar.toLocaleString()} sin especificar</div>`:''}
       <div style="color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5">${desglosePorPlan(pagosSemana)}</div>
       `:''}
     </div>
@@ -1310,6 +1435,9 @@ function renderEstadoCuenta(){
       ${ecExpandido.quincena?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalQuincena.toLocaleString()} (${pagosQuincena.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasQuincena.toLocaleString()} (${ventasQuincena.length})</span></div>
+      <div class="ec-row"><span>💵 Efectivo</span><span class="ec-val" style="color:var(--green)">$${formaQuincena.efectivo.toLocaleString()}</span></div>
+      <div class="ec-row"><span>💳 Tarjeta</span><span class="ec-val" style="color:var(--blue)">$${formaQuincena.tarjeta.toLocaleString()}</span></div>
+      ${formaQuincena.sinEspecificar>0?`<div style="color:var(--muted);font-size:11px;margin-top:2px">$${formaQuincena.sinEspecificar.toLocaleString()} sin especificar</div>`:''}
       <div style="color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5">${desglosePorPlan(pagosQuincena)}</div>
       `:''}
     </div>
@@ -1321,9 +1449,19 @@ function renderEstadoCuenta(){
       ${ecExpandido.mes?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalMes.toLocaleString()} (${pagosMes.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasMes.toLocaleString()} (${ventasMes.length})</span></div>
+      <div class="ec-row"><span>💵 Efectivo</span><span class="ec-val" style="color:var(--green)">$${formaMes.efectivo.toLocaleString()}</span></div>
+      <div class="ec-row"><span>💳 Tarjeta</span><span class="ec-val" style="color:var(--blue)">$${formaMes.tarjeta.toLocaleString()}</span></div>
+      ${formaMes.sinEspecificar>0?`<div style="color:var(--muted);font-size:11px;margin-top:2px">$${formaMes.sinEspecificar.toLocaleString()} sin especificar</div>`:''}
       <div style="color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5">${desglosePorPlan(pagosMes)}</div>
       `:''}
     </div>
+  </div>
+  <div class="header-row"><div class="section-title" style="margin-top:0">Corte de Caja</div><button class="btn btn-primary btn-sm" onclick="openModal('modal-gasto')">+ Registrar Gasto</button></div>
+  <div class="ec-grid" style="margin-bottom:24px">
+    ${corteCajaCard('📅 HOY','hoy',corteHoy,gastosHoy)}
+    ${corteCajaCard('📆 ESTA SEMANA','semana',corteSemana,gastosSemana)}
+    ${corteCajaCard('🗓️ ESTA QUINCENA','quincena',corteQuincena,gastosQuincena)}
+    ${corteCajaCard('📊 ESTE MES','mes',corteMes,gastosMes)}
   </div>`;
 }
 
@@ -1429,7 +1567,7 @@ function renderInventario(seccion='equipo'){
         </td>
       </tr>`;}).join('')}</tbody></table></div>
     <div class="section-title" style="margin-top:24px">Últimas Ventas</div>
-    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembros.find(x=>x.id===v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
+    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembros.find(x=>x.id===v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
     `:'<div class="empty"><div class="empty-icon">🛒</div><div>No hay productos registrados</div><div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="openModal(\'modal-producto\')">+ Agregar Producto</button></div></div>'}
   </div>`;
 }
@@ -1477,6 +1615,7 @@ function openVentaModal(){
   const firstProd=productos[0];
   if(firstProd) document.getElementById('v-precio').value=firstProd.precio||0;
   document.getElementById('v-cantidad').value=1;
+  document.getElementById('v-forma-pago').value='efectivo';
   updateVentaTotal();
   openModal('modal-venta');
 }
@@ -1487,6 +1626,7 @@ function ventaRapida(prodId){
   const p=productos.find(x=>x.id===prodId);
   if(p) document.getElementById('v-precio').value=p.precio||0;
   document.getElementById('v-cantidad').value=1;
+  document.getElementById('v-forma-pago').value='efectivo';
   updateVentaTotal();
   openModal('modal-venta');
 }
@@ -1509,12 +1649,13 @@ async function saveVenta(){
   const cantidad=parseInt(document.getElementById('v-cantidad').value)||0;
   const precio=parseFloat(document.getElementById('v-precio').value)||0;
   const miembroId=document.getElementById('v-miembro').value;
+  const formaPago=document.getElementById('v-forma-pago').value;
   if(!prodId||cantidad<1)return alert('Selecciona un producto y cantidad válida');
   const prod=productos.find(x=>x.id===prodId);
   if(!prod)return;
   if((prod.stock||0)<cantidad)return alert(`Stock insuficiente. Solo hay ${prod.stock||0} unidades.`);
   const total=cantidad*precio;
-  await addDoc(userCol('ventas'),{productoId:prodId,productoNombre:prod.nombre,cantidad,precioUnitario:precio,total,miembroId:miembroId||null,fecha:Date.now()});
+  await addDoc(userCol('ventas'),{productoId:prodId,productoNombre:prod.nombre,cantidad,precioUnitario:precio,total,miembroId:miembroId||null,formaPago,fecha:Date.now()});
   await updateDoc(userDoc('productos',prodId),{stock:(prod.stock||0)-cantidad});
   closeModal('modal-venta');
   await loadProductos();await loadVentas();renderInventario('tienda');renderEstadoCuenta();
@@ -1592,11 +1733,12 @@ async function savePago(){
   const monto=document.getElementById('p-monto').value;
   const dias=parseInt(document.getElementById('p-plan').value);
   const fechaStr=document.getElementById('p-fecha').value;
+  const formaPago=document.getElementById('p-forma-pago').value;
   if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
   const planNames={'15':'Quincenal','30':'Mensual','60':'Bimestral','90':'Trimestral','180':'Semestral','365':'Anual'};
   const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
   const fechaFin=fechaPago+dias*86400000;
-  await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,creadoEn:Date.now()});
+  await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,creadoEn:Date.now()});
   closeModal('modal-pago');
   await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Pago registrado ✓');
@@ -1666,6 +1808,20 @@ async function saveEmpleado(){
 async function delEmpleado(id){if(!confirm('¿Eliminar empleado?'))return;await deleteDoc(userDoc('empleados',id));await loadEmpleados();renderEmpleados();}
 function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';openModal('modal-empleado');}
 
+// GASTOS
+async function saveGasto(){
+  const concepto=document.getElementById('g-concepto').value.trim();
+  const monto=parseFloat(document.getElementById('g-monto').value);
+  const fechaStr=document.getElementById('g-fecha').value;
+  if(!concepto||!monto||!fechaStr)return alert('Completa todos los campos');
+  const fecha=new Date(fechaStr+'T12:00:00').getTime();
+  await addDoc(userCol('gastos'),{concepto,monto,fecha,creadoEn:Date.now()});
+  closeModal('modal-gasto');
+  await loadGastos();renderEstadoCuenta();
+  toast('Gasto registrado ✓');
+}
+async function delGasto(id){if(!confirm('¿Eliminar este gasto?'))return;await deleteDoc(userDoc('gastos',id));await loadGastos();renderEstadoCuenta();}
+
 // INVENTARIO EQUIPO
 async function saveInventario(){
   const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
@@ -1685,11 +1841,12 @@ function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;d
 // MODALES
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-notas'].forEach(x=>document.getElementById(x).value='');}
-  if(id==='modal-pago'){populateMiembrosSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];}
+  if(id==='modal-pago'){populateMiembrosSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo de Equipo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-producto'&&!document.getElementById('edit-prod-id').value){document.getElementById('modal-prod-title').textContent='Nuevo Producto';['edit-prod-id','prod-nombre','prod-precio','prod-stock','prod-min','prod-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-nuevo-gym'){['ng-email','ng-nombre'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-gasto'){['g-concepto','g-monto'].forEach(x=>document.getElementById(x).value='');document.getElementById('g-fecha').value=new Date().toISOString().split('T')[0];}
   document.getElementById(id).classList.add('open');
 }
 function closeModal(id){
@@ -1707,6 +1864,15 @@ function showTab(name,event){
     toast('Esta sección no está activada en tu plan 🔒','err');
     return;
   }
+  if(PIN_PROTEGIDO.includes(name)){
+    pinTabPendiente=name;
+    pinEventPendiente=event;
+    abrirModalPin();
+    return;
+  }
+  activarTab(name,event);
+}
+function activarTab(name,event){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
@@ -1714,6 +1880,41 @@ function showTab(name,event){
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
   if(name==='alertas')initMsgWAEditor();
+}
+
+// PIN Finanzas/Empleados
+function abrirModalPin(){
+  document.getElementById('pin-input').value='';
+  document.getElementById('pin-confirm-input').value='';
+  if(!pinFinanzas){
+    document.getElementById('modal-pin-title').textContent='Crea un PIN de acceso';
+    document.getElementById('modal-pin-desc').textContent='Este PIN protegerá Finanzas y Empleados. Se pedirá cada vez que entres a cualquiera de las dos secciones.';
+    document.getElementById('pin-confirm-group').style.display='block';
+  }else{
+    document.getElementById('modal-pin-title').textContent='Ingresa el PIN';
+    document.getElementById('modal-pin-desc').textContent='Finanzas y Empleados están protegidos con PIN.';
+    document.getElementById('pin-confirm-group').style.display='none';
+  }
+  openModal('modal-pin');
+  setTimeout(()=>document.getElementById('pin-input').focus(),50);
+}
+async function submitPin(){
+  const val=document.getElementById('pin-input').value.trim();
+  if(!val){toast('Ingresa un PIN','err');return;}
+  if(!pinFinanzas){
+    const confirmVal=document.getElementById('pin-confirm-input').value.trim();
+    if(val.length<4){toast('El PIN debe tener al menos 4 dígitos','err');return;}
+    if(val!==confirmVal){toast('Los PIN no coinciden','err');return;}
+    await updateDoc(docFn(db,'usuarios',uid),{pinFinanzas:val});
+    pinFinanzas=val;
+    toast('PIN creado ✓');
+  }else{
+    if(val!==pinFinanzas){toast('PIN incorrecto','err');return;}
+  }
+  closeModal('modal-pin');
+  const n=pinTabPendiente,e=pinEventPendiente;
+  pinTabPendiente=null;pinEventPendiente=null;
+  if(n)activarTab(n,e);
 }
 </script>
 </body>
