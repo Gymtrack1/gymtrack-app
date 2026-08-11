@@ -1,0 +1,92 @@
+rules_version = '2';
+
+// GymTrack — Firestore Security Rules
+//
+// Modelo de datos real (visto en index.html):
+//   usuarios/{gymId}                      doc de cuenta de gimnasio (o "pending_<email>" antes del 1er login)
+//   usuarios/{gymId}/miembros/{id}
+//   usuarios/{gymId}/pagos/{id}
+//   usuarios/{gymId}/asistencias/{id}
+//   usuarios/{gymId}/empleados/{id}
+//   usuarios/{gymId}/inventario/{id}
+//   usuarios/{gymId}/productos/{id}
+//   usuarios/{gymId}/ventas/{id}
+//   usuarios/{gymId}/gastos/{id}
+//
+// Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
+// datos de otro gimnasio, sin importar que llame al SDK de Firestore
+// directo (saltándose la UI).
+//
+// Límite conocido (ver aviso al final): el flujo de migración de cuenta
+// "pending_<email>" -> uid real se hace hoy con un setDoc del propio
+// cliente, copiando el plan/funciones que el admin le asignó. Estas reglas
+// no impiden que un gimnasio se reescriba su propio plan/funciones —
+// cerrar eso del todo requiere mover esa migración a una Cloud Function.
+// Lo que sí garantizan es el aislamiento entre gimnasios.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'luismolinac06@gmail.com';
+    }
+
+    function isOwnerDoc(gymId) {
+      return isSignedIn() && request.auth.uid == gymId;
+    }
+
+    function ownsByEmail() {
+      return isSignedIn() &&
+        'email' in resource.data &&
+        resource.data.email == request.auth.token.email;
+    }
+
+    match /usuarios/{gymId} {
+
+      // Lectura de un doc puntual: admin, dueño (por uid), o el propio
+      // doc "pending_<email>" que coincide con el email autenticado
+      // (necesario para el 1er login).
+      allow get: if isAdmin() || isOwnerDoc(gymId) || ownsByEmail();
+
+      // Lectura en lista (usada 1 vez al primer login para localizar su
+      // "pending_<email>"): OJO — Firestore NO filtra un list() doc por
+      // doc. Si la query no trae un where() que acote por el campo que usa
+      // la regla (email), Firestore no puede verificar la regla contra el
+      // resultado y rechaza la petición COMPLETA (no la recorta). Por eso
+      // el cliente (index.html, loadPlan()) siempre debe consultar con
+      // where('email','==', email-del-usuario-autenticado) — nunca un
+      // getDocs() sin filtro sobre toda la colección. Confirmado con el
+      // emulador en rules-test/test.mjs.
+      allow list: if isAdmin() || ownsByEmail();
+
+      // Creación: admin da de alta clientes (uid real o pending_<email>).
+      // Un gimnasio solo puede crear su propio doc (uid real), en su
+      // primer login.
+      allow create: if isAdmin() || isOwnerDoc(gymId);
+
+      // Actualización: admin puede editar cualquier cuenta (plan,
+      // funciones, etc). Un gimnasio solo puede editar su propio doc
+      // (pinFinanzas, msgWhatsApp, y la migración pending_ -> uid real).
+      allow update: if isAdmin() || isOwnerDoc(gymId);
+
+      // Borrado: admin (elimina clientes), o el propio dueño borrando su
+      // doc "pending_<email>" tras migrarse a su uid real.
+      allow delete: if isAdmin() || ownsByEmail();
+
+      // Datos operativos del gimnasio (miembros, pagos, asistencias, etc).
+      // Solo el dueño de esa cuenta (o el admin) puede leer/escribir.
+      match /{coleccion}/{docId} {
+        allow read, write: if isAdmin() || isOwnerDoc(gymId);
+      }
+    }
+
+    // Cualquier otra ruta: denegada por defecto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
