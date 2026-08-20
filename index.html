@@ -6,6 +6,7 @@
 <title>GymTrack</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -115,6 +116,7 @@
   .ec-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
   .ec-row:last-child{border-bottom:none;}
   .ec-val{font-weight:700;}
+  .chart-wrap{position:relative;height:220px;}
   /* ALERTAS */
   .alert-card{background:var(--surface);border-left:3px solid var(--orange);border-radius:8px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
   .alert-card.vencido{border-left-color:var(--red);}
@@ -627,6 +629,7 @@ let alertasExpandido={vencidos:false,en3:false,en7:false};
 const ALERTAS_PAGE_SIZE=50;
 let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
+let chartTendencia=null,chartCategoria=null,chartEstadoMiembros=null,chartFormaPago=null;
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
 let userPlan='sencillo';
 let userFunciones=[];
@@ -1520,30 +1523,9 @@ function renderEstadoCuenta(){
   const activos=miembros.filter(m=>getEstado(m.id)==='activo');
   const vencidos=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
   const porVencer=miembros.filter(m=>getEstado(m.id)==='por-vencer');
-  const porRecuperar=vencidos.reduce((s,m)=>{const ps=pagosPorMiembroPago.get(m.id);return s+(ps&&ps.length?ps[0].monto:0);},0);
-  const mrr=activos.reduce((s,m)=>{
-    const ps=pagosPorMiembroPago.get(m.id);
-    if(!ps||!ps.length)return s;
-    const dias=ps[0].diasPlan||30;
-    const valorMensual=(ps[0].monto/dias)*30;
-    return s+valorMensual;
-  },0);
-  const nuevosMes=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioMes.getTime()).length;
-  const nuevosSemana=miembros.filter(m=>m.creadoEn&&m.creadoEn>=inicioSemana.getTime()).length;
-  const ticketProm=pagosMes.length?Math.round(totalMes/pagosMes.length):0;
-  const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1);
-  const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59);
-  const pagosMesAnt=pagos.filter(p=>p.fechaPago>=inicioMesAnt.getTime()&&p.fechaPago<=finMesAnt.getTime());
-  const totalMesAnt=pagosMesAnt.reduce((s,p)=>s+p.monto,0);
-  const diffMes=totalMesAnt>0?Math.round(((totalMes-totalMesAnt)/totalMesAnt)*100):null;
-  const diffColor=diffMes===null?'var(--muted)':diffMes>=0?'var(--green)':'var(--red)';
-  const diffStr=diffMes===null?'':`<span style="color:${diffColor};font-size:12px;font-weight:700">${diffMes>=0?'▲':'▼'} ${Math.abs(diffMes)}% vs mes anterior</span>`;
-  const {tasa,renovaron,total}=calcTasaRenovacion();
-  const tasaColor=tasa===null?'var(--muted)':tasa>=70?'var(--green)':tasa>=40?'var(--orange)':'var(--red)';
-  const tasaNum=tasa===null?'—':tasa+'%';
-  const tasaCard=`<div class="stat-card" style="border-left:3px solid ${tasaColor}"><div class="stat-label">Tasa de Renovación</div><div style="font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:1;color:${tasaColor};margin:6px 0 4px">${tasaNum}</div><div style="font-size:12px;font-weight:600;color:var(--text)">${tasa===null?'Sin datos aún':renovaron+' de '+total+' renovaron'}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">Membresías vencidas el mes pasado que renovaron</div></div>`;
   const ventasMes=ventas.filter(v=>v.fecha>=inicioMes.getTime());
   const totalVentasMes=ventasMes.reduce((s,v)=>s+(v.total||0),0);
+  const ingresosMesTotal=totalMes+totalVentasMes;
   const ventasSemana=ventas.filter(v=>v.fecha>=inicioSemana.getTime());
   const totalVentasSemana=ventasSemana.reduce((s,v)=>s+(v.total||0),0);
   const inicioQuincena=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()<=15?1:16);inicioQuincena.setHours(0,0,0,0);
@@ -1564,9 +1546,28 @@ function renderEstadoCuenta(){
   const formaQuincena=desglosePorForma(pagosQuincena,ventasQuincena);
   const formaMes=desglosePorForma(pagosMes,ventasMes);
 
+  // Tendencia de ingresos de los últimos 6 meses (membresías + tienda)
+  const mesesLabels=[],ingresosPorMes=[];
+  for(let i=5;i>=0;i--){
+    const base=new Date(hoy.getFullYear(),hoy.getMonth()-i,1);
+    const ini=base.getTime();
+    const fin=new Date(base.getFullYear(),base.getMonth()+1,0,23,59,59).getTime();
+    const ingPagos=pagos.filter(p=>p.fechaPago>=ini&&p.fechaPago<=fin).reduce((s,p)=>s+p.monto,0);
+    const ingVentas=ventas.filter(v=>v.fecha>=ini&&v.fecha<=fin).reduce((s,v)=>s+(v.total||0),0);
+    mesesLabels.push(base.toLocaleDateString('es-MX',{month:'short'}));
+    ingresosPorMes.push(ingPagos+ingVentas);
+  }
+
   el.innerHTML=`
   <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
   <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+  <div class="section-title" style="margin-top:0">Gráficas</div>
+  <div class="ec-grid" style="margin-bottom:24px">
+    <div class="ec-card"><h3>📈 Tendencia de Ingresos (6 meses)</h3><div class="chart-wrap"><canvas id="chart-tendencia"></canvas></div></div>
+    <div class="ec-card"><h3>📦 Membresías vs. Tienda</h3><div class="chart-wrap"><canvas id="chart-categoria"></canvas></div></div>
+    <div class="ec-card"><h3>👥 Estado de Miembros</h3><div class="chart-wrap"><canvas id="chart-estado"></canvas></div></div>
+    <div class="ec-card"><h3>💵 Forma de Pago por Período</h3><div class="chart-wrap"><canvas id="chart-forma"></canvas></div></div>
+  </div>
   <div class="section-title">Resumen por Período</div>
   <div class="ec-grid" style="margin-bottom:24px">
     <div class="ec-card"><h3>📅 HOY</h3>
@@ -1633,6 +1634,47 @@ function renderEstadoCuenta(){
     ${corteCajaCard('🗓️ ESTA QUINCENA','quincena',corteQuincena,gastosQuincena)}
     ${corteCajaCard('📊 ESTE MES','mes',corteMes,gastosMes)}
   </div>`;
+
+  if(typeof Chart==='undefined')return; // CDN de Chart.js no disponible (sin conexión)
+
+  if(chartTendencia)chartTendencia.destroy();
+  chartTendencia=new Chart(document.getElementById('chart-tendencia'),{
+    type:'line',
+    data:{labels:mesesLabels,datasets:[{label:'Ingresos',data:ingresosPorMes,borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.35,pointBackgroundColor:'#C6E600',pointRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y.toLocaleString()}}},
+      scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false}}}}
+  });
+
+  if(chartCategoria)chartCategoria.destroy();
+  chartCategoria=new Chart(document.getElementById('chart-categoria'),{
+    type:'doughnut',
+    data:{labels:['Membresías','Tienda'],datasets:[{data:[totalMes,totalVentasMes],backgroundColor:['#1F9D55','#C6E600'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:12}},
+        tooltip:{callbacks:{label:c=>c.label+': $'+c.parsed.toLocaleString()+(ingresosMesTotal>0?' ('+Math.round(c.parsed/ingresosMesTotal*100)+'%)':'')}}}}
+  });
+
+  if(chartEstadoMiembros)chartEstadoMiembros.destroy();
+  chartEstadoMiembros=new Chart(document.getElementById('chart-estado'),{
+    type:'bar',
+    data:{labels:['Al corriente','Por vencer','Vencidos'],datasets:[{data:[activos.length,porVencer.length,vencidos.length],backgroundColor:['#1F9D55','#D97706','#DC3B30'],borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' miembro'+(c.parsed.y===1?'':'s')}}},
+      scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}
+  });
+
+  if(chartFormaPago)chartFormaPago.destroy();
+  chartFormaPago=new Chart(document.getElementById('chart-forma'),{
+    type:'bar',
+    data:{labels:['Hoy','Semana','Quincena','Mes'],datasets:[
+      {label:'Efectivo',data:[formaHoy.efectivo,formaSemana.efectivo,formaQuincena.efectivo,formaMes.efectivo],backgroundColor:'#1F9D55',borderRadius:4},
+      {label:'Tarjeta',data:[formaHoy.tarjeta,formaSemana.tarjeta,formaQuincena.tarjeta,formaMes.tarjeta],backgroundColor:'#2563EB',borderRadius:4}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:12}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y.toLocaleString()}}},
+      scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false}}}}
+  });
 }
 
 // REPORTES
