@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -286,6 +287,7 @@
           <input type="file" id="input-importar-xlsx" accept=".xlsx,.xls" style="display:none" onchange="importarMiembros(this)">
         </label>
         <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
+        <button onclick="corregirFechasImportadas()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🛠 Corregir Fechas Importadas</button>
         <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
       </div>
     </div>
@@ -629,7 +631,9 @@ let alertasExpandido={vencidos:false,en3:false,en7:false};
 const ALERTAS_PAGE_SIZE=50;
 let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
-let chartTendencia=null,chartCategoria=null,chartEstadoMiembros=null,chartFormaPago=null;
+let chartTendencia=null;
+let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
+let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
 let userPlan='sencillo';
 let userFunciones=[];
@@ -683,6 +687,7 @@ function toastPersistente(msg){
   el.className='show';
 }
 function toggleEcPeriodo(p){ecExpandido[p]=!ecExpandido[p];renderEstadoCuenta();}
+function toggleTipoGraficaPeriodo(p,tipo){tipoGraficaPeriodo[p]=tipo;renderEstadoCuenta();}
 function toggleCorte(p){corteExpandido[p]=!corteExpandido[p];renderEstadoCuenta();}
 function desglosePorPlan(pagosArr){
   if(!pagosArr.length)return'Sin pagos en este período';
@@ -1069,6 +1074,15 @@ async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=
 function getVencimiento(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?Number(ps[0].fechaFin):null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
 function getUltimoPlan(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].planNombre:'—';}
+function getUltimoMonto(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].monto||0:0;}
+// Mapeo compartido días<->nombre de plan (usado al registrar pagos y al importar desde Excel)
+const PLAN_DIAS_NOMBRE={15:'Quincenal',30:'Mensual',60:'Bimestral',90:'Trimestral',180:'Semestral',365:'Anual'};
+function diasPorNombrePlan(nombre){
+  if(!nombre)return null;
+  const norm=String(nombre).trim().toLowerCase();
+  const entry=Object.entries(PLAN_DIAS_NOMBRE).find(([,n])=>n.toLowerCase()===norm);
+  return entry?Number(entry[0]):null;
+}
 // FIX: 'sin-pago' ahora tiene su propio badge gris — distinto a 'vencido'
 function estadoBadge(e){if(e==='activo')return'<span class="badge badge-green">Al corriente</span>';if(e==='por-vencer')return'<span class="badge badge-orange">Por vencer</span>';if(e==='sin-pago')return'<span class="badge badge-gray">Sin pago</span>';return'<span class="badge badge-red">Vencido</span>';}
 function formaPagoBadge(fp){if(fp==='efectivo')return'<span class="badge badge-green">💵 Efectivo</span>';if(fp==='tarjeta')return'<span class="badge badge-blue">💳 Tarjeta</span>';return'<span class="badge badge-gray">Sin especificar</span>';}
@@ -1157,13 +1171,14 @@ function exportarMiembros(){
     'Edad': m.edad||'',
     'Dirección': m.direccion||'',
     'Plan actual': getUltimoPlan(m.id),
+    'Monto pagado': getUltimoMonto(m.id)||'',
     'Fecha de vencimiento': getVencimiento(m.id)?new Date(getVencimiento(m.id)).toLocaleDateString('es-MX'):'Sin pago',
     'Estado': estadoLabel[getEstado(m.id)]||getEstado(m.id),
     'Notas': m.notas||''
   }));
   const ws=XLSX.utils.json_to_sheet(filas);
   // Ancho de columnas
-  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:14},{wch:18},{wch:14},{wch:24}];
+  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   const fecha=new Date().toISOString().slice(0,10);
@@ -1180,11 +1195,12 @@ function descargarPlantilla(){
     'Edad':'28',
     'Dirección':'Calle Roble 45, Col. Centro',
     'Plan actual':'Mensual',
+    'Monto pagado':'500',
     'Fecha de vencimiento':'15/08/2025',
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:16},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:16},{wch:13},{wch:22},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
@@ -1200,7 +1216,7 @@ async function importarMiembros(input){
   const reader=new FileReader();
   reader.onload=async(e)=>{
     try{
-      const wb=XLSX.read(e.target.result,{type:'array'});
+      const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const filas=XLSX.utils.sheet_to_json(ws,{defval:''});
 
@@ -1208,7 +1224,8 @@ async function importarMiembros(input){
 
       // Normalizar: acepta columnas del export y de la plantilla
       const normalizar=row=>{
-        const get=(...keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!=='')return String(row[k]).trim();}return '';};
+        // No convertir a texto las celdas de fecha real de Excel (cellDates:true las entrega como Date)
+        const get=(...keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!=='')return row[k] instanceof Date?row[k]:String(row[k]).trim();}return '';};
         return{
           nombre:     get('Nombre*','Nombre'),
           telefono:   get('Teléfono','Telefono','Tel'),
@@ -1217,6 +1234,7 @@ async function importarMiembros(input){
           direccion:  get('Dirección','Direccion'),
           planActual: get('Plan actual','Plan Membresía','Plan'),
           fechaVencimiento: get('Fecha de vencimiento','Fecha Vencimiento','Vencimiento'),
+          montoPagado: get('Monto pagado','Monto Pagado','Monto','Precio'),
           notas:      get('Notas')
         };
       };
@@ -1256,6 +1274,15 @@ async function importarMiembros(input){
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// Convierte texto/número de Excel a monto numérico. Tolera "$500", "1,200.50", números directos, vacío, etc.
+function _parseMontoImportado(val){
+  if(val===''||val===null||val===undefined)return 0;
+  if(typeof val==='number')return isFinite(val)?val:0;
+  const limpio=String(val).replace(/[^0-9.\-]/g,'');
+  const n=parseFloat(limpio);
+  return isNaN(n)?0:n;
 }
 
 // Convierte "dd/mm/yyyy" o "d/m/yyyy" a timestamp. Devuelve null si no puede parsear.
@@ -1309,13 +1336,17 @@ async function _guardarImportados(rows){
         const fechaFin=_parseFechaES(r.fechaVencimiento);
         if(fechaFin){
           const planNombre=r.planActual&&r.planActual!=='—'?r.planActual:'Importado';
+          // La fecha real de pago no viene en el Excel, pero se puede inferir:
+          // fechaPago = fechaFin - duración del plan (en vez de usar el momento de la importación)
+          const diasPlan=diasPorNombrePlan(r.planActual)||30;
+          const fechaPago=fechaFin-diasPlan*86400000;
           const pagoRef=docFn(userCol('pagos'));
           batch.set(pagoRef,{
             miembroId:  miembroRef.id,
-            monto:      0,
+            monto:      _parseMontoImportado(r.montoPagado),
             planNombre,
-            diasPlan:   30,
-            fechaPago:  Date.now(),
+            diasPlan,
+            fechaPago,
             fechaFin,
             creadoEn:   Date.now(),
             importado:  true
@@ -1339,6 +1370,60 @@ async function _guardarImportados(rows){
   await loadMiembros();await loadPagos();
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();populateMiembrosSelect();
   toast(`✓ ${contadorM} miembro${contadorM===1?'':'s'} importado${contadorM===1?'':'s'}${contadorP?' + '+contadorP+' pagos':''}`);
+}
+
+// CORREGIR FECHAS DE PAGOS IMPORTADOS (utilidad de una sola vez)
+// Los pagos importados antes de que _guardarImportados infiriera la fecha real
+// quedaron con fechaPago = momento de la importación. Aquí se recalcula
+// fechaPago = fechaFin - duración del plan, igual que ahora hace la importación.
+// Los montos NO se tocan (esa información nunca se guardó y no es recuperable).
+async function corregirFechasImportadas(){
+  const candidatos=pagos.filter(p=>p.importado===true);
+  if(!candidatos.length){toast('No hay pagos importados para corregir','err');return;}
+
+  const cambios=candidatos.map(p=>{
+    const dias=diasPorNombrePlan(p.planNombre)||30;
+    const fechaNueva=p.fechaFin-dias*86400000;
+    return{id:p.id,miembroNombre:(miembrosPorId.get(p.miembroId)||{}).nombre||'—',
+      fechaActual:p.fechaPago,fechaNueva,diasActual:p.diasPlan,diasNuevo:dias,
+      cambia:p.fechaPago!==fechaNueva||p.diasPlan!==dias};
+  }).filter(c=>c.cambia);
+
+  if(!cambios.length){toast('Todas las fechas importadas ya están correctas ✓');return;}
+
+  const muestra=cambios.slice(0,5).map(c=>`• ${c.miembroNombre}: ${fmtDate(c.fechaActual)} → ${fmtDate(c.fechaNueva)}`).join('\n');
+  const ok=confirm(
+    `Se corregirá la fecha de pago de ${cambios.length} miembro${cambios.length===1?'':'s'} importado${cambios.length===1?'':'s'}.\n\n`+
+    `Se recalcula como: fecha de vencimiento − duración del plan.\n\nEjemplos:\n${muestra}${cambios.length>5?`\n… y ${cambios.length-5} más`:''}\n\n`+
+    `Los montos NO se modifican (siguen igual que ahora). ¿Continuar?`
+  );
+  if(!ok)return;
+
+  const avisarSalida=(e)=>{e.preventDefault();e.returnValue='';return '';};
+  window.addEventListener('beforeunload',avisarSalida);
+  toastPersistente(`Corrigiendo 0 / ${cambios.length}...`);
+  let hechos=0;
+
+  try{
+    for(let start=0;start<cambios.length;start+=IMPORT_BATCH_SIZE){
+      const chunk=cambios.slice(start,start+IMPORT_BATCH_SIZE);
+      const batch=writeBatchFn(db);
+      chunk.forEach(c=>{batch.update(userDoc('pagos',c.id),{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo});});
+      await batch.commit();
+      hechos+=chunk.length;
+      toastPersistente(`Corrigiendo ${hechos} / ${cambios.length}...`);
+    }
+  }catch(err){
+    console.error('corregirFechasImportadas error:',err);
+    toast(`Se corrigieron ${hechos} de ${cambios.length} antes de un error: ${err.message}`,'err');
+    window.removeEventListener('beforeunload',avisarSalida);
+    return;
+  }
+  window.removeEventListener('beforeunload',avisarSalida);
+
+  await loadPagos();
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderEstadoCuenta();renderReportes();
+  toast(`✓ ${hechos} fecha${hechos===1?'':'s'} de pago corregida${hechos===1?'':'s'}`);
 }
 
 // PAGOS
@@ -1520,12 +1605,8 @@ function renderEstadoCuenta(){
   const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime()).length;
   const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime()).length;
   const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
-  const activos=miembros.filter(m=>getEstado(m.id)==='activo');
-  const vencidos=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id)));
-  const porVencer=miembros.filter(m=>getEstado(m.id)==='por-vencer');
   const ventasMes=ventas.filter(v=>v.fecha>=inicioMes.getTime());
   const totalVentasMes=ventasMes.reduce((s,v)=>s+(v.total||0),0);
-  const ingresosMesTotal=totalMes+totalVentasMes;
   const ventasSemana=ventas.filter(v=>v.fecha>=inicioSemana.getTime());
   const totalVentasSemana=ventasSemana.reduce((s,v)=>s+(v.total||0),0);
   const inicioQuincena=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()<=15?1:16);inicioQuincena.setHours(0,0,0,0);
@@ -1558,16 +1639,18 @@ function renderEstadoCuenta(){
     ingresosPorMes.push(ingPagos+ingVentas);
   }
 
+  const miniGraficaHtml=key=>`
+      <div style="display:flex;justify-content:flex-end;gap:4px;margin:8px 0 6px">
+        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='pie'?'background:var(--accent);color:var(--text);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','pie')">🥧 Pastel</button>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='line'?'background:var(--accent);color:var(--text);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','line')">📈 Línea</button>
+      </div>
+      <div class="chart-wrap" style="height:150px"><canvas id="chart-periodo-${key}"></canvas></div>`;
+
   el.innerHTML=`
   <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
   <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
   <div class="section-title" style="margin-top:0">Gráficas</div>
-  <div class="ec-grid" style="margin-bottom:24px">
-    <div class="ec-card"><h3>📈 Tendencia de Ingresos (6 meses)</h3><div class="chart-wrap"><canvas id="chart-tendencia"></canvas></div></div>
-    <div class="ec-card"><h3>📦 Membresías vs. Tienda</h3><div class="chart-wrap"><canvas id="chart-categoria"></canvas></div></div>
-    <div class="ec-card"><h3>👥 Estado de Miembros</h3><div class="chart-wrap"><canvas id="chart-estado"></canvas></div></div>
-    <div class="ec-card"><h3>💵 Forma de Pago por Período</h3><div class="chart-wrap"><canvas id="chart-forma"></canvas></div></div>
-  </div>
+  <div class="ec-card" style="margin-bottom:24px"><h3>📈 Tendencia de Ingresos (6 meses)</h3><div class="chart-wrap"><canvas id="chart-tendencia"></canvas></div></div>
   <div class="section-title">Resumen por Período</div>
   <div class="ec-grid" style="margin-bottom:24px">
     <div class="ec-card"><h3>📅 HOY</h3>
@@ -1575,6 +1658,7 @@ function renderEstadoCuenta(){
         <span>Total ingresos ${ecExpandido.hoy?'▾':'▸'}</span>
         <span class="ec-val" style="color:var(--accent);font-size:16px">$${(totalHoy+totalVentasHoy).toLocaleString()}</span>
       </div>
+      ${miniGraficaHtml('hoy')}
       ${ecExpandido.hoy?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalHoy.toLocaleString()} (${pagosHoy.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasHoy.toLocaleString()} (${ventasHoy.length})</span></div>
@@ -1589,6 +1673,7 @@ function renderEstadoCuenta(){
         <span>Total ingresos ${ecExpandido.semana?'▾':'▸'}</span>
         <span class="ec-val" style="color:var(--accent);font-size:16px">$${(totalSemana+totalVentasSemana).toLocaleString()}</span>
       </div>
+      ${miniGraficaHtml('semana')}
       ${ecExpandido.semana?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalSemana.toLocaleString()} (${pagosSemana.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasSemana.toLocaleString()} (${ventasSemana.length})</span></div>
@@ -1603,6 +1688,7 @@ function renderEstadoCuenta(){
         <span>Total ingresos ${ecExpandido.quincena?'▾':'▸'}</span>
         <span class="ec-val" style="color:var(--accent);font-size:16px">$${(totalQuincena+totalVentasQuincena).toLocaleString()}</span>
       </div>
+      ${miniGraficaHtml('quincena')}
       ${ecExpandido.quincena?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalQuincena.toLocaleString()} (${pagosQuincena.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasQuincena.toLocaleString()} (${ventasQuincena.length})</span></div>
@@ -1617,6 +1703,7 @@ function renderEstadoCuenta(){
         <span>Total ingresos ${ecExpandido.mes?'▾':'▸'}</span>
         <span class="ec-val" style="color:var(--accent);font-size:16px">$${(totalMes+totalVentasMes).toLocaleString()}</span>
       </div>
+      ${miniGraficaHtml('mes')}
       ${ecExpandido.mes?`
       <div class="ec-row"><span>Membresías</span><span class="ec-val" style="color:var(--green)">$${totalMes.toLocaleString()} (${pagosMes.length})</span></div>
       <div class="ec-row"><span>Tienda</span><span class="ec-val" style="color:var(--accent)">$${totalVentasMes.toLocaleString()} (${ventasMes.length})</span></div>
@@ -1646,35 +1733,27 @@ function renderEstadoCuenta(){
       scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false}}}}
   });
 
-  if(chartCategoria)chartCategoria.destroy();
-  chartCategoria=new Chart(document.getElementById('chart-categoria'),{
-    type:'doughnut',
-    data:{labels:['Membresías','Tienda'],datasets:[{data:[totalMes,totalVentasMes],backgroundColor:['#1F9D55','#C6E600'],borderWidth:0}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:12}},
-        tooltip:{callbacks:{label:c=>c.label+': $'+c.parsed.toLocaleString()+(ingresosMesTotal>0?' ('+Math.round(c.parsed/ingresosMesTotal*100)+'%)':'')}}}}
-  });
-
-  if(chartEstadoMiembros)chartEstadoMiembros.destroy();
-  chartEstadoMiembros=new Chart(document.getElementById('chart-estado'),{
-    type:'bar',
-    data:{labels:['Al corriente','Por vencer','Vencidos'],datasets:[{data:[activos.length,porVencer.length,vencidos.length],backgroundColor:['#1F9D55','#D97706','#DC3B30'],borderRadius:6}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' miembro'+(c.parsed.y===1?'':'s')}}},
-      scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}
-  });
-
-  if(chartFormaPago)chartFormaPago.destroy();
-  chartFormaPago=new Chart(document.getElementById('chart-forma'),{
-    type:'bar',
-    data:{labels:['Hoy','Semana','Quincena','Mes'],datasets:[
-      {label:'Efectivo',data:[formaHoy.efectivo,formaSemana.efectivo,formaQuincena.efectivo,formaMes.efectivo],backgroundColor:'#1F9D55',borderRadius:4},
-      {label:'Tarjeta',data:[formaHoy.tarjeta,formaSemana.tarjeta,formaQuincena.tarjeta,formaMes.tarjeta],backgroundColor:'#2563EB',borderRadius:4}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:12}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y.toLocaleString()}}},
-      scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false}}}}
-  });
+  const crearGraficaPeriodo=(key,total,totalVentas)=>{
+    if(chartPeriodo[key])chartPeriodo[key].destroy();
+    const canvas=document.getElementById('chart-periodo-'+key);
+    if(!canvas)return;
+    const tipo=tipoGraficaPeriodo[key];
+    const dataset=tipo==='pie'
+      ?{data:[total,totalVentas],backgroundColor:['#1F9D55','#C6E600'],borderWidth:0}
+      :{label:'Ingresos',data:[total,totalVentas],borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.3,pointBackgroundColor:'#C6E600',pointRadius:4};
+    chartPeriodo[key]=new Chart(canvas,{
+      type:tipo,
+      data:{labels:['Membresías','Tienda'],datasets:[dataset]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:6,font:{size:10}}},
+          tooltip:{callbacks:{label:c=>c.label+': $'+(c.parsed.y??c.parsed).toLocaleString()}}},
+        scales:tipo==='line'?{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}}}:{}}
+    });
+  };
+  crearGraficaPeriodo('hoy',totalHoy,totalVentasHoy);
+  crearGraficaPeriodo('semana',totalSemana,totalVentasSemana);
+  crearGraficaPeriodo('quincena',totalQuincena,totalVentasQuincena);
+  crearGraficaPeriodo('mes',totalMes,totalVentasMes);
 }
 
 // REPORTES
@@ -1947,10 +2026,9 @@ async function savePago(){
   const fechaStr=document.getElementById('p-fecha').value;
   const formaPago=document.getElementById('p-forma-pago').value;
   if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
-  const planNames={'15':'Quincenal','30':'Mensual','60':'Bimestral','90':'Trimestral','180':'Semestral','365':'Anual'};
   const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
   const fechaFin=fechaPago+dias*86400000;
-  await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:planNames[String(dias)]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,creadoEn:Date.now()});
+  await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,creadoEn:Date.now()});
   closeModal('modal-pago');
   await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Pago registrado ✓');
