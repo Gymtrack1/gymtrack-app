@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -637,7 +636,8 @@ let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
 let userPlan='sencillo';
 let userFunciones=[];
-let planListener=null,listenerRetries=0;
+let planListener=null,listenerRetries=0,planPollInterval=null;
+let sesionInicializada=false; // evita reinicializar (loadAll + setInterval) si 'firebaseReady' se dispara más de una vez
 const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
 let pinFinanzas=null;
@@ -781,9 +781,16 @@ window.addEventListener('firebaseReady',async()=>{
     );
   }
   startPlanListener();
+  // Guard: 'firebaseReady' puede dispararse más de una vez (onAuthStateChanged puede re-emitir
+  // con el mismo usuario, p.ej. tras un refresh de token). Sin este guard, cada disparo extra
+  // repetía la carga completa (loadAll) y — más grave — dejaba un setInterval nuevo corriendo
+  // sin cancelar el anterior, duplicando para siempre las lecturas de polling del plan.
+  if(sesionInicializada)return;
+  sesionInicializada=true;
   await loadPlan(); applyPlan(); await loadAll();
   // Auto-sincronizar cada 20 segundos como respaldo por si onSnapshot falla
-  setInterval(async()=>{
+  if(planPollInterval)clearInterval(planPollInterval);
+  planPollInterval=setInterval(async()=>{
     try{
       const s=await getDoc(docFn(db,'usuarios',uid));
       if(!s.exists())return;
@@ -1030,6 +1037,18 @@ async function doLogin(){
 }
 async function doLogout(){await window._signOut(window._auth);}
 
+// AUDITORÍA DE LECTURAS (2026-08-20): loadAll() trae las 8 colecciones completas
+// (miembros, pagos, asistencias, empleados, inventario, productos, ventas, gastos) vía getDocs
+// sin límite. Con un gimnasio de 5,000 miembros y ~5,000 pagos, UNA sola llamada a loadAll()
+// puede costar 10,000+ lecturas. Se dispara:
+//   - Una vez por sesión, al iniciar sesión (evento 'firebaseReady', más abajo).
+//   - Manualmente, con el botón "↻ Actualizar" del Dashboard.
+// NO se dispara al cambiar de tab (activarTab() solo renderiza desde los arrays ya en memoria).
+// Las funciones save*/del* de cada sección (miembro, pago, asistencia, producto, venta,
+// empleado, gasto, inventario) YA NO llaman a loadAll() ni a su loadX() individual — parchean
+// el array local con _agregarLocal/_actualizarLocal/_eliminarLocal usando el doc que acaban de
+// escribir, evitando releer la colección completa por cada alta/edición/baja (antes era la
+// causa principal de lecturas excesivas: p.ej. registrar UN pago releía los ~5,000 pagos).
 async function loadAll(){
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos()]);
   renderDashboard();renderPagos();renderAsistencia();
@@ -1040,6 +1059,23 @@ async function loadAll(){
   if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
 }
 function isTabActive(name){const el=document.getElementById('tab-'+name);return!!el&&el.classList.contains('active');}
+// RECOMENDACIÓN (no implementada — ver auditoría de lecturas): loadMiembros() sigue trayendo
+// la colección completa en una sola llamada. Es la lectura más cara de loadAll() (una por
+// miembro) y ya no puede evitarse con parcheo local porque es la carga inicial. Para gimnasios
+// grandes, considerar antes de la próxima temporada de crecimiento:
+//   1. Paginación por cursor: orderBy('numero').limit(200) al iniciar sesión, y un botón
+//      "Cargar más" / scroll infinito en Miembros que pida el siguiente bloque con
+//      startAfter(ultimoDocVisible) — en vez de traer los 5,000 de golpe.
+//   2. Búsqueda server-side en vez de filtrar el array completo en memoria: una query
+//      where('nombre','>=',texto).where('nombre','<=',texto+'') (requiere guardar el
+//      nombre en minúsculas para que sea case-insensitive) para que buscar "Juan" no dependa
+//      de tener ya los 5,000 documentos descargados.
+//   3. El Dashboard y Finanzas no necesitan el detalle de cada miembro, solo conteos
+//      (activos/vencidos/por vencer) — esos sí podrían resolverse con Firestore aggregation
+//      queries (getCountFromServer con where en getEstado) en vez de traer todos los documentos
+//      para contarlos en el cliente.
+// Cualquiera de las tres es un cambio de forma de consulta (no de arquitectura de archivo) y
+// puede convivir con que index.html siga siendo un solo archivo.
 async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));recalcMiembrosPorId();}
 async function loadPagos(){const s=await getDocs(userCol('pagos'));pagos=s.docs.map(d=>({id:d.id,...d.data()}));recalcPagosPorMiembro();}
 
@@ -1070,6 +1106,14 @@ async function loadInventario(){try{const s=await getDocs(userCol('inventario'))
 async function loadProductos(){try{const s=await getDocs(userCol('productos'));productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
 async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
 async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
+
+// Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
+// volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).
+// Se usan en las funciones save*/del* de miembros, pagos, asistencias, productos, ventas,
+// empleados, gastos e inventario.
+function _agregarLocal(arr,id,data){arr.push({id,...data});}
+function _actualizarLocal(arr,id,data){const i=arr.findIndex(x=>x.id===id);if(i>=0)arr[i]={...arr[i],...data};}
+function _eliminarLocal(arr,id){const i=arr.findIndex(x=>x.id===id);if(i>=0)arr.splice(i,1);}
 
 function getVencimiento(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?Number(ps[0].fechaFin):null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
@@ -1304,6 +1348,7 @@ async function _guardarImportados(rows){
   const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
   const total=rows.length;
   let contadorM=0,contadorP=0;
+  const nuevosMiembros=[],nuevosPagos=[]; // para parchear localmente en vez de releer todo al terminar
 
   // Evitar que el usuario cierre/recargue a mitad de la importación
   const avisarSalida=(e)=>{e.preventDefault();e.returnValue='';return '';};
@@ -1320,7 +1365,7 @@ async function _guardarImportados(rows){
       chunk.forEach((r,idx)=>{
         const i=start+idx;
         const miembroRef=docFn(userCol('miembros'));
-        batch.set(miembroRef,{
+        const miembroData={
           nombre:    r.nombre,
           telefono:  r.telefono||'',
           correo:    r.correo||'',
@@ -1329,7 +1374,9 @@ async function _guardarImportados(rows){
           notas:     r.notas||'',
           numero:    maxNum+i+1,
           creadoEn:  Date.now()
-        });
+        };
+        batch.set(miembroRef,miembroData);
+        nuevosMiembros.push({id:miembroRef.id,...miembroData});
         chunkM++;
 
         // Si hay fecha de vencimiento válida, crear registro de pago
@@ -1341,7 +1388,7 @@ async function _guardarImportados(rows){
           const diasPlan=diasPorNombrePlan(r.planActual)||30;
           const fechaPago=fechaFin-diasPlan*86400000;
           const pagoRef=docFn(userCol('pagos'));
-          batch.set(pagoRef,{
+          const pagoData={
             miembroId:  miembroRef.id,
             monto:      _parseMontoImportado(r.montoPagado),
             planNombre,
@@ -1350,7 +1397,9 @@ async function _guardarImportados(rows){
             fechaFin,
             creadoEn:   Date.now(),
             importado:  true
-          });
+          };
+          batch.set(pagoRef,pagoData);
+          nuevosPagos.push({id:pagoRef.id,...pagoData});
           chunkP++;
         }
       });
@@ -1367,7 +1416,14 @@ async function _guardarImportados(rows){
     window.removeEventListener('beforeunload',avisarSalida);
   }
 
-  await loadMiembros();await loadPagos();
+  // Parcheo local en vez de loadMiembros()/loadPagos(): ya tenemos en memoria exactamente
+  // lo que se acaba de escribir (miles de docs en un import grande) — releerlo de Firestore
+  // costaría tantas lecturas como la importación misma.
+  miembros.push(...nuevosMiembros);
+  miembros.sort((a,b)=>(a.numero||999)-(b.numero||999));
+  recalcMiembrosPorId();
+  pagos.push(...nuevosPagos);
+  recalcPagosPorMiembro();
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();populateMiembrosSelect();
   toast(`✓ ${contadorM} miembro${contadorM===1?'':'s'} importado${contadorM===1?'':'s'}${contadorP?' + '+contadorP+' pagos':''}`);
 }
@@ -1421,7 +1477,10 @@ async function corregirFechasImportadas(){
   }
   window.removeEventListener('beforeunload',avisarSalida);
 
-  await loadPagos();
+  // Ya sabemos exactamente qué cambió (array 'cambios') — parchear localmente en vez de
+  // releer toda la colección de pagos otra vez.
+  cambios.forEach(c=>_actualizarLocal(pagos,c.id,{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo}));
+  recalcPagosPorMiembro();
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderEstadoCuenta();renderReportes();
   toast(`✓ ${hechos} fecha${hechos===1?'':'s'} de pago corregida${hechos===1?'':'s'}`);
 }
@@ -1878,13 +1937,18 @@ async function saveProducto(){
   const editId=document.getElementById('edit-prod-id').value;
   // FIX: creadoEn solo en productos nuevos
   if(!editId) data.creadoEn=Date.now();
-  if(editId)await updateDoc(userDoc('productos',editId),data);
-  else await addDoc(userCol('productos'),data);
+  if(editId){
+    await updateDoc(userDoc('productos',editId),data);
+    _actualizarLocal(productos,editId,data);
+  }else{
+    const ref=await addDoc(userCol('productos'),data);
+    _agregarLocal(productos,ref.id,data);
+  }
   closeModal('modal-producto');
-  await loadProductos();renderInventario('tienda');
+  renderInventario('tienda');
   toast('Producto guardado ✓');
 }
-async function delProducto(id){if(!confirm('¿Eliminar producto?'))return;await deleteDoc(userDoc('productos',id));await loadProductos();renderInventario('tienda');}
+async function delProducto(id){if(!confirm('¿Eliminar producto?'))return;await deleteDoc(userDoc('productos',id));_eliminarLocal(productos,id);renderInventario('tienda');}
 function editProducto(id){
   const p=productos.find(x=>x.id===id);if(!p)return;
   document.getElementById('modal-prod-title').textContent='Editar Producto';
@@ -1946,10 +2010,14 @@ async function saveVenta(){
   if(!prod)return;
   if((prod.stock||0)<cantidad)return alert(`Stock insuficiente. Solo hay ${prod.stock||0} unidades.`);
   const total=cantidad*precio;
-  await addDoc(userCol('ventas'),{productoId:prodId,productoNombre:prod.nombre,cantidad,precioUnitario:precio,total,miembroId:miembroId||null,formaPago,fecha:Date.now()});
-  await updateDoc(userDoc('productos',prodId),{stock:(prod.stock||0)-cantidad});
+  const ventaData={productoId:prodId,productoNombre:prod.nombre,cantidad,precioUnitario:precio,total,miembroId:miembroId||null,formaPago,fecha:Date.now()};
+  const ref=await addDoc(userCol('ventas'),ventaData);
+  _agregarLocal(ventas,ref.id,ventaData);
+  const nuevoStock=(prod.stock||0)-cantidad;
+  await updateDoc(userDoc('productos',prodId),{stock:nuevoStock});
+  _actualizarLocal(productos,prodId,{stock:nuevoStock});
   closeModal('modal-venta');
-  await loadProductos();await loadVentas();renderInventario('tienda');renderEstadoCuenta();
+  renderInventario('tienda');renderEstadoCuenta();
   toast(`Venta registrada — $${total.toLocaleString()} ✓`);
 }
 
@@ -1986,10 +2054,18 @@ async function saveMiembro(){
   // Antes creadoEn siempre se sobreescribía, rompiendo "nuevos este mes" en Finanzas
   const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim()};
   if(!editId){data.numero=numero;data.creadoEn=Date.now();}
-  if(editId)await updateDoc(userDoc('miembros',editId),data);
-  else await addDoc(userCol('miembros'),data);
+  // Parcheo local en vez de loadMiembros(): con miles de miembros, releer toda la
+  // colección por cada alta/edición es la lectura más cara y más frecuente de la app.
+  if(editId){
+    await updateDoc(userDoc('miembros',editId),data);
+    _actualizarLocal(miembros,editId,data);
+  }else{
+    const ref=await addDoc(userCol('miembros'),data);
+    _agregarLocal(miembros,ref.id,data);
+  }
+  recalcMiembrosPorId();
   closeModal('modal-miembro');
-  await loadMiembros();renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();
+  renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();
   toast(editId?'Miembro actualizado ✓':'Miembro agregado ✓');
 }
 // FIX: delMiembro ahora borra también los pagos y asistencias del miembro
@@ -2001,7 +2077,12 @@ async function delMiembro(id){
   const asistMiembro=asistencias.filter(a=>a.miembroId===id);
   await Promise.all(asistMiembro.map(a=>deleteDoc(userDoc('asistencias',a.id))));
   await deleteDoc(userDoc('miembros',id));
-  await loadAll();
+  // Ya sabemos exactamente qué se borró: se filtra localmente en vez de loadAll()
+  // (que releía las 8 colecciones completas por la baja de UN solo miembro).
+  pagos=pagos.filter(p=>p.miembroId!==id);
+  asistencias=asistencias.filter(a=>a.miembroId!==id);
+  _eliminarLocal(miembros,id);
+  recalcMiembrosPorId();recalcPagosPorMiembro();
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Miembro eliminado ✓');
 }
@@ -2028,9 +2109,15 @@ async function savePago(){
   if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
   const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
   const fechaFin=fechaPago+dias*86400000;
-  await addDoc(userCol('pagos'),{miembroId:mid,monto:parseFloat(monto),planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,creadoEn:Date.now()});
+  const data={miembroId:mid,monto:parseFloat(monto),planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,creadoEn:Date.now()};
+  const ref=await addDoc(userCol('pagos'),data);
+  // Registrar un pago es la acción más frecuente de la app — antes releía TODA la
+  // colección de pagos (loadPagos) por cada uno. Con el doc que acabamos de crear
+  // basta con parchear el array local y recalcular los mapas derivados.
+  _agregarLocal(pagos,ref.id,data);
+  recalcPagosPorMiembro();
   closeModal('modal-pago');
-  await loadPagos();renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Pago registrado ✓');
 }
 function preRegPago(mid){
@@ -2076,8 +2163,13 @@ document.addEventListener('click',e=>{
 
 // ASISTENCIA
 async function registrarAsistencia(mid){
-  await addDoc(userCol('asistencias'),{miembroId:mid,fecha:Date.now()});
-  await loadAsistencias();renderDashboard();renderAsistencia();
+  const data={miembroId:mid,fecha:Date.now()};
+  const ref=await addDoc(userCol('asistencias'),data);
+  // Los check-ins son la acción más repetida del día y asistencias crece sin límite
+  // con el tiempo — releer la colección completa (loadAsistencias) por cada uno era
+  // insostenible. Se agrega el registro directo al array local.
+  _agregarLocal(asistencias,ref.id,data);
+  renderDashboard();renderAsistencia();
   const m=miembros.find(x=>x.id===mid);
   toast(`Asistencia registrada — ${m?m.nombre:''} ✓`);
 }
@@ -2089,13 +2181,18 @@ async function saveEmpleado(){
   const editId=document.getElementById('edit-emp-id').value;
   // FIX: creadoEn solo en empleados nuevos
   if(!editId) data.creadoEn=Date.now();
-  if(editId)await updateDoc(userDoc('empleados',editId),data);
-  else await addDoc(userCol('empleados'),data);
+  if(editId){
+    await updateDoc(userDoc('empleados',editId),data);
+    _actualizarLocal(empleados,editId,data);
+  }else{
+    const ref=await addDoc(userCol('empleados'),data);
+    _agregarLocal(empleados,ref.id,data);
+  }
   closeModal('modal-empleado');
-  await loadEmpleados();renderEmpleados();
+  renderEmpleados();
   toast('Empleado guardado ✓');
 }
-async function delEmpleado(id){if(!confirm('¿Eliminar empleado?'))return;await deleteDoc(userDoc('empleados',id));await loadEmpleados();renderEmpleados();}
+async function delEmpleado(id){if(!confirm('¿Eliminar empleado?'))return;await deleteDoc(userDoc('empleados',id));_eliminarLocal(empleados,id);renderEmpleados();}
 function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';openModal('modal-empleado');}
 
 // GASTOS
@@ -2105,12 +2202,14 @@ async function saveGasto(){
   const fechaStr=document.getElementById('g-fecha').value;
   if(!concepto||!monto||!fechaStr)return alert('Completa todos los campos');
   const fecha=new Date(fechaStr+'T12:00:00').getTime();
-  await addDoc(userCol('gastos'),{concepto,monto,fecha,creadoEn:Date.now()});
+  const data={concepto,monto,fecha,creadoEn:Date.now()};
+  const ref=await addDoc(userCol('gastos'),data);
+  _agregarLocal(gastos,ref.id,data);
   closeModal('modal-gasto');
-  await loadGastos();renderEstadoCuenta();
+  renderEstadoCuenta();
   toast('Gasto registrado ✓');
 }
-async function delGasto(id){if(!confirm('¿Eliminar este gasto?'))return;await deleteDoc(userDoc('gastos',id));await loadGastos();renderEstadoCuenta();}
+async function delGasto(id){if(!confirm('¿Eliminar este gasto?'))return;await deleteDoc(userDoc('gastos',id));_eliminarLocal(gastos,id);renderEstadoCuenta();}
 
 // INVENTARIO EQUIPO
 async function saveInventario(){
@@ -2119,13 +2218,18 @@ async function saveInventario(){
   const editId=document.getElementById('edit-inv-id').value;
   // FIX: creadoEn solo en artículos nuevos
   if(!editId) data.creadoEn=Date.now();
-  if(editId)await updateDoc(userDoc('inventario',editId),data);
-  else await addDoc(userCol('inventario'),data);
+  if(editId){
+    await updateDoc(userDoc('inventario',editId),data);
+    _actualizarLocal(inventario,editId,data);
+  }else{
+    const ref=await addDoc(userCol('inventario'),data);
+    _agregarLocal(inventario,ref.id,data);
+  }
   closeModal('modal-inventario');
-  await loadInventario();renderInventario('equipo');
+  renderInventario('equipo');
   toast('Equipo guardado ✓');
 }
-async function delInventario(id){if(!confirm('¿Eliminar artículo?'))return;await deleteDoc(userDoc('inventario',id));await loadInventario();renderInventario('equipo');}
+async function delInventario(id){if(!confirm('¿Eliminar artículo?'))return;await deleteDoc(userDoc('inventario',id));_eliminarLocal(inventario,id);renderInventario('equipo');}
 function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
 
 // MODALES
