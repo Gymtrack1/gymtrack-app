@@ -289,6 +289,7 @@
         </label>
         <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
         <button onclick="corregirFechasImportadas()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🛠 Corregir Fechas Importadas</button>
+        <button onclick="abrirModalCategorias()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🏷️ Categorías</button>
         <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
       </div>
     </div>
@@ -304,11 +305,11 @@
 
   <!-- PAGOS -->
   <div class="tab" id="tab-pagos">
-    <div class="header-row"><div class="page-title">Pagos</div><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div>
+    <div class="header-row"><div class="page-title">Pagos</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="abrirModalPromociones()">🏷️ Promociones</button><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
-        <tbody id="tabla-pagos"><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
+        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Promoción</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
+        <tbody id="tabla-pagos"><tr><td colspan="8" class="loading">Cargando...</td></tr></tbody>
       </table>
     </div>
     <div id="pagos-paginacion"></div>
@@ -395,6 +396,7 @@
       <div class="form-group"><label>Edad</label><input type="number" id="m-edad" placeholder="25"></div>
     </div>
     <div class="form-group"><label>Dirección</label><input type="text" id="m-direccion" placeholder="Calle, Colonia, Ciudad"></div>
+    <div class="form-group"><label>Categoría de membresía</label><select id="m-categoria-membresia"><option value="">— Sin categoría —</option></select></div>
     <div class="form-group"><label>Meta semanal (días que se compromete a venir)</label><input type="number" id="m-meta-semanal" min="1" max="7" placeholder="Opcional, ej. 3"></div>
     <div class="form-group"><label>Notas</label><textarea id="m-notas" rows="2" placeholder="Notas opcionales..."></textarea></div>
     <div class="form-actions">
@@ -420,6 +422,8 @@
       <div class="perfil-field"><div class="perfil-field-label">Correo</div><div class="perfil-field-val" id="p-correo-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Edad</div><div class="perfil-field-val" id="p-edad-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Plan de membresía</div><div class="perfil-field-val" id="p-plan-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Categoría de membresía</div><div class="perfil-field-val" id="p-categoria-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Última promoción usada</div><div class="perfil-field-val" id="p-promocion-display">—</div></div>
       <div class="perfil-field" style="grid-column:span 2"><div class="perfil-field-label">Dirección</div><div class="perfil-field-val" id="p-dir-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Vencimiento</div><div class="perfil-field-val" id="p-vence-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Notas</div><div class="perfil-field-val" id="p-notas-display">—</div></div>
@@ -473,6 +477,7 @@
         </select>
       </div>
     </div>
+    <div class="form-group"><label>Promoción aplicada (opcional)</label><select id="p-promocion"><option value="">Ninguna</option></select></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="savePago()">Guardar</button>
@@ -606,6 +611,42 @@
   </div>
 </div>
 
+<!-- MODAL CATEGORÍAS DE MEMBRESÍA -->
+<div class="modal-overlay" id="modal-categorias">
+  <div class="modal">
+    <h2>Categorías de Membresía</h2>
+    <div class="form-group">
+      <label>Nueva categoría</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="cat-nombre-nueva" placeholder="Ej. Solo pesas, Full access..." onkeydown="if(event.key==='Enter')agregarCategoriaMembresia()" style="flex:1">
+        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarCategoriaMembresia()">+ Agregar</button>
+      </div>
+    </div>
+    <div id="lista-categorias-membresia"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-categorias')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PROMOCIONES -->
+<div class="modal-overlay" id="modal-promociones">
+  <div class="modal">
+    <h2>Promociones</h2>
+    <div class="form-group">
+      <label>Nueva promoción</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="promo-nombre-nueva" placeholder="Ej. 2x1 verano, Descuento estudiante..." onkeydown="if(event.key==='Enter')agregarPromocion()" style="flex:1">
+        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarPromocion()">+ Agregar</button>
+      </div>
+    </div>
+    <div id="lista-promociones"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-promociones')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL GASTO -->
 <div class="modal-overlay" id="modal-gasto">
   <div class="modal" style="max-width:400px">
@@ -624,6 +665,10 @@
 
 <script>
 let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],ventas=[],gastos=[];
+// Categorías de membresía y promociones: configurables por cada gimnasio, listas vacías por
+// defecto. NO usan la palabra "plan" (ver userPlan/planNombre) para evitar la colisión de
+// nombres que ya causó bugs antes ("objetos de planes sin usar").
+let categoriasMembresia=[],promociones=[];
 // Caches O(1): se recalculan cada vez que se recargan miembros/pagos (ver loadMiembros/loadPagos)
 let miembrosPorId=new Map();
 let pagosPorMiembroFin=new Map();  // miembroId -> pagos ordenados desc por fechaFin (vencimiento)
@@ -1058,7 +1103,7 @@ async function doLogout(){await window._signOut(window._auth);}
 // escribir, evitando releer la colección completa por cada alta/edición/baja (antes era la
 // causa principal de lecturas excesivas: p.ej. registrar UN pago releía los ~5,000 pagos).
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones()]);
   renderDashboard();renderPagos();renderAsistencia();
   renderAlertas();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
   // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
@@ -1114,6 +1159,8 @@ async function loadInventario(){try{const s=await getDocs(userCol('inventario'))
 async function loadProductos(){try{const s=await getDocs(userCol('productos'));productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
 async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
 async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
+async function loadCategoriasMembresia(){try{const s=await getDocs(userCol('categoriasMembresia'));categoriasMembresia=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){categoriasMembresia=[];}}
+async function loadPromociones(){try{const s=await getDocs(userCol('promociones'));promociones=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){promociones=[];}}
 
 // Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
 // volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).
@@ -1273,6 +1320,7 @@ function exportarMiembros(){
     'Correo': m.correo||'',
     'Edad': m.edad||'',
     'Dirección': m.direccion||'',
+    'Categoría de membresía': m.categoriaMembresia||'',
     'Meta semanal (días)': m.metaSemanal||'',
     'Plan actual': getUltimoPlan(m.id),
     'Monto pagado': getUltimoMonto(m.id)||'',
@@ -1282,7 +1330,7 @@ function exportarMiembros(){
   }));
   const ws=XLSX.utils.json_to_sheet(filas);
   // Ancho de columnas
-  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:14},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
+  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:20},{wch:14},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   const fecha=new Date().toISOString().slice(0,10);
@@ -1298,6 +1346,7 @@ function descargarPlantilla(){
     'Correo':'juan@gmail.com',
     'Edad':'28',
     'Dirección':'Calle Roble 45, Col. Centro',
+    'Categoría de membresía':'Full access',
     'Meta semanal (días)':'3',
     'Plan actual':'Mensual',
     'Monto pagado':'500',
@@ -1305,7 +1354,7 @@ function descargarPlantilla(){
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:18},{wch:16},{wch:13},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
@@ -1337,6 +1386,7 @@ async function importarMiembros(input){
           correo:     get('Correo','Email','Correo electrónico'),
           edad:       get('Edad'),
           direccion:  get('Dirección','Direccion'),
+          categoriaMembresia: get('Categoría de membresía','Categoria de membresia','Categoría','Categoria'),
           metaSemanal: get('Meta semanal (días)','Meta semanal','Meta Semanal'),
           planActual: get('Plan actual','Plan Membresía','Plan'),
           fechaVencimiento: get('Fecha de vencimiento','Fecha Vencimiento','Vencimiento'),
@@ -1433,6 +1483,7 @@ async function _guardarImportados(rows){
           correo:    r.correo||'',
           edad:      r.edad?parseInt(r.edad)||null:null,
           direccion: r.direccion||'',
+          categoriaMembresia: r.categoriaMembresia||null,
           metaSemanal: normalizarMetaSemanal(r.metaSemanal),
           notas:     r.notas||'',
           numero:    maxNum+i+1,
@@ -1552,13 +1603,13 @@ async function corregirFechasImportadas(){
 function renderPagos(){
   const tbody=document.getElementById('tabla-pagos');
   const sorted=[...pagos].sort((a,b)=>b.fechaPago-a.fechaPago);
-  if(!sorted.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';renderPagosPaginacion(0,1);return;}
+  if(!sorted.length){tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';renderPagosPaginacion(0,1);return;}
   const totalPaginas=Math.max(1,Math.ceil(sorted.length/PAGOS_PAGE_SIZE));
   if(pagosPage>totalPaginas)pagosPage=totalPaginas;
   if(pagosPage<1)pagosPage=1;
   const start=(pagosPage-1)*PAGOS_PAGE_SIZE;
   const pagina=sorted.slice(start,start+PAGOS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
   renderPagosPaginacion(sorted.length,totalPaginas);
 }
 function renderPagosPaginacion(total,totalPaginas){
@@ -2095,6 +2146,9 @@ function verPerfil(id){
   document.getElementById('p-correo-display').textContent=m.correo||'—';
   document.getElementById('p-edad-display').textContent=m.edad?`${m.edad} años`:'—';
   document.getElementById('p-plan-display').textContent=getUltimoPlan(m.id);
+  document.getElementById('p-categoria-display').textContent=m.categoriaMembresia||'—';
+  const ultimoPago=(pagosPorMiembroPago.get(m.id)||[])[0];
+  document.getElementById('p-promocion-display').textContent=ultimoPago&&ultimoPago.promocionUsada?ultimoPago.promocionUsada:'—';
   document.getElementById('p-dir-display').textContent=m.direccion||'—';
   document.getElementById('p-vence-display').textContent=fmtDate(getVencimiento(m.id));
   document.getElementById('p-notas-display').textContent=m.notas||'—';
@@ -2116,7 +2170,7 @@ async function saveMiembro(){
   }
   // FIX: creadoEn y numero solo se asignan al crear, nunca al editar
   // Antes creadoEn siempre se sobreescribía, rompiendo "nuevos este mes" en Finanzas
-  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value)};
+  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),categoriaMembresia:document.getElementById('m-categoria-membresia').value||null,notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value)};
   if(!editId){data.numero=numero;data.creadoEn=Date.now();}
   // Parcheo local en vez de loadMiembros(): con miles de miembros, releer toda la
   // colección por cada alta/edición es la lectura más cara y más frecuente de la app.
@@ -2159,6 +2213,7 @@ function editMiembro(id){
   document.getElementById('m-correo').value=m.correo||'';
   document.getElementById('m-edad').value=m.edad||'';
   document.getElementById('m-direccion').value=m.direccion||'';
+  populateCategoriaMembresiaSelect(m.categoriaMembresia||'');
   document.getElementById('m-meta-semanal').value=m.metaSemanal||'';
   document.getElementById('m-notas').value=m.notas||'';
   openModal('modal-miembro');
@@ -2171,10 +2226,11 @@ async function savePago(){
   const dias=parseInt(document.getElementById('p-plan').value);
   const fechaStr=document.getElementById('p-fecha').value;
   const formaPago=document.getElementById('p-forma-pago').value;
+  const promocionUsada=document.getElementById('p-promocion').value||null;
   if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
   const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
   const fechaFin=fechaPago+dias*86400000;
-  const data={miembroId:mid,monto:parseFloat(monto),planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,creadoEn:Date.now()};
+  const data={miembroId:mid,monto:parseFloat(monto),planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,promocionUsada,creadoEn:Date.now()};
   const ref=await addDoc(userCol('pagos'),data);
   // Registrar un pago es la acción más frecuente de la app — antes releía TODA la
   // colección de pagos (loadPagos) por cada uno. Con el doc que acabamos de crear
@@ -2297,10 +2353,103 @@ async function saveInventario(){
 async function delInventario(id){if(!confirm('¿Eliminar artículo?'))return;await deleteDoc(userDoc('inventario',id));_eliminarLocal(inventario,id);renderInventario('equipo');}
 function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
 
+// CATEGORÍAS DE MEMBRESÍA Y PROMOCIONES (configurables por gimnasio, ver nota junto a su
+// declaración). Los nombres se guardan como texto plano en miembros/pagos (igual que
+// planNombre en pagos), no como referencia por id: si luego se renombra o borra una categoría
+// o promoción, los registros ya asignados conservan el texto que tenían en ese momento.
+function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function agregarCategoriaMembresia(){
+  const nombre=document.getElementById('cat-nombre-nueva').value.trim();
+  if(!nombre)return alert('Escribe un nombre para la categoría');
+  const data={nombre,creadoEn:Date.now()};
+  const ref=await addDoc(userCol('categoriasMembresia'),data);
+  _agregarLocal(categoriasMembresia,ref.id,data);
+  document.getElementById('cat-nombre-nueva').value='';
+  renderCategoriasMembresiaModal();
+  toast('Categoría agregada ✓');
+}
+async function editarCategoriaMembresia(id){
+  const c=categoriasMembresia.find(x=>x.id===id);if(!c)return;
+  const nuevo=prompt('Nuevo nombre de la categoría:',c.nombre);
+  if(nuevo===null)return;
+  const nombre=nuevo.trim();
+  if(!nombre)return alert('El nombre no puede quedar vacío');
+  await updateDoc(userDoc('categoriasMembresia',id),{nombre});
+  _actualizarLocal(categoriasMembresia,id,{nombre});
+  renderCategoriasMembresiaModal();
+  toast('Categoría actualizada ✓');
+}
+async function eliminarCategoriaMembresia(id){
+  if(!confirm('¿Eliminar esta categoría? Los miembros que ya la tengan asignada conservan el nombre guardado, pero ya no podrás elegirla para miembros nuevos.'))return;
+  await deleteDoc(userDoc('categoriasMembresia',id));
+  _eliminarLocal(categoriasMembresia,id);
+  renderCategoriasMembresiaModal();
+  toast('Categoría eliminada ✓');
+}
+function renderCategoriasMembresiaModal(){
+  const el=document.getElementById('lista-categorias-membresia');
+  el.innerHTML=categoriasMembresia.length?categoriasMembresia.map(c=>`<div class="ec-row"><span>${c.nombre}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarCategoriaMembresia('${c.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarCategoriaMembresia('${c.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes categorías. Agrega la primera arriba.</div></div>';
+}
+function abrirModalCategorias(){renderCategoriasMembresiaModal();openModal('modal-categorias');}
+// Repuebla el <select> del modal de miembro con las categorías vigentes de este gimnasio.
+// Si el miembro ya traía una categoría que fue renombrada/borrada, se agrega como opción
+// aparte para no perder silenciosamente el valor guardado.
+function populateCategoriaMembresiaSelect(seleccionada=''){
+  const sel=document.getElementById('m-categoria-membresia');
+  if(!sel)return;
+  let opts='<option value="">— Sin categoría —</option>'+categoriasMembresia.map(c=>`<option value="${escAttr(c.nombre)}">${c.nombre}</option>`).join('');
+  if(seleccionada&&!categoriasMembresia.some(c=>c.nombre===seleccionada)){
+    opts+=`<option value="${escAttr(seleccionada)}">${seleccionada} (ya no existe)</option>`;
+  }
+  sel.innerHTML=opts;
+  sel.value=seleccionada||'';
+}
+
+async function agregarPromocion(){
+  const nombre=document.getElementById('promo-nombre-nueva').value.trim();
+  if(!nombre)return alert('Escribe un nombre para la promoción');
+  const data={nombre,creadoEn:Date.now()};
+  const ref=await addDoc(userCol('promociones'),data);
+  _agregarLocal(promociones,ref.id,data);
+  document.getElementById('promo-nombre-nueva').value='';
+  renderPromocionesModal();
+  toast('Promoción agregada ✓');
+}
+async function editarPromocion(id){
+  const p=promociones.find(x=>x.id===id);if(!p)return;
+  const nuevo=prompt('Nuevo nombre de la promoción:',p.nombre);
+  if(nuevo===null)return;
+  const nombre=nuevo.trim();
+  if(!nombre)return alert('El nombre no puede quedar vacío');
+  await updateDoc(userDoc('promociones',id),{nombre});
+  _actualizarLocal(promociones,id,{nombre});
+  renderPromocionesModal();
+  toast('Promoción actualizada ✓');
+}
+async function eliminarPromocion(id){
+  if(!confirm('¿Eliminar esta promoción? Los pagos que ya la tengan registrada conservan el nombre guardado, pero ya no podrás elegirla en pagos nuevos.'))return;
+  await deleteDoc(userDoc('promociones',id));
+  _eliminarLocal(promociones,id);
+  renderPromocionesModal();
+  toast('Promoción eliminada ✓');
+}
+function renderPromocionesModal(){
+  const el=document.getElementById('lista-promociones');
+  el.innerHTML=promociones.length?promociones.map(p=>`<div class="ec-row"><span>${p.nombre}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarPromocion('${p.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarPromocion('${p.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes promociones. Agrega la primera arriba.</div></div>';
+}
+function abrirModalPromociones(){renderPromocionesModal();openModal('modal-promociones');}
+function populatePromocionSelect(){
+  const sel=document.getElementById('p-promocion');
+  if(!sel)return;
+  sel.innerHTML='<option value="">Ninguna</option>'+promociones.map(p=>`<option value="${escAttr(p.nombre)}">${p.nombre}</option>`).join('');
+  sel.value='';
+}
+
 // MODALES
 function openModal(id){
-  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas'].forEach(x=>document.getElementById(x).value='');}
-  if(id==='modal-pago'){populateMiembrosSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
+  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas'].forEach(x=>document.getElementById(x).value='');populateCategoriaMembresiaSelect();}
+  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo de Equipo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-producto'&&!document.getElementById('edit-prod-id').value){document.getElementById('modal-prod-title').textContent='Nuevo Producto';['edit-prod-id','prod-nombre','prod-precio','prod-stock','prod-min','prod-notas'].forEach(x=>document.getElementById(x).value='');}
