@@ -133,6 +133,8 @@
   .perfil-field{background:var(--surface2);border-radius:8px;padding:10px 12px;}
   .perfil-field-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;}
   .perfil-field-val{font-size:14px;font-weight:500;}
+  .meta-bar-wrap{background:var(--border);border-radius:6px;height:8px;overflow:hidden;margin-top:8px;}
+  .meta-bar-fill{height:100%;border-radius:6px;transition:width 0.3s ease;}
   /* INV TABS */
   .inv-tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--surface2);padding:4px;border-radius:10px;width:fit-content;}
   .inv-tab-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:7px 18px;border-radius:7px;cursor:pointer;transition:all 0.2s;}
@@ -293,8 +295,8 @@
     <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar miembro..." id="search-miembros" oninput="filterMiembros()"></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Plan Memb.</th><th>Vencimiento</th><th>Estado</th><th>Acciones</th></tr></thead>
-        <tbody id="tabla-miembros"><tr><td colspan="7" class="loading">Cargando...</td></tr></tbody>
+        <thead><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Plan Memb.</th><th>Vencimiento</th><th>Estado</th><th>Meta semanal</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-miembros"><tr><td colspan="8" class="loading">Cargando...</td></tr></tbody>
       </table>
     </div>
     <div id="miembros-paginacion"></div>
@@ -393,6 +395,7 @@
       <div class="form-group"><label>Edad</label><input type="number" id="m-edad" placeholder="25"></div>
     </div>
     <div class="form-group"><label>Dirección</label><input type="text" id="m-direccion" placeholder="Calle, Colonia, Ciudad"></div>
+    <div class="form-group"><label>Meta semanal (días que se compromete a venir)</label><input type="number" id="m-meta-semanal" min="1" max="7" placeholder="Opcional, ej. 3"></div>
     <div class="form-group"><label>Notas</label><textarea id="m-notas" rows="2" placeholder="Notas opcionales..."></textarea></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-miembro')">Cancelar</button>
@@ -420,6 +423,11 @@
       <div class="perfil-field" style="grid-column:span 2"><div class="perfil-field-label">Dirección</div><div class="perfil-field-val" id="p-dir-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Vencimiento</div><div class="perfil-field-val" id="p-vence-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Notas</div><div class="perfil-field-val" id="p-notas-display">—</div></div>
+      <div class="perfil-field" style="grid-column:span 2">
+        <div class="perfil-field-label">Meta semanal de asistencia</div>
+        <div class="perfil-field-val" id="p-meta-texto">—</div>
+        <div class="meta-bar-wrap"><div class="meta-bar-fill" id="p-meta-bar-fill" style="width:0%"></div></div>
+      </div>
     </div>
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-ghost" onclick="closeModal('modal-perfil')">Cerrar</button>
@@ -1134,6 +1142,57 @@ function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
 function fmtNum(n){return String(n).padStart(3,'0');}
 function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
 
+// META SEMANAL DE ASISTENCIA (no confundir con "plan": esto es la meta de días/semana que
+// el miembro se compromete a venir, aplica a todos los miembros sin importar su plan de
+// membresía ni el plan de suscripción del gym). Semana = domingo a sábado, mismo criterio
+// que inicioSemana en renderEstadoCuenta, para no meter un criterio de semana distinto.
+function inicioSemanaActualTs(){
+  const hoy=new Date();
+  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
+  return inicioSemana.getTime();
+}
+function normalizarMetaSemanal(val){
+  const n=parseInt(val);
+  if(!n||n<1)return null;
+  return n>7?7:n;
+}
+// Cuenta días distintos (no check-ins) en los que el miembro asistió esta semana
+function diasAsistidosEstaSemana(mid){
+  const inicio=inicioSemanaActualTs();
+  const dias=new Set(asistencias.filter(a=>a.miembroId===mid&&a.fecha>=inicio).map(a=>new Date(a.fecha).toDateString()));
+  return dias.size;
+}
+function metaSemanalProgreso(mid){
+  const m=miembrosPorId.get(mid);
+  const meta=m?normalizarMetaSemanal(m.metaSemanal):null;
+  const dias=diasAsistidosEstaSemana(mid);
+  return{meta,dias,cumplido:meta?dias>=meta:false};
+}
+function metaSemanalBadge(mid){
+  const{meta,dias,cumplido}=metaSemanalProgreso(mid);
+  if(!meta)return'<span class="badge badge-gray">Sin meta</span>';
+  const color=cumplido?'green':dias>=1?'orange':'red';
+  return`<span class="badge badge-${color}">${dias}/${meta} días esta semana${cumplido?' ✅':''}</span>`;
+}
+function renderMetaSemanalPerfil(mid){
+  const{meta,dias,cumplido}=metaSemanalProgreso(mid);
+  const textoEl=document.getElementById('p-meta-texto');
+  const barEl=document.getElementById('p-meta-bar-fill');
+  if(!meta){
+    textoEl.textContent='Sin meta semanal definida';
+    textoEl.style.color='var(--muted)';
+    barEl.style.width='0%';
+    barEl.style.background='var(--border)';
+    return;
+  }
+  const color=cumplido?'var(--green)':dias>=1?'var(--orange)':'var(--red)';
+  const pct=Math.min(100,Math.round((dias/meta)*100));
+  textoEl.textContent=`${dias}/${meta} días esta semana${cumplido?' ✅':''}`;
+  textoEl.style.color=color;
+  barEl.style.width=pct+'%';
+  barEl.style.background=color;
+}
+
 function calcTasaRenovacion(){
   const hoy=new Date();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1).getTime();
@@ -1172,7 +1231,7 @@ function renderMiembros(filter=''){
   const tbody=document.getElementById('tabla-miembros');
   const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
   if(!lista.length){
-    tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';
     renderMiembrosPaginacion(0,1);
     return;
   }
@@ -1181,7 +1240,7 @@ function renderMiembros(filter=''){
   if(miembrosPage<1)miembrosPage=1;
   const start=(miembrosPage-1)*MIEMBROS_PAGE_SIZE;
   const pagina=lista.slice(start,start+MIEMBROS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td>${metaSemanalBadge(m.id)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
   renderMiembrosPaginacion(lista.length,totalPaginas);
 }
 function renderMiembrosPaginacion(total,totalPaginas){
@@ -1214,6 +1273,7 @@ function exportarMiembros(){
     'Correo': m.correo||'',
     'Edad': m.edad||'',
     'Dirección': m.direccion||'',
+    'Meta semanal (días)': m.metaSemanal||'',
     'Plan actual': getUltimoPlan(m.id),
     'Monto pagado': getUltimoMonto(m.id)||'',
     'Fecha de vencimiento': getVencimiento(m.id)?new Date(getVencimiento(m.id)).toLocaleDateString('es-MX'):'Sin pago',
@@ -1222,7 +1282,7 @@ function exportarMiembros(){
   }));
   const ws=XLSX.utils.json_to_sheet(filas);
   // Ancho de columnas
-  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
+  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:14},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   const fecha=new Date().toISOString().slice(0,10);
@@ -1238,13 +1298,14 @@ function descargarPlantilla(){
     'Correo':'juan@gmail.com',
     'Edad':'28',
     'Dirección':'Calle Roble 45, Col. Centro',
+    'Meta semanal (días)':'3',
     'Plan actual':'Mensual',
     'Monto pagado':'500',
     'Fecha de vencimiento':'15/08/2025',
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:16},{wch:13},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:18},{wch:16},{wch:13},{wch:22},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
@@ -1276,6 +1337,7 @@ async function importarMiembros(input){
           correo:     get('Correo','Email','Correo electrónico'),
           edad:       get('Edad'),
           direccion:  get('Dirección','Direccion'),
+          metaSemanal: get('Meta semanal (días)','Meta semanal','Meta Semanal'),
           planActual: get('Plan actual','Plan Membresía','Plan'),
           fechaVencimiento: get('Fecha de vencimiento','Fecha Vencimiento','Vencimiento'),
           montoPagado: get('Monto pagado','Monto Pagado','Monto','Precio'),
@@ -1371,6 +1433,7 @@ async function _guardarImportados(rows){
           correo:    r.correo||'',
           edad:      r.edad?parseInt(r.edad)||null:null,
           direccion: r.direccion||'',
+          metaSemanal: normalizarMetaSemanal(r.metaSemanal),
           notas:     r.notas||'',
           numero:    maxNum+i+1,
           creadoEn:  Date.now()
@@ -2035,6 +2098,7 @@ function verPerfil(id){
   document.getElementById('p-dir-display').textContent=m.direccion||'—';
   document.getElementById('p-vence-display').textContent=fmtDate(getVencimiento(m.id));
   document.getElementById('p-notas-display').textContent=m.notas||'—';
+  renderMetaSemanalPerfil(m.id);
   document.getElementById('p-editar-btn').onclick=()=>{closeModal('modal-perfil');editMiembro(id);};
   document.getElementById('p-wha-btn').onclick=()=>enviarWhatsApp(id);
   openModal('modal-perfil');
@@ -2052,7 +2116,7 @@ async function saveMiembro(){
   }
   // FIX: creadoEn y numero solo se asignan al crear, nunca al editar
   // Antes creadoEn siempre se sobreescribía, rompiendo "nuevos este mes" en Finanzas
-  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim()};
+  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value)};
   if(!editId){data.numero=numero;data.creadoEn=Date.now();}
   // Parcheo local en vez de loadMiembros(): con miles de miembros, releer toda la
   // colección por cada alta/edición es la lectura más cara y más frecuente de la app.
@@ -2095,6 +2159,7 @@ function editMiembro(id){
   document.getElementById('m-correo').value=m.correo||'';
   document.getElementById('m-edad').value=m.edad||'';
   document.getElementById('m-direccion').value=m.direccion||'';
+  document.getElementById('m-meta-semanal').value=m.metaSemanal||'';
   document.getElementById('m-notas').value=m.notas||'';
   openModal('modal-miembro');
 }
@@ -2169,7 +2234,7 @@ async function registrarAsistencia(mid){
   // con el tiempo — releer la colección completa (loadAsistencias) por cada uno era
   // insostenible. Se agrega el registro directo al array local.
   _agregarLocal(asistencias,ref.id,data);
-  renderDashboard();renderAsistencia();
+  renderDashboard();renderAsistencia();renderMiembros(document.getElementById('search-miembros').value);
   const m=miembros.find(x=>x.id===mid);
   toast(`Asistencia registrada — ${m?m.nombre:''} ✓`);
 }
@@ -2234,7 +2299,7 @@ function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;d
 
 // MODALES
 function openModal(id){
-  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-notas'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-pago'){populateMiembrosSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo de Equipo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
