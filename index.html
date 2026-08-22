@@ -725,8 +725,12 @@ const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venid
 let msgWARecordatorio=MSG_WA_RECORDATORIO_DEFAULT;
 // Tolerancia tras la hora habitual antes de considerar "no vino" (evita falsos positivos por
 // llegar unos minutos tarde). Ver calcularPatronAsistencia/recordatoriosPendientes más abajo.
-const RECORDATORIO_MARGEN_MIN=50;
+const RECORDATORIO_MARGEN_MIN=20;
 const RECORDATORIO_MIN_ASISTENCIAS=3;
+// Cada semana de antigüedad, un registro de asistencia pesa RECORDATORIO_DECAY_SEMANAL veces
+// menos al calcular el día/hora habitual — así un cambio de horario reciente predomina sobre
+// un patrón antiguo en vez de quedar diluido en un promedio plano de todo el historial.
+const RECORDATORIO_DECAY_SEMANAL=0.75;
 const DIAS_SEMANA=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 let pinFinanzas=null;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
@@ -1284,28 +1288,39 @@ function metaProgresoTexto(mid){
 
 // RECORDATORIOS POR PATRÓN DE ASISTENCIA HABITUAL
 // Detecta, a partir del historial en `asistencias`, el día de la semana en que un miembro
-// asiste con más frecuencia y su hora promedio ese día. Requiere al menos
-// RECORDATORIO_MIN_ASISTENCIAS registros en ese mismo día de la semana para considerar que
-// hay un patrón real — si no, devuelve null (miembros nuevos o irregulares no generan
-// recordatorios, para evitar falsos positivos).
+// asiste con más frecuencia y su hora habitual ese día. Cada registro pesa según su
+// antigüedad (RECORDATORIO_DECAY_SEMANAL): las visitas recientes pesan más que las viejas,
+// así un cambio de horario reciente se refleja rápido en vez de quedar diluido en un
+// promedio plano de todo el historial. Requiere al menos RECORDATORIO_MIN_ASISTENCIAS
+// visitas REALES (sin ponderar) en ese mismo día de la semana para considerar que hay un
+// patrón — si no, devuelve null (miembros nuevos o irregulares no generan recordatorios,
+// para evitar falsos positivos).
 function calcularPatronAsistencia(mid){
   const registros=asistencias.filter(a=>a.miembroId===mid);
   if(registros.length<RECORDATORIO_MIN_ASISTENCIAS)return null;
+  const ahora=Date.now();
   const porDia={};
   registros.forEach(a=>{
     const d=new Date(a.fecha);
     const dia=d.getDay();
     const horaDecimal=d.getHours()+d.getMinutes()/60;
-    if(!porDia[dia])porDia[dia]=[];
-    porDia[dia].push(horaDecimal);
+    const semanasAtras=Math.max(0,(ahora-a.fecha)/(7*86400000));
+    const peso=Math.pow(RECORDATORIO_DECAY_SEMANAL,semanasAtras);
+    if(!porDia[dia])porDia[dia]={visitas:0,pesoTotal:0,pesoHora:0};
+    porDia[dia].visitas++;
+    porDia[dia].pesoTotal+=peso;
+    porDia[dia].pesoHora+=peso*horaDecimal;
   });
-  let mejorDia=null,mejorHoras=null;
-  Object.entries(porDia).forEach(([dia,horas])=>{
-    if(!mejorHoras||horas.length>mejorHoras.length){mejorDia=parseInt(dia);mejorHoras=horas;}
+  // Solo compiten por "día habitual" los días que ya tienen suficiente historial real;
+  // entre esos, gana el de mayor peso reciente (no el de más visitas totales).
+  let mejorDia=null,mejorInfo=null;
+  Object.entries(porDia).forEach(([dia,info])=>{
+    if(info.visitas<RECORDATORIO_MIN_ASISTENCIAS)return;
+    if(!mejorInfo||info.pesoTotal>mejorInfo.pesoTotal){mejorDia=parseInt(dia);mejorInfo=info;}
   });
-  if(mejorDia===null||mejorHoras.length<RECORDATORIO_MIN_ASISTENCIAS)return null;
-  const horaPromedio=mejorHoras.reduce((s,h)=>s+h,0)/mejorHoras.length;
-  return{diaSemana:mejorDia,horaPromedio,visitas:mejorHoras.length};
+  if(mejorDia===null)return null;
+  const horaPromedio=mejorInfo.pesoHora/mejorInfo.pesoTotal;
+  return{diaSemana:mejorDia,horaPromedio,visitas:mejorInfo.visitas};
 }
 function fmtHoraPromedio(horaPromedio){
   const d=new Date();
