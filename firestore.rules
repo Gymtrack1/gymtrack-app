@@ -70,7 +70,7 @@ service cloud.firestore {
 
       // Actualización: admin puede editar cualquier cuenta (plan,
       // funciones, etc). Un gimnasio solo puede editar su propio doc
-      // (pinFinanzas, msgWhatsApp, y la migración pending_ -> uid real).
+      // (pinFinanzas, msgWhatsApp, msgWhatsAppRecordatorio, y la migración pending_ -> uid real).
       allow update: if isAdmin() || isOwnerDoc(gymId);
 
       // Borrado: admin (elimina clientes), o el propio dueño borrando su
