@@ -117,6 +117,10 @@
   .ec-row:last-child{border-bottom:none;}
   .ec-val{font-weight:700;}
   .chart-wrap{position:relative;height:220px;}
+  /* BENEFICIOS DE CATEGORÍA / NOTAS DE SEGUIMIENTO (texto libre, definido por cada gym) */
+  .beneficio-chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 6px 4px 12px;font-size:12px;margin:0 6px 6px 0;}
+  .beneficio-chip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;border-radius:50%;font-family:'DM Sans',sans-serif;}
+  .beneficio-chip button:hover{color:var(--red);background:rgba(220,59,48,0.12);}
   /* ALERTAS */
   .alert-card{background:var(--surface);border-left:3px solid var(--orange);border-radius:8px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
   .alert-card.vencido{border-left-color:var(--red);}
@@ -461,6 +465,22 @@
         <div class="meta-bar-wrap"><div class="meta-bar-fill" id="p-meta-bar-fill" style="width:0%"></div></div>
       </div>
     </div>
+
+    <div class="ec-card" id="p-beneficios-card" style="display:none;margin-top:16px;padding:16px 18px">
+      <h3>✅ Este plan incluye</h3>
+      <div id="p-beneficios-lista"></div>
+    </div>
+
+    <div class="ec-card" id="p-seguimiento-card" style="display:none;margin-top:16px;padding:16px 18px">
+      <h3>📝 Seguimiento personalizado</h3>
+      <div id="p-notas-plan-lista"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <input type="text" id="p-nota-tema" placeholder="Tema (ej. Nutrición, Entrenamiento — Martes)" style="flex:1;min-width:150px">
+        <input type="text" id="p-nota-contenido" placeholder="Contenido" style="flex:2;min-width:180px">
+        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarNotaPlan()">+ Agregar</button>
+      </div>
+    </div>
+
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-ghost" onclick="closeModal('modal-perfil')">Cerrar</button>
       <button class="btn btn-primary btn-sm" id="p-editar-btn">Editar</button>
@@ -708,6 +728,8 @@ const ASISTENCIA_PAGE_SIZE=100;
 let pagosPage=1;
 const PAGOS_PAGE_SIZE=100;
 let alertasExpandido={vencidos:false,en3:false,en7:false};
+let categoriaBeneficiosExpandido={}; // catId -> bool, expand/colapso de beneficios en modal-categorias
+let perfilActualId=null; // id del miembro mostrado en modal-perfil, usado por agregarNotaPlan/eliminarNotaPlan
 const ALERTAS_PAGE_SIZE=50;
 let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
@@ -2315,6 +2337,7 @@ async function saveVenta(){
 // VER PERFIL
 function verPerfil(id){
   const m=miembros.find(x=>x.id===id);if(!m)return;
+  perfilActualId=id;
   const estado=getEstado(m.id);
   document.getElementById('p-num').textContent=`#${fmtNum(m.numero||0)}`;
   document.getElementById('p-nombre-display').textContent=m.nombre;
@@ -2331,9 +2354,65 @@ function verPerfil(id){
   document.getElementById('p-notas-display').textContent=m.notas||'—';
   document.getElementById('p-recordatorios-display').textContent=m.recibeRecordatorios===false?'No':'Sí';
   renderMetaSemanalPerfil(m.id);
+  renderBeneficiosPerfil(m);
+  renderSeguimientoPerfil(m);
   document.getElementById('p-editar-btn').onclick=()=>{closeModal('modal-perfil');editMiembro(id);};
   document.getElementById('p-wha-btn').onclick=()=>enviarWhatsApp(id);
   openModal('modal-perfil');
+}
+
+// Tarjeta "Este plan incluye": beneficios de la categoría actual del miembro (Parte 1). Solo
+// se muestra si la categoría tiene beneficios definidos — si está vacía o la categoría ya no
+// existe, la tarjeta se oculta en vez de mostrarse vacía.
+function renderBeneficiosPerfil(m){
+  const beneficios=beneficiosDeCategoria(m.categoriaMembresia);
+  const card=document.getElementById('p-beneficios-card');
+  if(!beneficios.length){card.style.display='none';return;}
+  card.style.display='block';
+  document.getElementById('p-beneficios-lista').innerHTML=beneficios.map(b=>`<div class="ec-row"><span>${escAttr(b)}</span></div>`).join('');
+}
+
+// Sección "Seguimiento personalizado" (Parte 2): notas libres por miembro (tema+contenido,
+// ambos definidos por el gym). Solo disponible si su categoría actual tiene beneficios
+// definidos — misma condición que la tarjeta de beneficios, sin flag nuevo.
+function renderSeguimientoPerfil(m){
+  const card=document.getElementById('p-seguimiento-card');
+  if(!beneficiosDeCategoria(m.categoriaMembresia).length){card.style.display='none';return;}
+  card.style.display='block';
+  const notas=m.notasPlan||[];
+  document.getElementById('p-notas-plan-lista').innerHTML=notas.length?notas.map((n,i)=>`<div class="ec-row" style="align-items:flex-start;flex-direction:column;gap:4px">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;gap:8px">
+        <strong style="font-size:13px">${escAttr(n.tema)}</strong>
+        <button class="btn btn-danger btn-sm" onclick="eliminarNotaPlan(${i})">✕</button>
+      </div>
+      <div style="color:var(--muted);font-size:13px;white-space:pre-wrap">${escAttr(n.contenido)}</div>
+    </div>`).join(''):'<div style="color:var(--muted);font-size:12px;padding:6px 0">Aún no hay notas. Agrega la primera abajo.</div>';
+}
+async function agregarNotaPlan(){
+  if(!perfilActualId)return;
+  const tema=document.getElementById('p-nota-tema').value.trim();
+  const contenido=document.getElementById('p-nota-contenido').value.trim();
+  if(!tema||!contenido)return alert('Escribe tema y contenido de la nota');
+  const m=miembros.find(x=>x.id===perfilActualId);if(!m)return;
+  const notasPlan=[...(m.notasPlan||[]),{tema,contenido,creadoEn:Date.now()}];
+  await updateDoc(userDoc('miembros',perfilActualId),{notasPlan});
+  _actualizarLocal(miembros,perfilActualId,{notasPlan});
+  recalcMiembrosPorId();
+  document.getElementById('p-nota-tema').value='';
+  document.getElementById('p-nota-contenido').value='';
+  renderSeguimientoPerfil(miembrosPorId.get(perfilActualId));
+  toast('Nota agregada ✓');
+}
+async function eliminarNotaPlan(idx){
+  if(!perfilActualId)return;
+  if(!confirm('¿Quitar esta nota?'))return;
+  const m=miembros.find(x=>x.id===perfilActualId);if(!m)return;
+  const notasPlan=(m.notasPlan||[]).filter((_,i)=>i!==idx);
+  await updateDoc(userDoc('miembros',perfilActualId),{notasPlan});
+  _actualizarLocal(miembros,perfilActualId,{notasPlan});
+  recalcMiembrosPorId();
+  renderSeguimientoPerfil(miembrosPorId.get(perfilActualId));
+  toast('Nota eliminada ✓');
 }
 
 // SAVE MIEMBRO
@@ -2541,12 +2620,46 @@ function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'
 async function agregarCategoriaMembresia(){
   const nombre=document.getElementById('cat-nombre-nueva').value.trim();
   if(!nombre)return alert('Escribe un nombre para la categoría');
-  const data={nombre,creadoEn:Date.now()};
+  const data={nombre,beneficios:[],creadoEn:Date.now()};
   const ref=await addDoc(userCol('categoriasMembresia'),data);
   _agregarLocal(categoriasMembresia,ref.id,data);
   document.getElementById('cat-nombre-nueva').value='';
   renderCategoriasMembresiaModal();
   toast('Categoría agregada ✓');
+}
+// Beneficios de una categoría: lista abierta de texto libre que cada gimnasio define para
+// su(s) plan(es) (ej. "Nutrición personalizada", "Casillero"). Nada hardcodeado en el código.
+async function agregarBeneficioCategoria(id){
+  const input=document.getElementById('cat-benef-input-'+id);
+  if(!input)return;
+  const texto=input.value.trim();
+  if(!texto)return;
+  const c=categoriasMembresia.find(x=>x.id===id);if(!c)return;
+  const beneficios=[...(c.beneficios||[]),texto];
+  await updateDoc(userDoc('categoriasMembresia',id),{beneficios});
+  _actualizarLocal(categoriasMembresia,id,{beneficios});
+  input.value='';
+  categoriaBeneficiosExpandido[id]=true;
+  renderCategoriasMembresiaModal();
+  toast('Beneficio agregado ✓');
+}
+async function eliminarBeneficioCategoria(id,idx){
+  const c=categoriasMembresia.find(x=>x.id===id);if(!c)return;
+  const beneficios=(c.beneficios||[]).filter((_,i)=>i!==idx);
+  await updateDoc(userDoc('categoriasMembresia',id),{beneficios});
+  _actualizarLocal(categoriasMembresia,id,{beneficios});
+  categoriaBeneficiosExpandido[id]=true;
+  renderCategoriasMembresiaModal();
+  toast('Beneficio eliminado ✓');
+}
+function toggleCategoriaBeneficios(id){categoriaBeneficiosExpandido[id]=!categoriaBeneficiosExpandido[id];renderCategoriasMembresiaModal();}
+// Busca la categoría por nombre (texto plano, igual que categoriaMembresia en el miembro) y
+// devuelve sus beneficios, o [] si no hace match — nunca truena si la categoría fue
+// renombrada o borrada después de asignársela a algún miembro.
+function beneficiosDeCategoria(nombre){
+  if(!nombre)return[];
+  const cat=categoriasMembresia.find(c=>c.nombre===nombre);
+  return(cat&&Array.isArray(cat.beneficios))?cat.beneficios:[];
 }
 async function editarCategoriaMembresia(id){
   const c=categoriasMembresia.find(x=>x.id===id);if(!c)return;
@@ -2568,7 +2681,27 @@ async function eliminarCategoriaMembresia(id){
 }
 function renderCategoriasMembresiaModal(){
   const el=document.getElementById('lista-categorias-membresia');
-  el.innerHTML=categoriasMembresia.length?categoriasMembresia.map(c=>`<div class="ec-row"><span>${c.nombre}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarCategoriaMembresia('${c.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarCategoriaMembresia('${c.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes categorías. Agrega la primera arriba.</div></div>';
+  el.innerHTML=categoriasMembresia.length?categoriasMembresia.map(c=>{
+    const beneficios=c.beneficios||[];
+    const expandido=!!categoriaBeneficiosExpandido[c.id];
+    return`<div class="ec-card" style="padding:12px 14px;margin-bottom:10px">
+      <div class="ec-row" style="border-bottom:none;padding:0">
+        <span>${escAttr(c.nombre)}</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="toggleCategoriaBeneficios('${c.id}')">${expandido?'▲':'▼'} Beneficios (${beneficios.length})</button>
+          <button class="btn btn-ghost btn-sm" onclick="editarCategoriaMembresia('${c.id}')">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="eliminarCategoriaMembresia('${c.id}')">✕</button>
+        </span>
+      </div>
+      ${expandido?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="margin-bottom:8px">${beneficios.length?beneficios.map((b,i)=>`<span class="beneficio-chip">${escAttr(b)}<button onclick="eliminarBeneficioCategoria('${c.id}',${i})" title="Quitar">✕</button></span>`).join(''):'<span style="color:var(--muted);font-size:12px">Sin beneficios definidos todavía.</span>'}</div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="cat-benef-input-${c.id}" placeholder="Ej. Nutrición personalizada..." onkeydown="if(event.key==='Enter')agregarBeneficioCategoria('${c.id}')" style="flex:1">
+          <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarBeneficioCategoria('${c.id}')">+ Agregar</button>
+        </div>
+      </div>`:''}
+    </div>`;
+  }).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes categorías. Agrega la primera arriba.</div></div>';
 }
 function abrirModalCategorias(){renderCategoriasMembresiaModal();openModal('modal-categorias');}
 // Repuebla el <select> del modal de miembro con las categorías vigentes de este gimnasio.
