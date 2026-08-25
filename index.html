@@ -1044,7 +1044,10 @@ function tendenciaPorHora(pagosDelDia,ventasDelDia){
   ventasDelDia.forEach(v=>{porHora[new Date(v.fecha).getHours()]+=(v.total||0);});
   const horaActual=new Date().getHours();
   const labels=[],data=[];
-  for(let h=0;h<=horaActual;h++){labels.push(h+':00');data.push(porHora[h]);}
+  // Etiquetas cortas ("0h","1h"...) a propósito: las tarjetas de Finanzas son angostas y
+  // Chart.js llega a ocultar TODAS las etiquetas del eje si no le caben ni una — entre más
+  // corto el texto, más fácil que quepan sin necesidad de saltarse ninguna.
+  for(let h=0;h<=horaActual;h++){labels.push(h+'h');data.push(porHora[h]);}
   return{labels,data};
 }
 function tendenciaPorDia(inicioPeriodo,pagosDelPeriodo,ventasDelPeriodo){
@@ -1054,7 +1057,7 @@ function tendenciaPorDia(inicioPeriodo,pagosDelPeriodo,ventasDelPeriodo){
     const dStr=d.toDateString();
     const p=pagosDelPeriodo.filter(x=>new Date(x.fechaPago).toDateString()===dStr).reduce((s,x)=>s+x.monto,0);
     const v=ventasDelPeriodo.filter(x=>new Date(x.fecha).toDateString()===dStr).reduce((s,x)=>s+(x.total||0),0);
-    labels.push(d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}));
+    labels.push(String(d.getDate())); // solo el número de día, misma razón que arriba
     data.push(p+v);
   }
   return{labels,data};
@@ -2264,7 +2267,7 @@ function renderEstadoCuenta(){
         <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='pie'?'background:var(--accent);color:var(--text-accent);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','pie')">🥧 Pastel</button>
         <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='line'?'background:var(--accent);color:var(--text-accent);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','line')">📈 Línea</button>
       </div>
-      <div class="chart-wrap" style="height:150px"><canvas id="chart-periodo-${key}"></canvas></div>`;
+      <div class="chart-wrap" style="height:170px"><canvas id="chart-periodo-${key}"></canvas></div>`;
 
   el.innerHTML=`
   <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
@@ -2376,8 +2379,12 @@ function renderEstadoCuenta(){
       type:'line',
       data:{labels,datasets:[{label:'Ingresos',data,borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.3,pointBackgroundColor:'#C6E600',pointRadius:labels.length>15?0:3}]},
       options:{responsive:true,maintainAspectRatio:false,
+        layout:{padding:{bottom:4}},
         plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y.toLocaleString()}}},
-        scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:8}}}}
+        scales:{
+          y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString(),font:{size:9}}},
+          x:{grid:{display:false},ticks:{display:true,maxRotation:0,minRotation:0,autoSkip:true,autoSkipPadding:6,maxTicksLimit:6,font:{size:9}}}
+        }}
     });
   };
   crearGraficaPeriodo('hoy',totalHoy,totalVentasHoy,pagosHoy,ventasHoy,null);
