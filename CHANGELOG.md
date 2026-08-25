@@ -4,6 +4,20 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Horas Pico de Compras y Top Compradores en Inventario/Tienda
+
+**Qué se hizo:**
+- **Horas Pico de Compras**: mismo patrón que Horas Pico de Asistencia, pero contando `ventas` en vez de `asistencias`. `renderHorasPicoCompras()` recorre todo el array `ventas` (ya en memoria, sin lecturas nuevas a Firestore), cuenta por hora con `new Date(v.fecha).getHours()`, y arma una barra con Chart.js coloreada por intensidad reutilizando `colorPorIntensidad`/`fmtHora12`/`chartHorasPico`-mismo-patrón (variable de módulo `chartHorasPicoCompras`, destruir antes de recrear, guard si Chart.js no cargó). Estado vacío si no hay ventas todavía.
+- **Top Compradores**: `topCompradoresHtml()` agrupa `ventas` por `miembroId`, suma el gasto total y cuenta las compras de cada uno, y muestra el top 10 ordenado por monto gastado (no por número de compras — alguien con una sola compra grande sale antes que alguien con varias compras chicas). Las ventas sin miembro asociado ("— Sin miembro —" en el modal de venta) no cuentan para nadie, y un miembro borrado después de la venta se filtra en silencio en vez de romper la tabla.
+- Ambas secciones se agregaron dentro de la pestaña "🛒 Tienda / Venta" de Inventario, después de "Últimas Ventas", sin tocar la pestaña "🏋️ Equipo del Gym" ni reordenar nada existente.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Conteo por hora probado con 6 ventas simuladas en 3 horas distintas — el conteo por hora y el total coinciden.
+- Ranking de compradores probado con 3 miembros: uno con una sola compra grande ($350) quedó primero por encima de otro con 3 compras chicas que suman menos ($210) — confirma que ordena por monto total, no por frecuencia.
+- Una venta sin `miembroId` no aparece en el ranking (se descuenta del total de personas listadas).
+- Un `miembroId` que ya no existe en `miembrosPorId` (miembro borrado) se filtra sin romper el resto del ranking.
+
 ## 2026-08-25 — Color verde→rojo por intensidad en la gráfica de Horas Pico
 
 **Qué se hizo:**

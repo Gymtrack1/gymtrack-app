@@ -806,6 +806,7 @@ let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let chartTendencia=null;
 let chartHorasPico=null;
+let chartHorasPicoCompras=null;
 let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
@@ -2542,8 +2543,62 @@ function renderInventario(seccion='equipo'){
       </tr>`;}).join('')}</tbody></table></div>
     <div class="section-title" style="margin-top:24px">Últimas Ventas</div>
     ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembrosPorId.get(v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
+    <div class="section-title" style="margin-top:24px">Horas Pico de Compras</div>
+    <div class="ec-card" style="margin-bottom:24px"><h3>🕐 Horas de Mayor Compra</h3><div id="horas-pico-compras-content"></div></div>
+    <div class="section-title">Top Compradores</div>
+    <div class="ec-card">${topCompradoresHtml()}</div>
     `:'<div class="empty"><div class="empty-icon">🛒</div><div>No hay productos registrados</div><div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="openModal(\'modal-producto\')">+ Agregar Producto</button></div></div>'}
   </div>`;
+  renderHorasPicoCompras();
+}
+// HORAS PICO DE COMPRAS: mismo patrón que renderHorasPico (Asistencia) pero sobre `ventas`
+// en vez de `asistencias` — agregado histórico completo, ya en memoria, sin lecturas nuevas.
+function renderHorasPicoCompras(){
+  const el=document.getElementById('horas-pico-compras-content');
+  if(!el)return; // no está en el DOM si la sección activa es "equipo" o si no hay productos
+  const conteoPorHora=Array(24).fill(0);
+  ventas.forEach(v=>{conteoPorHora[new Date(v.fecha).getHours()]++;});
+  const totalVentas=conteoPorHora.reduce((s,n)=>s+n,0);
+  if(!totalVentas){
+    if(chartHorasPicoCompras){chartHorasPicoCompras.destroy();chartHorasPicoCompras=null;}
+    el.innerHTML='<div class="empty"><div class="empty-icon">🕐</div><div>Aún no hay suficientes ventas para calcular horas pico</div></div>';
+    return;
+  }
+  el.innerHTML=`<div class="chart-wrap" style="height:220px"><canvas id="chart-horas-pico-compras"></canvas></div>
+    <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px">🟢 Menos compras &nbsp;·&nbsp; 🔴 Más compras</div>`;
+  if(typeof Chart==='undefined')return; // CDN de Chart.js no disponible (sin conexión)
+  if(chartHorasPicoCompras)chartHorasPicoCompras.destroy();
+  const maxConteo=Math.max(...conteoPorHora),minConteo=Math.min(...conteoPorHora);
+  const colores=conteoPorHora.map(n=>colorPorIntensidad(maxConteo>minConteo?(n-minConteo)/(maxConteo-minConteo):0));
+  chartHorasPicoCompras=new Chart(document.getElementById('chart-horas-pico-compras'),{
+    type:'bar',
+    data:{labels:conteoPorHora.map((_,h)=>fmtHora12(h)),datasets:[{label:'Ventas',data:conteoPorHora,backgroundColor:colores,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' venta'+(c.parsed.y===1?'':'s')}}},
+      scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}
+  });
+}
+// TOP COMPRADORES: ranking de miembros por gasto total en la tienda (ventas.miembroId).
+// Ventas sin miembro asociado ("— Sin miembro —" en el modal de venta) no cuentan para
+// nadie — no hay forma de saber quién fue. Top 10 por monto gastado.
+function topCompradoresHtml(){
+  const porMiembro=new Map();
+  ventas.forEach(v=>{
+    if(!v.miembroId)return;
+    if(!porMiembro.has(v.miembroId))porMiembro.set(v.miembroId,{total:0,compras:0});
+    const acc=porMiembro.get(v.miembroId);
+    acc.total+=(v.total||0);
+    acc.compras+=1;
+  });
+  const ranking=[...porMiembro.entries()]
+    .map(([mid,d])=>({miembro:miembrosPorId.get(mid),...d}))
+    .filter(r=>r.miembro) // por si el miembro ya fue borrado
+    .sort((a,b)=>b.total-a.total)
+    .slice(0,10);
+  if(!ranking.length)return'<div class="empty"><div class="empty-icon">🏆</div><div>Aún no hay ventas asociadas a un miembro</div></div>';
+  return`<div class="table-wrap"><table><thead><tr><th>#</th><th>Miembro</th><th>Compras</th><th>Total gastado</th></tr></thead><tbody>${
+    ranking.map((r,i)=>`<tr><td>${i+1}</td><td><span class="num-badge">#${fmtNum(r.miembro.numero||0)}</span> ${r.miembro.nombre}</td><td>${r.compras}</td><td style="color:var(--accent);font-weight:700">$${r.total.toLocaleString()}</td></tr>`).join('')
+  }</tbody></table></div>`;
 }
 
 // PRODUCTOS / VENTAS
