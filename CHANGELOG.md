@@ -4,6 +4,31 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Personalización visual por gimnasio (color, logo, fondos por pestaña)
+
+**Qué se hizo:**
+- Se importó el SDK de Firebase Storage (`getStorage`, `ref`, `uploadBytes`, `getDownloadURL`, `deleteObject` desde `firebase-storage.js` 10.12.0, mismo patrón de import vía CDN de gstatic que ya se usaba para Firestore/Auth) y se creó `storage.rules` con aislamiento por gym equivalente a `firestore.rules`: cada gimnasio (por su uid) solo puede leer/escribir `logos/{uid}/...` y `fondos/{uid}/...`; el admin puede leer/escribir cualquiera; todo lo demás, denegado por default. Se agregó `"storage": {"rules": "storage.rules"}` a `firebase.json`.
+- **Color de acento**: nuevo `input type="color"` en el modal "🎨 Personalización". El color elegido reemplaza `--accent` vía `document.documentElement.style.setProperty`, y se calcula automáticamente un tono ~24% más oscuro para `--accent-dark` (usado en el sombreado de botones primarios) — el gym solo elige un color, no dos. Se aplica al cargar la sesión (`loadPlan()` → `aplicarPersonalizacion()`), no solo mientras el modal está abierto.
+- **Logo**: subida de imagen (máx. 2MB, tipos `image/*`) a `logos/{uid}/logo.<ext>`; la URL se guarda en `usuarios/{uid}.logoUrl` y reemplaza el texto "GymTrack" tanto en la pantalla de login como en el header de la app. Sin logo configurado, se sigue mostrando el texto exactamente como antes.
+- **Fondos por pestaña**: subida de una imagen por sección (Dashboard, Miembros, Pagos, Asistencia, Finanzas, Inventario, Empleados — Alertas y Reportes quedan fuera, no se pidieron) a `fondos/{uid}/{tabId}.<ext>`; las URLs se guardan en `usuarios/{uid}.fondosPorTab` (objeto `{tabId: url}`) y se aplican como `background-image` de cada `div.tab` correspondiente.
+- Nuevo botón "🎨 Personalizar" en el menú de la app (nav, junto a "Sincronizar plan") que abre el modal de gestión — accesible solo desde la cuenta del propio gimnasio, no desde el panel de super-admin.
+- Cache local (`localStorage`, solo color+logo) para que la pantalla de login ya se vea personalizada antes de que termine de autenticar (en ese momento aún no se conoce el uid, así que no se puede leer Firestore todavía); se sobreescribe con el dato real de Firestore en cada login exitoso.
+
+**Por qué:**
+Cada gimnasio quiere que su instancia de GymTrack se sienta como su marca, no como una plantilla genérica. Todo vive en el propio doc `usuarios/{uid}` (branding, no datos operativos), y con un solo color elegido basta — no tiene sentido pedirle al gym que piense en "color" y "color oscuro" por separado.
+
+**Fallback / aislamiento:**
+- Una cuenta que nunca personalizó nada tiene `colorAcento`, `logoUrl` y `fondosPorTab` ausentes en su doc → se leen como `null`/`{}` → `resetColorAcento()` quita el override inline (el `:root` del CSS vuelve a mandar, mismo verde de siempre) y `aplicarLogo(null)`/`aplicarFondosPorTab({})` dejan todo igual a como se veía antes de este cambio. Cero cambios visuales para cuentas sin personalizar.
+- El panel de super-admin (`adminReady`) resetea explícitamente color y logo al entrar, para no heredar por accidente el branding cacheado en `localStorage` de una sesión previa de algún gimnasio en el mismo navegador.
+- `storage.rules` aísla por uid igual que `firestore.rules`: un gimnasio no puede leer ni escribir los archivos de otro.
+
+**Qué se verificó:**
+- `node --check` sobre el script principal y sobre el bloque `<script type="module">` (imports de Storage) — sintaxis válida en ambos.
+- `oscurecerColor` probado de forma aislada: el color default `#C6E600` calcula `#96af00`, prácticamente idéntico al `--accent-dark` hardcodeado actual (`#98AE00`) — confirma que el factor de oscurecido está bien calibrado. Probado también con rojo, azul en formato corto de 3 dígitos, blanco y negro.
+- `aplicarLogo`, `aplicarColorAcento`/`resetColorAcento` y `aplicarFondosPorTab` probados con un DOM simulado mínimo (sin navegador real): sin personalización no cambia nada visualmente; con logo configurado se oculta el texto y se muestra la imagen en ambos lugares (login y nav); con color configurado se setea `--accent`; con fondo configurado solo en una pestaña, las demás quedan sin tocar; al quitar el logo, el texto vuelve a aparecer correctamente.
+- Revisión manual de que ninguna función de miembros, categorías, promociones, pagos o asistencia fue tocada — el diff está acotado a: imports/bindings de Storage, CSS nuevo, HTML del modal y de los logos, y funciones nuevas de personalización.
+- **Aviso importante**: Firebase Storage debe habilitarse manualmente en la consola de Firebase (Build → Storage → Comenzar) antes de que la subida de logo/fondos funcione — no se activa solo con tener `storageBucket` en `firebaseConfig` ni por tener `storage.rules` en el repo. Si alguien clona este repo para otro gimnasio/proyecto de Firebase distinto, tiene que habilitar Storage ahí primero.
+
 ## 2026-08-24 — Beneficios por categoría y seguimiento personalizado por miembro
 
 **Qué se hizo:**

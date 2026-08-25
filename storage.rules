@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// GymTrack — Firebase Storage Security Rules
+//
+// Rutas usadas por index.html (sección de Personalización visual, ver CHANGELOG.md):
+//   logos/{gymId}/logo.<ext>          logo del gimnasio (un archivo)
+//   fondos/{gymId}/{tabId}.<ext>      fondo de pantalla por pestaña (uno por tab)
+//
+// Mismo criterio de aislamiento que firestore.rules: cada gimnasio (gymId = su uid de Auth)
+// solo puede leer/escribir sus propios archivos; el admin puede leer/escribir cualquiera.
+// Nadie más tiene acceso, ni siquiera de lectura, vía el SDK/REST de Storage.
+//
+// Nota sobre "download URLs": una vez que un archivo se sube y se obtiene su URL de
+// descarga (getDownloadURL), esa URL trae un token que permite verla en un <img> sin volver
+// a autenticar — así es como funciona Storage en general (login, nav y fondos de pestaña
+// se pueden mostrar sin sesión activa, ej. en la pantalla de login). Estas reglas controlan
+// quién puede SUBIR/BORRAR o pedir esa URL por primera vez vía el SDK, no impiden que
+// alguien con el link ya generado vea la imagen — igual que cualquier logo o fondo público.
+//
+// IMPORTANTE: Storage debe habilitarse manualmente en la consola de Firebase (Build >
+// Storage > Comenzar) antes de que estas reglas apliquen. No se activa solo por tener
+// storageBucket en firebaseConfig ni por desplegar este archivo.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'luismolinac06@gmail.com';
+    }
+
+    function isOwner(gymId) {
+      return isSignedIn() && request.auth.uid == gymId;
+    }
+
+    match /logos/{gymId}/{allPaths=**} {
+      allow read, write: if isAdmin() || isOwner(gymId);
+    }
+
+    match /fondos/{gymId}/{allPaths=**} {
+      allow read, write: if isAdmin() || isOwner(gymId);
+    }
+
+    // Cualquier otra ruta: denegada por defecto.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

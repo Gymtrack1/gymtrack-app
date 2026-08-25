@@ -11,9 +11,11 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   const firebaseConfig = { apiKey:"AIzaSyDP2XgeXRfnuu2skfXvgFf9_xkRC9pLJOQ", authDomain:"mi-gimnasio-8d528.firebaseapp.com", projectId:"mi-gimnasio-8d528", storageBucket:"mi-gimnasio-8d528.firebasestorage.app", messagingSenderId:"19052651365", appId:"1:19052651365:web:6914d31e8dbbd63330b78c" };
-  const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app);
+  const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
   window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._query=query; window._where=where; window._writeBatch=writeBatch; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
+  window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
   const ADMIN_EMAIL='luismolinac06@gmail.com';
   onAuthStateChanged(auth, async(user)=>{
     if(user){
@@ -31,11 +33,13 @@
   #login-screen{display:flex;position:fixed;inset:0;background:var(--bg);z-index:999;align-items:center;justify-content:center;}
   .login-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:100%;max-width:380px;}
   .login-logo{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--accent);letter-spacing:3px;text-align:center;margin-bottom:4px;}
+  .login-logo-img{display:none;max-height:64px;max-width:220px;object-fit:contain;margin:0 auto 4px;}
   .login-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:32px;}
   .login-error{background:rgba(220,59,48,0.1);border:1px solid rgba(220,59,48,0.3);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none;}
   #app-screen{display:none;} #admin-screen{display:none;}
   nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:4px;height:60px;position:sticky;top:0;z-index:100;overflow-x:auto;}
   .logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent);letter-spacing:2px;margin-right:12px;white-space:nowrap;}
+  .nav-logo-img{display:none;height:32px;max-width:140px;object-fit:contain;margin-right:12px;}
   .nav-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;padding:6px 10px;border-radius:6px;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
   .nav-btn:hover{color:var(--text);background:var(--surface2);}
   .nav-btn.active{color:var(--accent);background:rgba(198,230,0,0.12);}
@@ -212,7 +216,8 @@
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-box">
-    <div class="login-logo">GymTrack</div>
+    <img id="login-logo-img" class="login-logo-img" alt="Logo del gimnasio">
+    <div class="login-logo" id="login-logo-txt">GymTrack</div>
     <div class="login-sub">Sistema de control de gimnasio</div>
     <div class="login-error" id="login-error">Email o contraseña incorrectos</div>
     <div class="form-group"><label>Email</label><input type="email" id="login-email" placeholder="correo@gmail.com"></div>
@@ -248,7 +253,8 @@
 <!-- APP -->
 <div id="app-screen">
 <nav>
-  <div class="logo">GymTrack <span style="font-size:9px;color:#85847A">v3</span></div>
+  <img id="nav-logo-img" class="nav-logo-img" alt="Logo del gimnasio">
+  <div class="logo" id="nav-logo-txt">GymTrack <span style="font-size:9px;color:#85847A">v3</span></div>
   <button class="nav-btn active" id="nav-dashboard" onclick="showTab('dashboard',event)">Dashboard</button>
   <button class="nav-btn" id="nav-miembros" onclick="showTab('miembros',event)">Miembros</button>
   <button class="nav-btn" id="nav-pagos" onclick="showTab('pagos',event)">Pagos</button>
@@ -260,6 +266,7 @@
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
   <div class="user-info">
     <span class="plan-badge" id="plan-badge"></span>
+    <button onclick="abrirModalPersonalizacion()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Personaliza el color, logo y fondos de tu gimnasio">🎨 Personalizar</button>
     <button onclick="sincronizarPlan()" style="background:rgba(198,230,0,0.15);border:1px solid rgba(152,174,0,0.4);color:var(--accent);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Forzar lectura del plan desde Firestore">🔄 Sincronizar plan</button>
     <span id="user-email" style="font-size:11px"></span>
     <button class="btn-logout" onclick="doLogout()">Salir</button>
@@ -695,6 +702,48 @@
   </div>
 </div>
 
+<!-- MODAL PERSONALIZACIÓN (color, logo, fondos por pestaña — solo para el propio gym, no admin) -->
+<div class="modal-overlay" id="modal-personalizacion">
+  <div class="modal" style="max-width:560px">
+    <h2>🎨 Personalización</h2>
+
+    <div class="form-group">
+      <label>Color de acento</label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="color" id="pz-color" value="#C6E600" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
+        <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">Se usa en botones, badges y textos destacados de toda la app. La versión oscura para sombreados se calcula sola.</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary btn-sm" onclick="guardarPersonalizacion()">💾 Guardar color</button>
+        <button style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="restaurarColorDefault()">Restaurar por defecto</button>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:20px">
+      <label>Logo del gimnasio</label>
+      <div id="pz-logo-preview" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+          📤 Subir logo
+          <input type="file" id="pz-logo-input" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none" onchange="onLogoFileChange(this)">
+        </label>
+        <button class="btn btn-danger btn-sm" id="pz-logo-quitar-btn" style="display:none" onclick="quitarLogo()">Quitar logo</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Formatos comunes de imagen (PNG, JPG, WEBP, SVG), máx. 2MB. Reemplaza el texto "GymTrack" en el login y en el menú.</div>
+    </div>
+
+    <div class="form-group" style="margin-top:20px">
+      <label>Fondos por pestaña (opcional)</label>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Una imagen de fondo distinta para cada sección. Si no subes nada, la sección se ve como hoy.</div>
+      <div id="pz-fondos-lista"></div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-personalizacion')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL GASTO -->
 <div class="modal-overlay" id="modal-gasto">
   <div class="modal" style="max-width:400px">
@@ -737,6 +786,7 @@ let chartTendencia=null;
 let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
+let storage,storageRef,uploadBytesFn,getDownloadURLFn,deleteObjectFn;
 let userPlan='sencillo';
 let userFunciones=[];
 let planListener=null,listenerRetries=0,planPollInterval=null;
@@ -783,6 +833,98 @@ function defaultFunciones(plan){
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
+
+// PERSONALIZACIÓN VISUAL POR GYM (color de acento, logo, fondos por pestaña). Vive en el
+// propio doc usuarios/{uid} (colorAcento, logoUrl, fondosPorTab) — NO en miembros ni
+// categorías. Todo lo de acá es puramente visual/branding, aislado por gym vía
+// storage.rules (ver logos/{uid}/... y fondos/{uid}/...).
+const DEFAULT_ACCENT='#C6E600';
+const MAX_IMAGEN_BYTES=2*1024*1024; // 2MB
+// Pestañas que aceptan fondo configurable. Mismos ids que TODAS_SECCIONES (excepto
+// Alertas/Reportes, que el gym no personaliza aquí).
+const PESTANAS_FONDO=[
+  {id:'dashboard',label:'Dashboard'},
+  {id:'miembros',label:'Miembros'},
+  {id:'pagos',label:'Pagos'},
+  {id:'asistencia',label:'Asistencia'},
+  {id:'estadocuenta',label:'Finanzas'},
+  {id:'inventario',label:'Inventario'},
+  {id:'empleados',label:'Empleados'},
+];
+// Estado de personalización YA guardado en Firestore (fuente de verdad). Se llena en
+// loadPlan() y se aplica con aplicarPersonalizacion(). Cuentas que nunca personalizan nada
+// mantienen estos 3 campos en null/{} y la app se ve exactamente igual que hoy.
+let personalizacion={colorAcento:null,logoUrl:null,fondosPorTab:{}};
+
+function hexToRgb(hex){
+  hex=String(hex||'').replace('#','');
+  if(hex.length===3)hex=hex.split('').map(c=>c+c).join('');
+  const num=parseInt(hex,16)||0;
+  return{r:(num>>16)&255,g:(num>>8)&255,b:num&255};
+}
+function rgbToHex(r,g,b){
+  return'#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+}
+// A partir del color elegido por el gym, calcula un tono más oscuro para --accent-dark
+// (usado en el sombreado de los botones primarios) — el gym solo elige un color.
+function oscurecerColor(hex,factor=0.24){
+  const{r,g,b}=hexToRgb(hex);
+  return rgbToHex(r*(1-factor),g*(1-factor),b*(1-factor));
+}
+function aplicarColorAcento(hex){
+  if(!hex)return;
+  document.documentElement.style.setProperty('--accent',hex);
+  document.documentElement.style.setProperty('--accent-dark',oscurecerColor(hex));
+}
+// Quita el override inline -> el CSS de :root vuelve a mandar (mismo verde de siempre).
+function resetColorAcento(){
+  document.documentElement.style.removeProperty('--accent');
+  document.documentElement.style.removeProperty('--accent-dark');
+}
+function aplicarLogo(url){
+  const imgs=[document.getElementById('login-logo-img'),document.getElementById('nav-logo-img')];
+  const txts=[document.getElementById('login-logo-txt'),document.getElementById('nav-logo-txt')];
+  imgs.forEach(img=>{if(!img)return;if(url){img.src=url;img.style.display='block';}else{img.style.display='none';img.removeAttribute('src');}});
+  txts.forEach(txt=>{if(!txt)return;txt.style.display=url?'none':'';});
+}
+function aplicarFondosPorTab(fondosPorTab){
+  PESTANAS_FONDO.forEach(t=>{
+    const el=document.getElementById('tab-'+t.id);
+    if(!el)return;
+    const url=(fondosPorTab||{})[t.id];
+    if(url){
+      el.style.backgroundImage=`url("${url}")`;
+      el.style.backgroundSize='cover';
+      el.style.backgroundPosition='center';
+      el.style.backgroundRepeat='no-repeat';
+    }else{
+      el.style.backgroundImage='';
+    }
+  });
+}
+function aplicarPersonalizacion(){
+  if(personalizacion.colorAcento)aplicarColorAcento(personalizacion.colorAcento);else resetColorAcento();
+  aplicarLogo(personalizacion.logoUrl||null);
+  aplicarFondosPorTab(personalizacion.fondosPorTab||{});
+  guardarBrandingCache();
+}
+// Cache local (color+logo, no fondos) para que la PANTALLA DE LOGIN ya se vea personalizada
+// antes de que termine de autenticar — en ese momento aún no sabemos el uid, así que no hay
+// forma de leer Firestore todavía. Se sobreescribe con el dato real en cada login exitoso.
+function guardarBrandingCache(){
+  try{
+    localStorage.setItem('gymtrackBranding',JSON.stringify({colorAcento:personalizacion.colorAcento||null,logoUrl:personalizacion.logoUrl||null}));
+  }catch(e){}
+}
+(function aplicarBrandingCacheInicial(){
+  try{
+    const cached=JSON.parse(localStorage.getItem('gymtrackBranding')||'null');
+    if(cached){
+      if(cached.colorAcento)aplicarColorAcento(cached.colorAcento);
+      if(cached.logoUrl)aplicarLogo(cached.logoUrl);
+    }
+  }catch(e){}
+})();
 
 // FIX 3: Toast helper para reemplazar alerts molestos en operaciones exitosas
 let _toastHideTimer=null;
@@ -859,6 +1001,8 @@ window.addEventListener('firebaseReady',async()=>{
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; queryFn=window._query; whereFn=window._where;
   writeBatchFn=window._writeBatch;
+  storage=window._storage; storageRef=window._storageRef; uploadBytesFn=window._uploadBytes;
+  getDownloadURLFn=window._getDownloadURL; deleteObjectFn=window._deleteObject;
   const onSnapshot=window._onSnapshot;
   uid=window._auth.currentUser.uid;
   document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
@@ -934,6 +1078,12 @@ async function loadPlan(){
       // Cargar mensaje personalizado de WhatsApp si existe
       if(d.msgWhatsApp) msgWA=d.msgWhatsApp;
       if(d.msgWhatsAppRecordatorio) msgWARecordatorio=d.msgWhatsAppRecordatorio;
+      // Cargar personalización visual (color/logo/fondos) si existe — cuentas que nunca
+      // configuraron nada quedan con los defaults (null/{}) y se ven igual que siempre.
+      personalizacion.colorAcento=d.colorAcento||null;
+      personalizacion.logoUrl=d.logoUrl||null;
+      personalizacion.fondosPorTab=d.fondosPorTab||{};
+      aplicarPersonalizacion();
       // Si le falta el email, agregarlo para que admin lo vea
       if(!d.email){
         await updateDoc(docFn(db,'usuarios',uid),{email, uid});
@@ -1012,6 +1162,11 @@ window.addEventListener('adminReady',async()=>{
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; writeBatchFn=window._writeBatch;
   document.getElementById('user-email-admin').textContent=window._auth.currentUser.email;
+  // El panel de super-admin nunca debe heredar la personalización de ningún gym — por si
+  // este navegador tenía cacheado en localStorage el branding de una cuenta de gym (ver
+  // aplicarBrandingCacheInicial), se resetea explícitamente al color/logo por defecto.
+  resetColorAcento();
+  aplicarLogo(null);
   await loadAdminGyms();
 });
 
@@ -2756,6 +2911,143 @@ function populatePromocionSelect(){
   if(!sel)return;
   sel.innerHTML='<option value="">Ninguna</option>'+promociones.map(p=>`<option value="${escAttr(p.nombre)}">${p.nombre}</option>`).join('');
   sel.value='';
+}
+
+// PERSONALIZACIÓN — subida a Storage y guardado en usuarios/{uid}. Logo y fondos se suben y
+// se guardan de inmediato al elegir el archivo (no tiene sentido "deshacer" un upload ya
+// hecho); el color de acento sí usa un botón Guardar explícito porque es una elección
+// puramente local hasta que se confirma.
+function validarImagen(file){
+  if(!file)return'Selecciona un archivo';
+  if(!file.type||!file.type.startsWith('image/'))return'El archivo debe ser una imagen';
+  if(file.size>MAX_IMAGEN_BYTES)return'La imagen no puede pesar más de 2MB';
+  return null;
+}
+function extensionDeArchivo(file){
+  const m=/\.([a-zA-Z0-9]+)$/.exec(file.name||'');
+  return m?m[1].toLowerCase():'jpg';
+}
+async function onLogoFileChange(input){
+  const file=input.files&&input.files[0];
+  input.value='';
+  if(!file)return;
+  const err=validarImagen(file);
+  if(err)return alert(err);
+  try{
+    toastPersistente('Subiendo logo...');
+    const ext=extensionDeArchivo(file);
+    const sref=storageRef(storage,`logos/${uid}/logo.${ext}`);
+    await uploadBytesFn(sref,file);
+    const url=await getDownloadURLFn(sref);
+    await updateDoc(docFn(db,'usuarios',uid),{logoUrl:url});
+    personalizacion.logoUrl=url;
+    aplicarLogo(url);
+    guardarBrandingCache();
+    renderPersonalizacionModal();
+    toast('Logo actualizado ✓');
+  }catch(e){toast('Error al subir el logo: '+e.message,'err');}
+}
+async function quitarLogo(){
+  if(!confirm('¿Quitar el logo? Volverá a mostrarse el texto "GymTrack".'))return;
+  const urlPrevia=personalizacion.logoUrl;
+  try{
+    await updateDoc(docFn(db,'usuarios',uid),{logoUrl:null});
+    personalizacion.logoUrl=null;
+    aplicarLogo(null);
+    guardarBrandingCache();
+    renderPersonalizacionModal();
+    toast('Logo eliminado ✓');
+    if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
+  }catch(e){toast('Error: '+e.message,'err');}
+}
+async function onFondoFileChange(input,tabId){
+  const file=input.files&&input.files[0];
+  input.value='';
+  if(!file)return;
+  const err=validarImagen(file);
+  if(err)return alert(err);
+  try{
+    toastPersistente('Subiendo fondo...');
+    const ext=extensionDeArchivo(file);
+    const sref=storageRef(storage,`fondos/${uid}/${tabId}.${ext}`);
+    await uploadBytesFn(sref,file);
+    const url=await getDownloadURLFn(sref);
+    const fondosPorTab={...(personalizacion.fondosPorTab||{}),[tabId]:url};
+    await updateDoc(docFn(db,'usuarios',uid),{fondosPorTab});
+    personalizacion.fondosPorTab=fondosPorTab;
+    aplicarFondosPorTab(fondosPorTab);
+    renderPersonalizacionModal();
+    toast('Fondo actualizado ✓');
+  }catch(e){toast('Error al subir el fondo: '+e.message,'err');}
+}
+async function quitarFondo(tabId){
+  if(!confirm('¿Quitar este fondo?'))return;
+  const urlPrevia=(personalizacion.fondosPorTab||{})[tabId];
+  const fondosPorTab={...(personalizacion.fondosPorTab||{})};
+  delete fondosPorTab[tabId];
+  try{
+    await updateDoc(docFn(db,'usuarios',uid),{fondosPorTab});
+    personalizacion.fondosPorTab=fondosPorTab;
+    aplicarFondosPorTab(fondosPorTab);
+    renderPersonalizacionModal();
+    toast('Fondo eliminado ✓');
+    if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
+  }catch(e){toast('Error: '+e.message,'err');}
+}
+async function guardarPersonalizacion(){
+  const color=document.getElementById('pz-color').value;
+  try{
+    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:color});
+    personalizacion.colorAcento=color;
+    aplicarColorAcento(color);
+    guardarBrandingCache();
+    toast('Color guardado ✓');
+  }catch(e){toast('Error al guardar: '+e.message,'err');}
+}
+async function restaurarColorDefault(){
+  if(!confirm('¿Restaurar el color de acento por defecto?'))return;
+  try{
+    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:null});
+    personalizacion.colorAcento=null;
+    resetColorAcento();
+    guardarBrandingCache();
+    document.getElementById('pz-color').value=DEFAULT_ACCENT;
+    toast('Color restaurado ✓');
+  }catch(e){toast('Error: '+e.message,'err');}
+}
+function renderFondosPersonalizacion(){
+  const el=document.getElementById('pz-fondos-lista');
+  if(!el)return;
+  el.innerHTML=PESTANAS_FONDO.map(t=>{
+    const url=(personalizacion.fondosPorTab||{})[t.id];
+    return`<div class="ec-row">
+      <span style="display:flex;align-items:center;gap:8px">
+        ${url?`<img src="${url}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`:'<span style="width:36px;height:36px;border-radius:6px;background:var(--surface2);display:inline-block"></span>'}
+        ${t.label}
+      </span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">📤<input type="file" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="onFondoFileChange(this,'${t.id}')"></label>
+        ${url?`<button class="btn btn-danger btn-sm" onclick="quitarFondo('${t.id}')">✕</button>`:''}
+      </span>
+    </div>`;
+  }).join('');
+}
+function renderPersonalizacionModal(){
+  const preview=document.getElementById('pz-logo-preview');
+  const quitarBtn=document.getElementById('pz-logo-quitar-btn');
+  if(personalizacion.logoUrl){
+    preview.innerHTML=`<img src="${personalizacion.logoUrl}" style="max-height:60px;max-width:200px;border-radius:8px;border:1px solid var(--border);padding:4px;background:var(--surface2)">`;
+    quitarBtn.style.display='inline-block';
+  }else{
+    preview.innerHTML='<div style="font-size:12px;color:var(--muted)">Sin logo configurado — se muestra el texto "GymTrack"</div>';
+    quitarBtn.style.display='none';
+  }
+  renderFondosPersonalizacion();
+}
+function abrirModalPersonalizacion(){
+  document.getElementById('pz-color').value=personalizacion.colorAcento||DEFAULT_ACCENT;
+  renderPersonalizacionModal();
+  openModal('modal-personalizacion');
 }
 
 // MODALES
