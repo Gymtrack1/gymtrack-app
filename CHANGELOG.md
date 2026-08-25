@@ -4,6 +4,18 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Color de tarjetas editable (los recuadros blancos)
+
+**Qué se hizo:**
+- Tercer selector de color en Personalización: **"Color de tarjetas"**, mapeado a `--surface` (stat-card, ec-card, tablas, modales, gym-card, alert-card, etc. — los recuadros blancos de toda la app). `--surface2` (fondo de inputs, filas al pasar el mouse, badges) se calcula solo a partir de ese color con `oscurecerColor(hex, 0.06)`, mismo criterio que ya se usaba para derivar `--accent-dark` desde el color de acento — el gym vuelve a elegir un solo color, no dos.
+- `aplicarColorTarjetas`/`resetColorTarjetas`, persistido en `usuarios/{uid}.colorTarjetas`, incluido en la cache de `localStorage` para la pantalla de login, y en el botón único "Guardar colores" / "Restaurar por defecto" junto a los otros dos.
+- El reset del panel de super-admin también limpia `colorTarjetas`.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `oscurecerColor('#FFFFFF', 0.06)` da `#f0f0f0`, muy cercano al `--surface2` por defecto actual (`#F0EFE8`) — confirma que el cálculo automático es razonable partiendo del blanco default.
+- Revisión manual de que los 3 colores (acento, fondo, tarjetas) se cargan, aplican, guardan, resetean y cachean de forma simétrica — mismo patrón repetido tres veces sin casos sueltos.
+
 ## 2026-08-25 — Fondo a pantalla completa + color de fondo editable
 
 **Qué pasó:**

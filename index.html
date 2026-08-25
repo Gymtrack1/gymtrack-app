@@ -721,6 +721,14 @@
         <input type="color" id="pz-color-fondo" value="#FAF9F5" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
         <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">El fondo detrás de todo, en toda la app — distinto del color de acento.</span>
       </div>
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
+      <label>Color de tarjetas</label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="color" id="pz-color-tarjetas" value="#FFFFFF" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
+        <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">Los recuadros blancos (tarjetas, tablas, ventanas emergentes). El tono para inputs y hover se calcula solo.</span>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn btn-primary btn-sm" onclick="guardarPersonalizacion()">💾 Guardar colores</button>
         <button style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="restaurarColorDefault()">Restaurar por defecto</button>
@@ -848,6 +856,7 @@ function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
 // storage.rules (ver logos/{uid}/... y fondos/{uid}/...).
 const DEFAULT_ACCENT='#C6E600';
 const DEFAULT_BG='#FAF9F5';
+const DEFAULT_SURFACE='#FFFFFF';
 const MAX_IMAGEN_BYTES=2*1024*1024; // 2MB
 // Pestañas que aceptan fondo configurable. Mismos ids que TODAS_SECCIONES (excepto
 // Alertas/Reportes, que el gym no personaliza aquí).
@@ -863,7 +872,7 @@ const PESTANAS_FONDO=[
 // Estado de personalización YA guardado en Firestore (fuente de verdad). Se llena en
 // loadPlan() y se aplica con aplicarPersonalizacion(). Cuentas que nunca personalizan nada
 // mantienen estos campos en null/{} y la app se ve exactamente igual que hoy.
-let personalizacion={colorAcento:null,colorFondo:null,logoUrl:null,fondosPorTab:{}};
+let personalizacion={colorAcento:null,colorFondo:null,colorTarjetas:null,logoUrl:null,fondosPorTab:{}};
 
 function hexToRgb(hex){
   hex=String(hex||'').replace('#','');
@@ -899,6 +908,18 @@ function aplicarColorFondo(hex){
 function resetColorFondo(){
   document.documentElement.style.removeProperty('--bg');
 }
+// Color de las tarjetas/recuadros (stat-card, ec-card, tablas, modales, etc — --surface).
+// Con un solo color basta: --surface2 (fondo de inputs, filas al pasar el mouse, etc.) se
+// calcula un poco más oscuro, mismo criterio que --accent-dark a partir de --accent.
+function aplicarColorTarjetas(hex){
+  if(!hex)return;
+  document.documentElement.style.setProperty('--surface',hex);
+  document.documentElement.style.setProperty('--surface2',oscurecerColor(hex,0.06));
+}
+function resetColorTarjetas(){
+  document.documentElement.style.removeProperty('--surface');
+  document.documentElement.style.removeProperty('--surface2');
+}
 function aplicarLogo(url){
   const imgs=[document.getElementById('login-logo-img'),document.getElementById('nav-logo-img')];
   const txts=[document.getElementById('login-logo-txt'),document.getElementById('nav-logo-txt')];
@@ -922,6 +943,7 @@ function aplicarFondoActivo(){
 function aplicarPersonalizacion(){
   if(personalizacion.colorAcento)aplicarColorAcento(personalizacion.colorAcento);else resetColorAcento();
   if(personalizacion.colorFondo)aplicarColorFondo(personalizacion.colorFondo);else resetColorFondo();
+  if(personalizacion.colorTarjetas)aplicarColorTarjetas(personalizacion.colorTarjetas);else resetColorTarjetas();
   aplicarLogo(personalizacion.logoUrl||null);
   aplicarFondoActivo();
   guardarBrandingCache();
@@ -932,7 +954,7 @@ function aplicarPersonalizacion(){
 // login exitoso.
 function guardarBrandingCache(){
   try{
-    localStorage.setItem('gymtrackBranding',JSON.stringify({colorAcento:personalizacion.colorAcento||null,colorFondo:personalizacion.colorFondo||null,logoUrl:personalizacion.logoUrl||null}));
+    localStorage.setItem('gymtrackBranding',JSON.stringify({colorAcento:personalizacion.colorAcento||null,colorFondo:personalizacion.colorFondo||null,colorTarjetas:personalizacion.colorTarjetas||null,logoUrl:personalizacion.logoUrl||null}));
   }catch(e){}
 }
 (function aplicarBrandingCacheInicial(){
@@ -941,6 +963,7 @@ function guardarBrandingCache(){
     if(cached){
       if(cached.colorAcento)aplicarColorAcento(cached.colorAcento);
       if(cached.colorFondo)aplicarColorFondo(cached.colorFondo);
+      if(cached.colorTarjetas)aplicarColorTarjetas(cached.colorTarjetas);
       if(cached.logoUrl)aplicarLogo(cached.logoUrl);
     }
   }catch(e){}
@@ -1102,6 +1125,7 @@ async function loadPlan(){
       // configuraron nada quedan con los defaults (null/{}) y se ven igual que siempre.
       personalizacion.colorAcento=d.colorAcento||null;
       personalizacion.colorFondo=d.colorFondo||null;
+      personalizacion.colorTarjetas=d.colorTarjetas||null;
       personalizacion.logoUrl=d.logoUrl||null;
       personalizacion.fondosPorTab=d.fondosPorTab||{};
       aplicarPersonalizacion();
@@ -1188,6 +1212,7 @@ window.addEventListener('adminReady',async()=>{
   // aplicarBrandingCacheInicial), se resetea explícitamente al color/logo por defecto.
   resetColorAcento();
   resetColorFondo();
+  resetColorTarjetas();
   aplicarLogo(null);
   document.body.style.backgroundImage='';
   await loadAdminGyms();
@@ -3040,12 +3065,15 @@ async function quitarFondo(tabId){
 async function guardarPersonalizacion(){
   const colorAcento=document.getElementById('pz-color').value;
   const colorFondo=document.getElementById('pz-color-fondo').value;
+  const colorTarjetas=document.getElementById('pz-color-tarjetas').value;
   try{
-    await updateDoc(docFn(db,'usuarios',uid),{colorAcento,colorFondo});
+    await updateDoc(docFn(db,'usuarios',uid),{colorAcento,colorFondo,colorTarjetas});
     personalizacion.colorAcento=colorAcento;
     personalizacion.colorFondo=colorFondo;
+    personalizacion.colorTarjetas=colorTarjetas;
     aplicarColorAcento(colorAcento);
     aplicarColorFondo(colorFondo);
+    aplicarColorTarjetas(colorTarjetas);
     guardarBrandingCache();
     toast('Colores guardados ✓');
   }catch(e){toast('Error al guardar: '+mensajeError(e),'err');}
@@ -3053,14 +3081,17 @@ async function guardarPersonalizacion(){
 async function restaurarColorDefault(){
   if(!confirm('¿Restaurar los colores por defecto?'))return;
   try{
-    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:null,colorFondo:null});
+    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:null,colorFondo:null,colorTarjetas:null});
     personalizacion.colorAcento=null;
     personalizacion.colorFondo=null;
+    personalizacion.colorTarjetas=null;
     resetColorAcento();
     resetColorFondo();
+    resetColorTarjetas();
     guardarBrandingCache();
     document.getElementById('pz-color').value=DEFAULT_ACCENT;
     document.getElementById('pz-color-fondo').value=DEFAULT_BG;
+    document.getElementById('pz-color-tarjetas').value=DEFAULT_SURFACE;
     toast('Colores restaurados ✓');
   }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
@@ -3096,6 +3127,7 @@ function renderPersonalizacionModal(){
 function abrirModalPersonalizacion(){
   document.getElementById('pz-color').value=personalizacion.colorAcento||DEFAULT_ACCENT;
   document.getElementById('pz-color-fondo').value=personalizacion.colorFondo||DEFAULT_BG;
+  document.getElementById('pz-color-tarjetas').value=personalizacion.colorTarjetas||DEFAULT_SURFACE;
   renderPersonalizacionModal();
   openModal('modal-personalizacion');
 }
