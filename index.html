@@ -573,8 +573,12 @@
     </div>
     <div class="form-row">
       <div class="form-group"><label>Estado</label><select id="i-estado"><option value="bueno">Bueno</option><option value="regular">Regular</option><option value="malo">Malo / Necesita reparación</option></select></div>
-      <div class="form-group"><label>Notas</label><input type="text" id="i-notas" placeholder="Opcional"></div>
+      <div class="form-group"><label>Zona</label><input type="text" id="i-zona" placeholder="Ej: Área de pesas" list="zonas-inventario"></div>
     </div>
+    <div class="form-row">
+      <div class="form-group" style="grid-column:span 2"><label>Notas</label><input type="text" id="i-notas" placeholder="Opcional"></div>
+    </div>
+    <datalist id="zonas-inventario"></datalist>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-inventario')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveInventario()">Guardar</button>
@@ -2512,8 +2516,8 @@ function renderInventario(seccion='equipo'){
       <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Equipo y Maquinaria</div>
       <button class="btn btn-primary btn-sm" onclick="openModal('modal-inventario')">+ Agregar Equipo</button>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
-    <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Zona</th><th>Notas</th><th>Acciones</th></tr></thead>
+    <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.zona||'—'}</td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
   </div>
 
   <div class="inv-section ${seccion==='tienda'?'active':''}">
@@ -2959,7 +2963,7 @@ async function delGasto(id){if(!confirm('¿Eliminar este gasto?'))return;await d
 // INVENTARIO EQUIPO
 async function saveInventario(){
   const nombre=document.getElementById('i-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
-  const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,notas:document.getElementById('i-notas').value.trim()};
+  const data={nombre,cantidad:parseInt(document.getElementById('i-cantidad').value)||1,estado:document.getElementById('i-estado').value,zona:document.getElementById('i-zona').value.trim(),notas:document.getElementById('i-notas').value.trim()};
   const editId=document.getElementById('edit-inv-id').value;
   // FIX: creadoEn solo en artículos nuevos
   if(!editId) data.creadoEn=Date.now();
@@ -2975,7 +2979,7 @@ async function saveInventario(){
   toast('Equipo guardado ✓');
 }
 async function delInventario(id){if(!confirm('¿Eliminar artículo?'))return;await deleteDoc(userDoc('inventario',id));_eliminarLocal(inventario,id);renderInventario('equipo');}
-function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
+function editInventario(id){const i=inventario.find(x=>x.id===id);if(!i)return;document.getElementById('modal-inv-title').textContent='Editar Artículo';document.getElementById('edit-inv-id').value=id;document.getElementById('i-nombre').value=i.nombre;document.getElementById('i-cantidad').value=i.cantidad;document.getElementById('i-estado').value=i.estado;document.getElementById('i-zona').value=i.zona||'';document.getElementById('i-notas').value=i.notas||'';openModal('modal-inventario');}
 
 // CATEGORÍAS DE MEMBRESÍA Y PROMOCIONES (configurables por gimnasio, ver nota junto a su
 // declaración). Los nombres se guardan como texto plano en miembros/pagos (igual que
@@ -3325,7 +3329,11 @@ function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
   if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
-  if(id==='modal-inventario'&&!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo de Equipo';['edit-inv-id','i-nombre','i-cantidad','i-notas'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-inventario'){
+    const dl=document.getElementById('zonas-inventario');
+    if(dl)dl.innerHTML=[...new Set(inventario.map(i=>i.zona).filter(Boolean))].map(z=>`<option value="${z}"></option>`).join('');
+    if(!document.getElementById('edit-inv-id').value){document.getElementById('modal-inv-title').textContent='Nuevo Artículo de Equipo';['edit-inv-id','i-nombre','i-cantidad','i-zona','i-notas'].forEach(x=>document.getElementById(x).value='');}
+  }
   if(id==='modal-producto'&&!document.getElementById('edit-prod-id').value){document.getElementById('modal-prod-title').textContent='Nuevo Producto';['edit-prod-id','prod-nombre','prod-precio','prod-stock','prod-min','prod-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-nuevo-gym'){['ng-email','ng-nombre'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-gasto'){['g-concepto','g-monto'].forEach(x=>document.getElementById(x).value='');document.getElementById('g-fecha').value=new Date().toISOString().split('T')[0];}

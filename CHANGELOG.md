@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Campo "Zona" en Equipo del Gym (Inventario)
+
+**Qué se hizo:**
+- Nuevo campo `zona` (texto libre, ej. "Área de pesas", "Cardio", "Vestidores") en el modal de Nuevo/Editar Artículo de Equipo, dentro de la pestaña "🏋️ Equipo del Gym" de Inventario — no se tocó la pestaña "🛒 Tienda / Venta".
+- `saveInventario()` guarda `zona` junto con el resto de los campos del artículo; `editInventario()` la precarga al editar.
+- El campo tiene un `<datalist>` (`zonas-inventario`) que `openModal('modal-inventario')` rellena en cada apertura con las zonas ya usadas en el inventario actual (sin duplicados), para que se pueda escribir libre o elegir una zona existente y mantener nombres consistentes (ej. no terminar con "Cardio" y "cardio" como zonas distintas por error de tipeo).
+- La tabla de Equipo y Maquinaria ahora muestra una columna "Zona" (con "—" si el artículo no la tiene, para no romper equipo ya existente antes de este cambio).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Revisado `git diff` completo: el cambio queda contenido a la sección de Equipo del Gym (modal, `saveInventario`, `editInventario`, `openModal`, tabla), sin afectar Tienda/Venta, Asistencia u otras pestañas.
+- Artículos existentes sin `zona` guardada siguen mostrando "—" en la tabla y el campo vacío en el modal de edición, sin romper nada.
+
 ## 2026-08-25 — Horas Pico de Compras y Top Compradores en Inventario/Tienda
 
 **Qué se hizo:**
