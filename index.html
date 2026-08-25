@@ -657,8 +657,8 @@
   <div class="modal" style="max-width:360px">
     <h2 id="modal-pin-title">Ingresa el PIN</h2>
     <div id="modal-pin-desc" style="color:var(--muted);font-size:13px;margin-bottom:16px"></div>
-    <div class="form-group"><label>PIN</label><input type="password" inputmode="numeric" id="pin-input" placeholder="••••" maxlength="12" onkeydown="if(event.key==='Enter')submitPin()"></div>
-    <div class="form-group" id="pin-confirm-group" style="display:none"><label>Confirma el PIN</label><input type="password" inputmode="numeric" id="pin-confirm-input" placeholder="••••" maxlength="12" onkeydown="if(event.key==='Enter')submitPin()"></div>
+    <div class="form-group"><label>PIN</label><input type="text" inputmode="numeric" autocomplete="off" id="pin-input" placeholder="••••" maxlength="12" style="-webkit-text-security:disc;text-security:disc" onkeydown="if(event.key==='Enter')submitPin()"></div>
+    <div class="form-group" id="pin-confirm-group" style="display:none"><label>Confirma el PIN</label><input type="text" inputmode="numeric" autocomplete="off" id="pin-confirm-input" placeholder="••••" maxlength="12" style="-webkit-text-security:disc;text-security:disc" onkeydown="if(event.key==='Enter')submitPin()"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-pin')">Cancelar</button>
       <button class="btn btn-primary" onclick="submitPin()">Continuar</button>

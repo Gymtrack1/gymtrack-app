@@ -4,6 +4,23 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — El campo de PIN ya no dispara el "¿Quieres guardar la contraseña?" de Chrome
+
+**Qué pasó:**
+Cada vez que se registraba algo en la app (ej. una venta), Chrome ofrecía guardar una "contraseña" sin relación con lo que se acababa de hacer.
+
+**Causa:**
+`index.html` no tiene ninguna etiqueta `<form>` en todo el archivo — todos los inputs de todos los modales viven sueltos en el DOM (ocultos con CSS, no removidos). El campo de **PIN** para entrar a Finanzas/Empleados usaba `type="password"`, aunque en realidad es solo un código numérico corto, no una contraseña real. Chrome detecta cualquier `input type="password"` presente en la página (esté visible o no) y, sin un `<form>` que delimite el contexto, lo asocia con cualquier campo de texto cercano al momento de "enviar" algo — de ahí el pop-up aparentemente aleatorio.
+
+**Qué se hizo:**
+- `pin-input` y `pin-confirm-input` cambiaron de `type="password"` a `type="text"` con `autocomplete="off"` y la propiedad CSS `-webkit-text-security:disc` (más el estándar `text-security:disc`, para navegadores que lo soporten) — se sigue viendo como puntitos igual que antes, pero Chrome ya no lo reconoce como un campo de contraseña.
+- Se dejó intacto `login-pass` (el campo de contraseña del login real) — ahí sí es correcto y deseable que Chrome ofrezca guardarla.
+
+**Qué se verificó:**
+- `grep` confirmó que no hay otro `type="password"` suelto en el archivo, y que ningún JS dependía de que el PIN fuera específicamente `type="password"` (solo se lee/escribe `.value`, nunca `.type`).
+- `node --check` — sintaxis válida.
+- Nota de compatibilidad: `-webkit-text-security` no lo soporta Firefox — ahí el PIN se vería en texto plano en vez de puntos (el valor sigue siendo correcto, solo cambia lo visual). No afecta a Chrome/Safari/Edge.
+
 ## 2026-08-25 — Gráficas de línea en Finanzas: tendencia real de ingresos, no dos puntos fijos
 
 **Qué pasó:**
