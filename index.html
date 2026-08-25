@@ -2927,6 +2927,26 @@ function extensionDeArchivo(file){
   const m=/\.([a-zA-Z0-9]+)$/.exec(file.name||'');
   return m?m[1].toLowerCase():'jpg';
 }
+// Nunca debe tronar dentro de un catch (si e no trae .message, un simple 'Error: '+e.message
+// ya deja el toast pegado en "Subiendo..." para siempre, porque la excepción del catch se
+// pierde como rechazo de promesa no manejado). Cubre string, Error, y objetos raros.
+function mensajeError(e){
+  if(!e)return'Error desconocido';
+  if(typeof e==='string')return e;
+  if(e.code&&e.message)return`${e.message} (${e.code})`;
+  if(e.message)return e.message;
+  try{return JSON.stringify(e);}catch(_e){return String(e);}
+}
+// Si Storage no está habilitado en la consola de Firebase, o el bucket no acepta CORS desde
+// el origen actual (ej. la app abierta como archivo local file://), la subida puede quedarse
+// colgada sin error visible. Este timeout garantiza que el usuario vea un mensaje en vez de
+// un toast de "Subiendo..." pegado para siempre.
+function conTimeout(promesa,ms,mensaje){
+  return Promise.race([
+    promesa,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error(mensaje)),ms))
+  ]);
+}
 async function onLogoFileChange(input){
   const file=input.files&&input.files[0];
   input.value='';
@@ -2937,15 +2957,15 @@ async function onLogoFileChange(input){
     toastPersistente('Subiendo logo...');
     const ext=extensionDeArchivo(file);
     const sref=storageRef(storage,`logos/${uid}/logo.${ext}`);
-    await uploadBytesFn(sref,file);
-    const url=await getDownloadURLFn(sref);
+    await conTimeout(uploadBytesFn(sref,file),20000,'La subida tardó demasiado. ¿Ya habilitaste Storage en la consola de Firebase?');
+    const url=await conTimeout(getDownloadURLFn(sref),20000,'No se pudo obtener la URL del logo subido.');
     await updateDoc(docFn(db,'usuarios',uid),{logoUrl:url});
     personalizacion.logoUrl=url;
     aplicarLogo(url);
     guardarBrandingCache();
     renderPersonalizacionModal();
     toast('Logo actualizado ✓');
-  }catch(e){toast('Error al subir el logo: '+e.message,'err');}
+  }catch(e){toast('Error al subir el logo: '+mensajeError(e),'err');}
 }
 async function quitarLogo(){
   if(!confirm('¿Quitar el logo? Volverá a mostrarse el texto "GymTrack".'))return;
@@ -2958,7 +2978,7 @@ async function quitarLogo(){
     renderPersonalizacionModal();
     toast('Logo eliminado ✓');
     if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
-  }catch(e){toast('Error: '+e.message,'err');}
+  }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
 async function onFondoFileChange(input,tabId){
   const file=input.files&&input.files[0];
@@ -2970,15 +2990,15 @@ async function onFondoFileChange(input,tabId){
     toastPersistente('Subiendo fondo...');
     const ext=extensionDeArchivo(file);
     const sref=storageRef(storage,`fondos/${uid}/${tabId}.${ext}`);
-    await uploadBytesFn(sref,file);
-    const url=await getDownloadURLFn(sref);
+    await conTimeout(uploadBytesFn(sref,file),20000,'La subida tardó demasiado. ¿Ya habilitaste Storage en la consola de Firebase?');
+    const url=await conTimeout(getDownloadURLFn(sref),20000,'No se pudo obtener la URL del fondo subido.');
     const fondosPorTab={...(personalizacion.fondosPorTab||{}),[tabId]:url};
     await updateDoc(docFn(db,'usuarios',uid),{fondosPorTab});
     personalizacion.fondosPorTab=fondosPorTab;
     aplicarFondosPorTab(fondosPorTab);
     renderPersonalizacionModal();
     toast('Fondo actualizado ✓');
-  }catch(e){toast('Error al subir el fondo: '+e.message,'err');}
+  }catch(e){toast('Error al subir el fondo: '+mensajeError(e),'err');}
 }
 async function quitarFondo(tabId){
   if(!confirm('¿Quitar este fondo?'))return;
@@ -2992,7 +3012,7 @@ async function quitarFondo(tabId){
     renderPersonalizacionModal();
     toast('Fondo eliminado ✓');
     if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
-  }catch(e){toast('Error: '+e.message,'err');}
+  }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
 async function guardarPersonalizacion(){
   const color=document.getElementById('pz-color').value;
@@ -3002,7 +3022,7 @@ async function guardarPersonalizacion(){
     aplicarColorAcento(color);
     guardarBrandingCache();
     toast('Color guardado ✓');
-  }catch(e){toast('Error al guardar: '+e.message,'err');}
+  }catch(e){toast('Error al guardar: '+mensajeError(e),'err');}
 }
 async function restaurarColorDefault(){
   if(!confirm('¿Restaurar el color de acento por defecto?'))return;
@@ -3013,7 +3033,7 @@ async function restaurarColorDefault(){
     guardarBrandingCache();
     document.getElementById('pz-color').value=DEFAULT_ACCENT;
     toast('Color restaurado ✓');
-  }catch(e){toast('Error: '+e.message,'err');}
+  }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
 function renderFondosPersonalizacion(){
   const el=document.getElementById('pz-fondos-lista');
