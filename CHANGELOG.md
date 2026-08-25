@@ -4,6 +4,26 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Fix: subida de logo/fondo se quedaba colgada (mensajes de error + CORS)
+
+**Qué pasó:**
+Al usar la Personalización visual en producción (app servida desde `https://gymtrack1.github.io`), subir un logo o fondo se quedaba en "Subiendo..." para siempre, sin ningún error visible en la UI.
+
+**Causa real (confirmada con la consola del navegador):**
+El bucket de Firebase Storage no tenía configurado CORS para el origen `https://gymtrack1.github.io` — el navegador bloqueaba la petición de subida en el preflight (`blocked by CORS policy: Response to preflight request doesn't pass access control check`). Esto es una configuración del bucket en Google Cloud, no un bug de `index.html`.
+
+**Qué se hizo:**
+- `mensajeError(e)`: extrae un mensaje legible de cualquier tipo de error (string, `Error` con o sin `.message`, objeto sin `.message`, hasta objetos circulares) sin volver a tronar dentro del propio `catch`. Antes, `'Error: '+e.message` podía lanzar una excepción no manejada si `e` no traía `.message`, dejando el toast de "Subiendo..." pegado para siempre — el síntoma reportado.
+- `conTimeout(promesa, ms, mensaje)`: límite de 20s en la subida (`uploadBytes`) y en `getDownloadURL`, para que un problema de red/CORS/Storage-no-habilitado siempre termine en un mensaje de error visible en vez de un toast colgado indefinidamente.
+- Se aplicó `mensajeError`/`conTimeout` en `onLogoFileChange`, `quitarLogo`, `onFondoFileChange`, `quitarFondo`, `guardarPersonalizacion` y `restaurarColorDefault`.
+- Se agregó `storage-cors.json` en la raíz del repo con el origen `https://gymtrack1.github.io` (más `null`, para cuando la app se abre como archivo local) y las instrucciones exactas en `storage.rules` para aplicarlo vía `gsutil cors set storage-cors.json gs://<bucket>` — esto **no se resuelve con código ni con reglas de Firestore/Storage**, requiere correr ese comando una sola vez desde la terminal (Google Cloud SDK) con la cuenta dueña del proyecto.
+
+**Qué se verificó:**
+- `node --check` sobre el script principal — sintaxis válida.
+- `mensajeError` probado con 6 casos (undefined, string, `Error` con `.message`, `Error` con `.code`+`.message`, objeto plano sin `.message`, objeto circular) — ninguno truena, todos devuelven un string usable.
+- `conTimeout` probado con una promesa que nunca resuelve (simula el hang real reportado) y con una que resuelve rápido — el timeout dispara el mensaje esperado en el primer caso y no interfiere en el segundo.
+- Pendiente de acción manual del usuario: correr `gsutil cors set` contra el bucket real (no ejecutable desde esta sesión — requiere sus credenciales de Google Cloud).
+
 ## 2026-08-25 — Personalización visual por gimnasio (color, logo, fondos por pestaña)
 
 **Qué se hizo:**

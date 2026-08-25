@@ -20,6 +20,17 @@ rules_version = '2';
 // IMPORTANTE: Storage debe habilitarse manualmente en la consola de Firebase (Build >
 // Storage > Comenzar) antes de que estas reglas apliquen. No se activa solo por tener
 // storageBucket en firebaseConfig ni por desplegar este archivo.
+//
+// IMPORTANTE #2 — CORS: estas reglas controlan QUIÉN puede subir/borrar, pero el navegador
+// exige ADEMÁS que el bucket de Storage tenga configurado el origen desde el que se sirve
+// la app (ej. https://gymtrack1.github.io) vía CORS, o toda subida falla con
+// "blocked by CORS policy" aunque las reglas de arriba sean correctas. Esto NO se configura
+// aquí ni en la consola de Firebase — se aplica una sola vez desde la terminal con gsutil
+// (parte del Google Cloud SDK), usando storage-cors.json en la raíz del repo:
+//   gsutil cors set storage-cors.json gs://<tu-storage-bucket>
+// Verificar con: gsutil cors get gs://<tu-storage-bucket>
+// Si cambias de dominio de hosting (otro gym, otro origen), hay que agregarlo a
+// storage-cors.json y volver a correr el comando.
 
 service firebase.storage {
   match /b/{bucket}/o {
