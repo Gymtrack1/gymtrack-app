@@ -2052,16 +2052,27 @@ function renderHorasPico(){
     el.innerHTML='<div class="empty"><div class="empty-icon">🕐</div><div>Aún no hay suficiente historial de asistencia</div></div>';
     return;
   }
-  el.innerHTML='<div class="chart-wrap" style="height:220px"><canvas id="chart-horas-pico"></canvas></div>';
+  el.innerHTML=`<div class="chart-wrap" style="height:220px"><canvas id="chart-horas-pico"></canvas></div>
+    <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px">🟢 Menos tránsito &nbsp;·&nbsp; 🔴 Más tránsito</div>`;
   if(typeof Chart==='undefined')return; // CDN de Chart.js no disponible (sin conexión)
   if(chartHorasPico)chartHorasPico.destroy();
+  const maxConteo=Math.max(...conteoPorHora),minConteo=Math.min(...conteoPorHora);
+  const colores=conteoPorHora.map(n=>colorPorIntensidad(maxConteo>minConteo?(n-minConteo)/(maxConteo-minConteo):0));
   chartHorasPico=new Chart(document.getElementById('chart-horas-pico'),{
     type:'bar',
-    data:{labels:conteoPorHora.map((_,h)=>fmtHora12(h)),datasets:[{label:'Asistencias',data:conteoPorHora,backgroundColor:'#C6E600',borderRadius:4}]},
+    data:{labels:conteoPorHora.map((_,h)=>fmtHora12(h)),datasets:[{label:'Asistencias',data:conteoPorHora,backgroundColor:colores,borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' asistencia'+(c.parsed.y===1?'':'s')}}},
       scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}
   });
+}
+// Verde (poco tránsito) -> naranja -> rojo (mucho tránsito), interpolando entre los mismos
+// colores que ya usa la app para "bien/regular/mal" (--green/--orange/--red). ratio va de
+// 0 (la hora con menos asistencias) a 1 (la hora con más).
+function colorPorIntensidad(ratio){
+  const r=Math.max(0,Math.min(1,ratio));
+  const[desde,hasta,t]=r<=0.5?[hexToRgb('#1F9D55'),hexToRgb('#D97706'),r/0.5]:[hexToRgb('#D97706'),hexToRgb('#DC3B30'),(r-0.5)/0.5];
+  return rgbToHex(desde.r+(hasta.r-desde.r)*t,desde.g+(hasta.g-desde.g)*t,desde.b+(hasta.b-desde.b)*t);
 }
 function renderAsistenciaPaginacion(total,totalPaginas){
   const el=document.getElementById('asistencia-paginacion');

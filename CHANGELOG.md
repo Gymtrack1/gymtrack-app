@@ -4,6 +4,18 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Color verde→rojo por intensidad en la gráfica de Horas Pico
+
+**Qué se hizo:**
+- `colorPorIntensidad(ratio)`: interpola color entre `--green` (0), `--orange` (0.5) y `--red` (1) — los mismos 3 colores que ya usa la app para "bien/regular/mal" en badges y otros indicadores — reutilizando `hexToRgb`/`rgbToHex`, ya definidos para la personalización visual.
+- En `renderHorasPico()`, cada barra ahora recibe su propio color según qué tan concurrida es esa hora **en relación con las demás** (min = verde puro, max = rojo puro, todo lo demás interpolado): `ratio = (conteo - min) / (max - min)`.
+- Se agregó una leyenda corta debajo de la gráfica ("🟢 Menos tránsito · 🔴 Más tránsito") para que el significado del color sea explícito.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `colorPorIntensidad` probado en los 3 puntos exactos (0, 0.5, 1) — dan el verde/naranja/rojo exactos de las variables de la app, no aproximados.
+- Probado con un conteo por hora simulado (pico realista a las 6pm): la hora con más asistencias sale en rojo puro, las horas en 0 salen en verde puro, y una hora intermedia sale en un tono naranja proporcional — confirma que la escala es relativa a los datos reales, no a un umbral fijo.
+
 ## 2026-08-25 — Horas Pico: gráfica de tránsito por hora en la pestaña de Asistencia
 
 **Qué se hizo:**
