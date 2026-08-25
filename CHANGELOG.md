@@ -4,6 +4,22 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Fondo a pantalla completa + color de fondo editable
+
+**Qué pasó:**
+Tras arreglar la subida (ver entrada anterior), el fondo por pestaña sí se subía y se veía, pero solo llenaba el bloque de contenido central — quedaban bordes blancos alrededor porque el fondo se aplicaba al `div` de cada pestaña, que vive dentro de `<main>` (que tiene `max-width:1100px` y padding). Además, la Personalización solo dejaba elegir el color de acento (botones/badges/texto destacado), no el color de fondo de la app.
+
+**Qué se hizo:**
+- El fondo de pestaña ahora se aplica a `<body>` (a pantalla completa, detrás del nav y del contenido) en vez de al `div` de cada tab. Nueva función `aplicarFondoActivo()` que lee la pestaña actualmente visible (`tabActivaId()`) y pone/quita `document.body.style.backgroundImage` — se llama al cargar la sesión y cada vez que `activarTab()` cambia de pestaña, así que solo se ve el fondo de la pestaña activa en cada momento.
+- Nuevo selector de **color de fondo** (`--bg`), independiente del color de acento (`--accent`) — antes solo se podía cambiar el color de botones/badges/texto, no el fondo detrás de todo. Mismo patrón que el color de acento: `aplicarColorFondo`/`resetColorFondo`, persistido en `usuarios/{uid}.colorFondo`, con fallback a cero-cambios-visuales si nunca se configura.
+- El modal de Personalización ahora tiene ambos selectores de color bajo un solo botón "Guardar colores" (antes solo existía el de acento).
+- El reset del panel de super-admin (`adminReady`) también limpia `colorFondo` y cualquier imagen de fondo que hubiera quedado en `body`, por la misma razón que ya limpiaba color de acento y logo.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Prueba con DOM simulado de `aplicarFondoActivo()` en un flujo de 4 cambios de pestaña (dashboard con fondo → miembros sin fondo → pagos con fondo → dashboard de nuevo): el fondo se actualiza correctamente en cada cambio y se limpia cuando la pestaña no tiene fondo configurado.
+- Confirmado con el usuario en producción que la carga de fondo ya funciona tras la corrección de CORS de la entrada anterior.
+
 ## 2026-08-25 — Fix: subida de logo/fondo se quedaba colgada (mensajes de error + CORS)
 
 **Qué pasó:**

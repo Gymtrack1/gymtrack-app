@@ -29,7 +29,7 @@
 <style>
   :root{--bg:#FAF9F5;--surface:#FFFFFF;--surface2:#F0EFE8;--border:#E3E1D6;--accent:#C6E600;--accent-dark:#98AE00;--text:#16160F;--muted:#85847A;--green:#1F9D55;--orange:#D97706;--red:#DC3B30;--blue:#2563EB;--shadow:rgba(22,22,15,0.08);--shadow-lg:rgba(22,22,15,0.14);}
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed;}
   #login-screen{display:flex;position:fixed;inset:0;background:var(--bg);z-index:999;align-items:center;justify-content:center;}
   .login-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:100%;max-width:380px;}
   .login-logo{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--accent);letter-spacing:3px;text-align:center;margin-bottom:4px;}
@@ -713,8 +713,16 @@
         <input type="color" id="pz-color" value="#C6E600" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
         <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">Se usa en botones, badges y textos destacados de toda la app. La versión oscura para sombreados se calcula sola.</span>
       </div>
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
+      <label>Color de fondo</label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="color" id="pz-color-fondo" value="#FAF9F5" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
+        <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">El fondo detrás de todo, en toda la app — distinto del color de acento.</span>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-primary btn-sm" onclick="guardarPersonalizacion()">💾 Guardar color</button>
+        <button class="btn btn-primary btn-sm" onclick="guardarPersonalizacion()">💾 Guardar colores</button>
         <button style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="restaurarColorDefault()">Restaurar por defecto</button>
       </div>
     </div>
@@ -839,6 +847,7 @@ function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
 // categorías. Todo lo de acá es puramente visual/branding, aislado por gym vía
 // storage.rules (ver logos/{uid}/... y fondos/{uid}/...).
 const DEFAULT_ACCENT='#C6E600';
+const DEFAULT_BG='#FAF9F5';
 const MAX_IMAGEN_BYTES=2*1024*1024; // 2MB
 // Pestañas que aceptan fondo configurable. Mismos ids que TODAS_SECCIONES (excepto
 // Alertas/Reportes, que el gym no personaliza aquí).
@@ -853,8 +862,8 @@ const PESTANAS_FONDO=[
 ];
 // Estado de personalización YA guardado en Firestore (fuente de verdad). Se llena en
 // loadPlan() y se aplica con aplicarPersonalizacion(). Cuentas que nunca personalizan nada
-// mantienen estos 3 campos en null/{} y la app se ve exactamente igual que hoy.
-let personalizacion={colorAcento:null,logoUrl:null,fondosPorTab:{}};
+// mantienen estos campos en null/{} y la app se ve exactamente igual que hoy.
+let personalizacion={colorAcento:null,colorFondo:null,logoUrl:null,fondosPorTab:{}};
 
 function hexToRgb(hex){
   hex=String(hex||'').replace('#','');
@@ -881,39 +890,49 @@ function resetColorAcento(){
   document.documentElement.style.removeProperty('--accent');
   document.documentElement.style.removeProperty('--accent-dark');
 }
+// Color de fondo de toda la app (--bg), independiente del color de acento — uno pinta
+// botones/badges/texto destacado, el otro pinta el fondo detrás de todo.
+function aplicarColorFondo(hex){
+  if(!hex)return;
+  document.documentElement.style.setProperty('--bg',hex);
+}
+function resetColorFondo(){
+  document.documentElement.style.removeProperty('--bg');
+}
 function aplicarLogo(url){
   const imgs=[document.getElementById('login-logo-img'),document.getElementById('nav-logo-img')];
   const txts=[document.getElementById('login-logo-txt'),document.getElementById('nav-logo-txt')];
   imgs.forEach(img=>{if(!img)return;if(url){img.src=url;img.style.display='block';}else{img.style.display='none';img.removeAttribute('src');}});
   txts.forEach(txt=>{if(!txt)return;txt.style.display=url?'none':'';});
 }
-function aplicarFondosPorTab(fondosPorTab){
-  PESTANAS_FONDO.forEach(t=>{
-    const el=document.getElementById('tab-'+t.id);
-    if(!el)return;
-    const url=(fondosPorTab||{})[t.id];
-    if(url){
-      el.style.backgroundImage=`url("${url}")`;
-      el.style.backgroundSize='cover';
-      el.style.backgroundPosition='center';
-      el.style.backgroundRepeat='no-repeat';
-    }else{
-      el.style.backgroundImage='';
-    }
-  });
+// Fondo de pantalla de la pestaña activa: se aplica a <body> (a pantalla completa, detrás de
+// nav y del contenido) en vez de al div de cada tab — el div de cada tab vive dentro de
+// <main>, que tiene max-width y padding, así que un fondo puesto ahí se veía recortado con
+// bordes en vez de cubrir toda la pantalla. Solo un fondo puede mostrarse a la vez (el de la
+// pestaña visible), así que se recalcula cada vez que se cambia de pestaña.
+function tabActivaId(){
+  const el=document.querySelector('.tab.active');
+  return el?el.id.replace('tab-',''):null;
+}
+function aplicarFondoActivo(){
+  const name=tabActivaId();
+  const url=name?(personalizacion.fondosPorTab||{})[name]:null;
+  document.body.style.backgroundImage=url?`url("${url}")`:'';
 }
 function aplicarPersonalizacion(){
   if(personalizacion.colorAcento)aplicarColorAcento(personalizacion.colorAcento);else resetColorAcento();
+  if(personalizacion.colorFondo)aplicarColorFondo(personalizacion.colorFondo);else resetColorFondo();
   aplicarLogo(personalizacion.logoUrl||null);
-  aplicarFondosPorTab(personalizacion.fondosPorTab||{});
+  aplicarFondoActivo();
   guardarBrandingCache();
 }
-// Cache local (color+logo, no fondos) para que la PANTALLA DE LOGIN ya se vea personalizada
-// antes de que termine de autenticar — en ese momento aún no sabemos el uid, así que no hay
-// forma de leer Firestore todavía. Se sobreescribe con el dato real en cada login exitoso.
+// Cache local (colores+logo, no fondos por pestaña) para que la PANTALLA DE LOGIN ya se vea
+// personalizada antes de que termine de autenticar — en ese momento aún no sabemos el uid,
+// así que no hay forma de leer Firestore todavía. Se sobreescribe con el dato real en cada
+// login exitoso.
 function guardarBrandingCache(){
   try{
-    localStorage.setItem('gymtrackBranding',JSON.stringify({colorAcento:personalizacion.colorAcento||null,logoUrl:personalizacion.logoUrl||null}));
+    localStorage.setItem('gymtrackBranding',JSON.stringify({colorAcento:personalizacion.colorAcento||null,colorFondo:personalizacion.colorFondo||null,logoUrl:personalizacion.logoUrl||null}));
   }catch(e){}
 }
 (function aplicarBrandingCacheInicial(){
@@ -921,6 +940,7 @@ function guardarBrandingCache(){
     const cached=JSON.parse(localStorage.getItem('gymtrackBranding')||'null');
     if(cached){
       if(cached.colorAcento)aplicarColorAcento(cached.colorAcento);
+      if(cached.colorFondo)aplicarColorFondo(cached.colorFondo);
       if(cached.logoUrl)aplicarLogo(cached.logoUrl);
     }
   }catch(e){}
@@ -1081,6 +1101,7 @@ async function loadPlan(){
       // Cargar personalización visual (color/logo/fondos) si existe — cuentas que nunca
       // configuraron nada quedan con los defaults (null/{}) y se ven igual que siempre.
       personalizacion.colorAcento=d.colorAcento||null;
+      personalizacion.colorFondo=d.colorFondo||null;
       personalizacion.logoUrl=d.logoUrl||null;
       personalizacion.fondosPorTab=d.fondosPorTab||{};
       aplicarPersonalizacion();
@@ -1166,7 +1187,9 @@ window.addEventListener('adminReady',async()=>{
   // este navegador tenía cacheado en localStorage el branding de una cuenta de gym (ver
   // aplicarBrandingCacheInicial), se resetea explícitamente al color/logo por defecto.
   resetColorAcento();
+  resetColorFondo();
   aplicarLogo(null);
+  document.body.style.backgroundImage='';
   await loadAdminGyms();
 });
 
@@ -2995,7 +3018,7 @@ async function onFondoFileChange(input,tabId){
     const fondosPorTab={...(personalizacion.fondosPorTab||{}),[tabId]:url};
     await updateDoc(docFn(db,'usuarios',uid),{fondosPorTab});
     personalizacion.fondosPorTab=fondosPorTab;
-    aplicarFondosPorTab(fondosPorTab);
+    aplicarFondoActivo();
     renderPersonalizacionModal();
     toast('Fondo actualizado ✓');
   }catch(e){toast('Error al subir el fondo: '+mensajeError(e),'err');}
@@ -3008,31 +3031,37 @@ async function quitarFondo(tabId){
   try{
     await updateDoc(docFn(db,'usuarios',uid),{fondosPorTab});
     personalizacion.fondosPorTab=fondosPorTab;
-    aplicarFondosPorTab(fondosPorTab);
+    aplicarFondoActivo();
     renderPersonalizacionModal();
     toast('Fondo eliminado ✓');
     if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
   }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
 async function guardarPersonalizacion(){
-  const color=document.getElementById('pz-color').value;
+  const colorAcento=document.getElementById('pz-color').value;
+  const colorFondo=document.getElementById('pz-color-fondo').value;
   try{
-    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:color});
-    personalizacion.colorAcento=color;
-    aplicarColorAcento(color);
+    await updateDoc(docFn(db,'usuarios',uid),{colorAcento,colorFondo});
+    personalizacion.colorAcento=colorAcento;
+    personalizacion.colorFondo=colorFondo;
+    aplicarColorAcento(colorAcento);
+    aplicarColorFondo(colorFondo);
     guardarBrandingCache();
-    toast('Color guardado ✓');
+    toast('Colores guardados ✓');
   }catch(e){toast('Error al guardar: '+mensajeError(e),'err');}
 }
 async function restaurarColorDefault(){
-  if(!confirm('¿Restaurar el color de acento por defecto?'))return;
+  if(!confirm('¿Restaurar los colores por defecto?'))return;
   try{
-    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:null});
+    await updateDoc(docFn(db,'usuarios',uid),{colorAcento:null,colorFondo:null});
     personalizacion.colorAcento=null;
+    personalizacion.colorFondo=null;
     resetColorAcento();
+    resetColorFondo();
     guardarBrandingCache();
     document.getElementById('pz-color').value=DEFAULT_ACCENT;
-    toast('Color restaurado ✓');
+    document.getElementById('pz-color-fondo').value=DEFAULT_BG;
+    toast('Colores restaurados ✓');
   }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
 function renderFondosPersonalizacion(){
@@ -3066,6 +3095,7 @@ function renderPersonalizacionModal(){
 }
 function abrirModalPersonalizacion(){
   document.getElementById('pz-color').value=personalizacion.colorAcento||DEFAULT_ACCENT;
+  document.getElementById('pz-color-fondo').value=personalizacion.colorFondo||DEFAULT_BG;
   renderPersonalizacionModal();
   openModal('modal-personalizacion');
 }
@@ -3111,6 +3141,7 @@ function activarTab(name,event){
   const navBtn=document.getElementById('nav-'+name);
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
+  aplicarFondoActivo();
   if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();}
   // Detalle fila por fila de Miembros solo se construye al entrar a esta pestaña
   if(name==='miembros')renderMiembros(document.getElementById('search-miembros').value);
