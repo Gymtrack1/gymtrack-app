@@ -2377,7 +2377,7 @@ function renderEstadoCuenta(){
     const{labels,data}=key==='hoy'?tendenciaPorHora(pagosPeriodo,ventasPeriodo):tendenciaPorDia(inicioPeriodo,pagosPeriodo,ventasPeriodo);
     chartPeriodo[key]=new Chart(canvas,{
       type:'line',
-      data:{labels,datasets:[{label:'Ingresos',data,borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.3,pointBackgroundColor:'#C6E600',pointRadius:labels.length>15?0:3}]},
+      data:{labels,datasets:[{label:'Ingresos',data,borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.3,pointBackgroundColor:'#C6E600',pointRadius:labels.length>20?2:3}]},
       options:{responsive:true,maintainAspectRatio:false,
         layout:{padding:{bottom:4}},
         plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y.toLocaleString()}}},
