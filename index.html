@@ -27,11 +27,11 @@
   });
 </script>
 <style>
-  :root{--bg:#FAF9F5;--surface:#FFFFFF;--surface2:#F0EFE8;--border:#E3E1D6;--accent:#C6E600;--accent-dark:#98AE00;--text:#16160F;--muted:#85847A;--green:#1F9D55;--orange:#D97706;--red:#DC3B30;--blue:#2563EB;--shadow:rgba(22,22,15,0.08);--shadow-lg:rgba(22,22,15,0.14);}
+  :root{--bg:#FAF9F5;--surface:#FFFFFF;--surface2:#F0EFE8;--border:#E3E1D6;--accent:#C6E600;--accent-dark:#98AE00;--text:#16160F;--text-surface:#16160F;--text-accent:#000000;--muted:#85847A;--green:#1F9D55;--orange:#D97706;--red:#DC3B30;--blue:#2563EB;--shadow:rgba(22,22,15,0.08);--shadow-lg:rgba(22,22,15,0.14);}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;background-size:cover;background-position:center;background-repeat:no-repeat;background-attachment:fixed;}
   #login-screen{display:flex;position:fixed;inset:0;background:var(--bg);z-index:999;align-items:center;justify-content:center;}
-  .login-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:100%;max-width:380px;}
+  .login-box{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:100%;max-width:380px;}
   .login-logo{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--accent);letter-spacing:3px;text-align:center;margin-bottom:4px;}
   .login-logo-img{display:none;max-height:64px;max-width:220px;object-fit:contain;margin:0 auto 4px;}
   .login-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:32px;}
@@ -41,7 +41,7 @@
   .logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent);letter-spacing:2px;margin-right:12px;white-space:nowrap;}
   .nav-logo-img{display:none;height:32px;max-width:140px;object-fit:contain;margin-right:12px;}
   .nav-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;padding:6px 10px;border-radius:6px;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
-  .nav-btn:hover{color:var(--text);background:var(--surface2);}
+  .nav-btn:hover{color:var(--text-surface);background:var(--surface2);}
   .nav-btn.active{color:var(--accent);background:rgba(198,230,0,0.12);}
   .nav-btn.locked{color:var(--border);cursor:not-allowed;}
   .user-info{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);white-space:nowrap;}
@@ -50,11 +50,11 @@
   .plan-pro{background:rgba(37,99,235,0.12);color:var(--blue);}
   .plan-premium{background:rgba(198,230,0,0.18);color:var(--accent);}
   .btn-logout{background:none;border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;}
-  .btn-logout:hover{color:var(--text);border-color:var(--text);}
+  .btn-logout:hover{color:var(--text-surface);border-color:var(--text-surface);}
   main{padding:24px 16px;max-width:1100px;margin:0 auto;}
   .tab{display:none;} .tab.active{display:block;}
   .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;}
-  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .stat-card{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
   .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
   .stat-num{font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:1;}
   .stat-num.green{color:var(--green);} .stat-num.orange{color:var(--orange);} .stat-num.red{color:var(--red);} .stat-num.accent{color:var(--accent);} .stat-num.blue{color:var(--blue);}
@@ -67,19 +67,19 @@
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
   .badge-green{background:rgba(31,157,85,0.12);color:var(--green);} .badge-orange{background:rgba(217,119,6,0.15);color:var(--orange);} .badge-red{background:rgba(220,59,48,0.15);color:var(--red);} .badge-gray{background:rgba(133,132,122,0.13);color:var(--muted);} .badge-blue{background:rgba(37,99,235,0.12);color:var(--blue);}
   .btn{border:none;border-radius:8px;padding:10px 20px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;}
-  .btn-primary{background:var(--accent);color:#000;} .btn-primary:hover{background:#B0D400;}
-  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);} .btn-ghost:hover{border-color:var(--text);}
+  .btn-primary{background:var(--accent);color:var(--text-accent);} .btn-primary:hover{background:#B0D400;}
+  .btn-ghost{background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);} .btn-ghost:hover{border-color:var(--text-surface);}
   .btn-danger{background:rgba(220,59,48,0.15);color:var(--red);border:1px solid rgba(220,59,48,0.3);} .btn-danger:hover{background:rgba(220,59,48,0.22);}
   .btn-green{background:rgba(31,157,85,0.12);color:var(--green);border:1px solid rgba(31,157,85,0.3);}
   .btn-whatsapp{background:#25d366;color:#fff;border:none;}  .btn-whatsapp:hover{background:#1da851;}
   .btn-sm{padding:6px 12px;font-size:12px;}
   .modal-overlay{display:none;position:fixed;inset:0;background:rgba(22,22,15,0.4);z-index:200;align-items:center;justify-content:center;}
   .modal-overlay.open{display:flex;}
-  .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+  .modal{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
   .modal h2{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;margin-bottom:20px;}
   .form-group{margin-bottom:14px;}
   label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;}
-  input,select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;transition:border-color 0.2s;}
+  input,select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:14px;transition:border-color 0.2s;}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
   select option{background:var(--surface2);}
   .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -89,9 +89,9 @@
   .page-title{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;}
   .empty{text-align:center;padding:48px 20px;color:var(--muted);}
   .empty-icon{font-size:40px;margin-bottom:10px;}
-  .locked-overlay{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:48px 24px;text-align:center;}
+  .locked-overlay{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:48px 24px;text-align:center;}
   .locked-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:2px;margin-bottom:8px;color:var(--muted);}
-  .attend-btn{background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;}
+  .attend-btn{background:var(--accent);color:var(--text-accent);border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;}
   .attend-btn:disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed;}
   .today-pill{background:rgba(31,157,85,0.12);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
   .search-wrap{position:relative;margin-bottom:16px;}
@@ -99,14 +99,14 @@
   .search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;}
   .loading{text-align:center;padding:32px;color:var(--muted);}
   /* ADMIN */
-  .admin-header{background:var(--surface);border-bottom:1px solid var(--border);padding:20px 24px;display:flex;align-items:center;gap:16px;}
+  .admin-header{background:var(--surface);color:var(--text-surface);border-bottom:1px solid var(--border);padding:20px 24px;display:flex;align-items:center;gap:16px;}
   .admin-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;color:var(--accent);}
   .admin-main{padding:24px;max-width:900px;margin:0 auto;}
   .admin-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:24px;}
-  .admin-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;}
+  .admin-stat{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;}
   .admin-stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;}
   .admin-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
-  .gym-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap;}
+  .gym-card{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap;}
   .gym-email{font-weight:600;font-size:14px;flex:1;min-width:160px;}
   .plan-selector{display:flex;gap:6px;flex-wrap:wrap;}
   .plan-opt{border:1px solid var(--border);background:none;color:var(--muted);padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.2s;}
@@ -115,7 +115,7 @@
   .plan-opt.active-premium{background:rgba(198,230,0,0.18);color:var(--accent);border-color:var(--accent);}
   /* ESTADO DE CUENTA */
   .ec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:20px;}
-  .ec-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .ec-card{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
   .ec-card h3{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--muted);margin-bottom:14px;}
   .ec-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
   .ec-row:last-child{border-bottom:none;}
@@ -126,7 +126,7 @@
   .beneficio-chip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;border-radius:50%;font-family:'DM Sans',sans-serif;}
   .beneficio-chip button:hover{color:var(--red);background:rgba(220,59,48,0.12);}
   /* ALERTAS */
-  .alert-card{background:var(--surface);border-left:3px solid var(--orange);border-radius:8px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .alert-card{background:var(--surface);color:var(--text-surface);border-left:3px solid var(--orange);border-radius:8px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
   .alert-card.vencido{border-left-color:var(--red);}
   .alert-card.recordatorio{border-left-color:var(--blue);}
   .alert-name{font-weight:600;font-size:14px;}
@@ -147,7 +147,7 @@
   /* INV TABS */
   .inv-tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--surface2);padding:4px;border-radius:10px;width:fit-content;}
   .inv-tab-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;padding:7px 18px;border-radius:7px;cursor:pointer;transition:all 0.2s;}
-  .inv-tab-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(22,22,15,0.08);}
+  .inv-tab-btn.active{background:var(--surface);color:var(--text-surface);box-shadow:0 1px 3px rgba(22,22,15,0.08);}
   .inv-section{display:none;} .inv-section.active{display:block;}
   /* FUNCIONES GRID */
   .funciones-wrap{width:100%;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;}
@@ -166,7 +166,7 @@
   .stock-low{color:var(--orange);font-weight:700;}
   .stock-out{color:var(--red);font-weight:700;}
   /* TOAST */
-  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:all 0.3s;pointer-events:none;}
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--border);color:var(--text-surface);padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:all 0.3s;pointer-events:none;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   #toast.toast-ok{border-color:var(--green);color:var(--green);}
   #toast.toast-err{border-color:var(--red);color:var(--red);}
@@ -266,7 +266,7 @@
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
   <div class="user-info">
     <span class="plan-badge" id="plan-badge"></span>
-    <button onclick="abrirModalPersonalizacion()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Personaliza el color, logo y fondos de tu gimnasio">🎨 Personalizar</button>
+    <button onclick="abrirModalPersonalizacion()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-surface);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Personaliza el color, logo y fondos de tu gimnasio">🎨 Personalizar</button>
     <button onclick="sincronizarPlan()" style="background:rgba(198,230,0,0.15);border:1px solid rgba(152,174,0,0.4);color:var(--accent);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Forzar lectura del plan desde Firestore">🔄 Sincronizar plan</button>
     <span id="user-email" style="font-size:11px"></span>
     <button class="btn-logout" onclick="doLogout()">Salir</button>
@@ -294,15 +294,15 @@
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
       <div class="page-title">Miembros</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button onclick="descargarPlantilla()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📋 Plantilla</button>
-        <label style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:4px">
+        <button onclick="descargarPlantilla()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📋 Plantilla</button>
+        <label style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:4px">
           📥 Importar Excel
           <input type="file" id="input-importar-xlsx" accept=".xlsx,.xls" style="display:none" onchange="importarMiembros(this)">
         </label>
-        <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
-        <button onclick="corregirFechasImportadas()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🛠 Corregir Fechas Importadas</button>
-        <button onclick="abrirModalCategorias()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🏷️ Categorías</button>
-        <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
+        <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
+        <button onclick="corregirFechasImportadas()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🛠 Corregir Fechas Importadas</button>
+        <button onclick="abrirModalCategorias()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🏷️ Categorías</button>
+        <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:var(--text-accent);border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
       </div>
     </div>
     <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar miembro..." id="search-miembros" oninput="filterMiembros()"></div>
@@ -361,12 +361,12 @@
           <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{dias}</code>
         </div>
       </div>
-      <textarea id="wamsg-textarea" rows="3" placeholder="Escribe tu mensaje aquí..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
+      <textarea id="wamsg-textarea" rows="3" placeholder="Escribe tu mensaje aquí..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:12px;color:var(--muted);flex:1">Vista previa: <span id="wamsg-preview" style="color:var(--text);font-style:italic"></span></div>
+        <div style="font-size:12px;color:var(--muted);flex:1">Vista previa: <span id="wamsg-preview" style="color:var(--text-surface);font-style:italic"></span></div>
         <div style="display:flex;gap:8px;flex-shrink:0">
           <button onclick="restaurarMsgWA()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Restaurar predeterminado</button>
-          <button onclick="guardarMsgWA()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar mensaje</button>
+          <button onclick="guardarMsgWA()" style="background:var(--accent);color:var(--text-accent);border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar mensaje</button>
         </div>
       </div>
     </div>
@@ -386,12 +386,12 @@
           <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{meta}</code>
         </div>
       </div>
-      <textarea id="wamsg-recordatorio-textarea" rows="3" placeholder="Escribe tu mensaje aquí..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
+      <textarea id="wamsg-recordatorio-textarea" rows="3" placeholder="Escribe tu mensaje aquí..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:12px;color:var(--muted);flex:1">Vista previa: <span id="wamsg-recordatorio-preview" style="color:var(--text);font-style:italic"></span></div>
+        <div style="font-size:12px;color:var(--muted);flex:1">Vista previa: <span id="wamsg-recordatorio-preview" style="color:var(--text-surface);font-style:italic"></span></div>
         <div style="display:flex;gap:8px;flex-shrink:0">
           <button onclick="restaurarMsgWARecordatorio()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Restaurar predeterminado</button>
-          <button onclick="guardarMsgWARecordatorio()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar mensaje</button>
+          <button onclick="guardarMsgWARecordatorio()" style="background:var(--accent);color:var(--text-accent);border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar mensaje</button>
         </div>
       </div>
     </div>
@@ -889,36 +889,52 @@ function oscurecerColor(hex,factor=0.24){
   const{r,g,b}=hexToRgb(hex);
   return rgbToHex(r*(1-factor),g*(1-factor),b*(1-factor));
 }
+// Decide si conviene texto blanco o negro ENCIMA de un color de fondo dado, con la fórmula
+// de luminancia perceptual (YIQ) — así, sin importar qué tan claro u oscuro elija el gym
+// cada color (acento/fondo/tarjetas), el texto que va encima nunca se vuelve invisible.
+function colorTextoContraste(hex){
+  const{r,g,b}=hexToRgb(hex);
+  const luminancia=(299*r+587*g+114*b)/1000;
+  return luminancia<140?'#FFFFFF':'#16160F';
+}
 function aplicarColorAcento(hex){
   if(!hex)return;
   document.documentElement.style.setProperty('--accent',hex);
   document.documentElement.style.setProperty('--accent-dark',oscurecerColor(hex));
+  document.documentElement.style.setProperty('--text-accent',colorTextoContraste(hex));
 }
 // Quita el override inline -> el CSS de :root vuelve a mandar (mismo verde de siempre).
 function resetColorAcento(){
   document.documentElement.style.removeProperty('--accent');
   document.documentElement.style.removeProperty('--accent-dark');
+  document.documentElement.style.removeProperty('--text-accent');
 }
 // Color de fondo de toda la app (--bg), independiente del color de acento — uno pinta
-// botones/badges/texto destacado, el otro pinta el fondo detrás de todo.
+// botones/badges/texto destacado, el otro pinta el fondo detrás de todo. --text es el color
+// del texto que vive directo sobre --bg (fuera de tarjetas), recalculado según contraste.
 function aplicarColorFondo(hex){
   if(!hex)return;
   document.documentElement.style.setProperty('--bg',hex);
+  document.documentElement.style.setProperty('--text',colorTextoContraste(hex));
 }
 function resetColorFondo(){
   document.documentElement.style.removeProperty('--bg');
+  document.documentElement.style.removeProperty('--text');
 }
 // Color de las tarjetas/recuadros (stat-card, ec-card, tablas, modales, etc — --surface).
 // Con un solo color basta: --surface2 (fondo de inputs, filas al pasar el mouse, etc.) se
 // calcula un poco más oscuro, mismo criterio que --accent-dark a partir de --accent.
+// --text-surface es el color del texto DENTRO de esas tarjetas, recalculado según contraste.
 function aplicarColorTarjetas(hex){
   if(!hex)return;
   document.documentElement.style.setProperty('--surface',hex);
   document.documentElement.style.setProperty('--surface2',oscurecerColor(hex,0.06));
+  document.documentElement.style.setProperty('--text-surface',colorTextoContraste(hex));
 }
 function resetColorTarjetas(){
   document.documentElement.style.removeProperty('--surface');
   document.documentElement.style.removeProperty('--surface2');
+  document.documentElement.style.removeProperty('--text-surface');
 }
 function aplicarLogo(url){
   const imgs=[document.getElementById('login-logo-img'),document.getElementById('nav-logo-img')];
@@ -2216,8 +2232,8 @@ function renderEstadoCuenta(){
 
   const miniGraficaHtml=key=>`
       <div style="display:flex;justify-content:flex-end;gap:4px;margin:8px 0 6px">
-        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='pie'?'background:var(--accent);color:var(--text);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','pie')">🥧 Pastel</button>
-        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='line'?'background:var(--accent);color:var(--text);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','line')">📈 Línea</button>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='pie'?'background:var(--accent);color:var(--text-accent);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','pie')">🥧 Pastel</button>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;${tipoGraficaPeriodo[key]==='line'?'background:var(--accent);color:var(--text-accent);border-color:var(--accent)':''}" onclick="toggleTipoGraficaPeriodo('${key}','line')">📈 Línea</button>
       </div>
       <div class="chart-wrap" style="height:150px"><canvas id="chart-periodo-${key}"></canvas></div>`;
 

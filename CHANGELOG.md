@@ -4,6 +4,22 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Contraste de texto automático sobre los 3 colores editables
+
+**Qué pasó:**
+El usuario notó el riesgo: si elige un color de tarjetas oscuro (ej. negro), el texto —fijo en negro (`--text`)— se vuelve invisible encima. El mismo problema existe con el color de fondo y con el de acento (varios botones tenían el texto hardcodeado en `#000`).
+
+**Qué se hizo:**
+- Nueva función `colorTextoContraste(hex)`: calcula la luminancia perceptual (fórmula YIQ: `(299*r+587*g+114*b)/1000`) de un color y devuelve blanco o negro casi puro, el que dé más contraste. Sin tablas de casos ni umbrales mágicos por color — un solo cálculo que sirve para cualquier tono que elija el gym.
+- Los 3 colores editables ahora recalculan su propio texto de contraste al aplicarse: `aplicarColorFondo` → `--text` (texto que vive directo sobre el fondo de la app, fuera de tarjetas — ej. los títulos grandes de cada pestaña); `aplicarColorTarjetas` → `--text-surface` (texto dentro de tarjetas/tablas/modales/inputs); `aplicarColorAcento` → `--text-accent` (texto sobre botones/elementos con fondo de acento, ej. "+ Nuevo Miembro", "Guardar mensaje"). Los 3 se limpian junto con su color al resetear o en el panel de super-admin.
+- Se auditaron y corrigieron ~20 lugares del CSS/HTML que tenían `color:var(--text)` o `color:#000` hardcodeado encima de un fondo `--surface`/`--surface2`/`--accent` — cada uno ahora usa la variable de contraste que corresponde a SU fondo, no una genérica. Se agregaron además `color:var(--text-surface)` a los contenedores tipo tarjeta que no tenían ningún color explícito (stat-card, ec-card, modal, alert-card, gym-card, admin-header, admin-stat, locked-overlay, login-box), para que todo su contenido lo herede automáticamente sin tener que tocar cada elemento hijo uno por uno.
+- Nuevos defaults en `:root`: `--text-surface:#16160F` y `--text-accent:#000000` — coinciden exactamente con los valores que ya estaban hardcodeados hoy, así que una cuenta sin personalizar no cambia ni un píxel.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `colorTextoContraste` probado con 8 colores (blanco, negro, casi-negro, verde lima default, crema default, azul medio, gris medio, dorado) — todos los oscuros/saturados dan texto blanco, todos los claros dan texto negro, y los 3 colores default de la app (`#FFFFFF`, `#FAF9F5`, `#C6E600`) siguen dando negro — exactamente el comportamiento de hoy.
+- `grep` de verificación: cero ocurrencias restantes de `color:var(--text)` o `color:#000` emparejadas con un fondo `--surface`/`--surface2`/`--accent` en todo el archivo.
+
 ## 2026-08-25 — Color de tarjetas editable (los recuadros blancos)
 
 **Qué se hizo:**
