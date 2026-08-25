@@ -710,7 +710,8 @@
     <div class="form-group">
       <label>Color de acento</label>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <input type="color" id="pz-color" value="#C6E600" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
+        <input type="color" id="pz-color" value="#C6E600" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0" oninput="sincronizarTextoDesdeColor('pz-color','pz-color-hex')">
+        <input type="text" id="pz-color-hex" maxlength="7" placeholder="C6E600" style="width:100px;flex-shrink:0;text-transform:uppercase" oninput="sincronizarColorDesdeTexto('pz-color','pz-color-hex')">
         <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">Se usa en botones, badges y textos destacados de toda la app. La versión oscura para sombreados se calcula sola.</span>
       </div>
     </div>
@@ -718,7 +719,8 @@
     <div class="form-group" style="margin-top:14px">
       <label>Color de fondo</label>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <input type="color" id="pz-color-fondo" value="#FAF9F5" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
+        <input type="color" id="pz-color-fondo" value="#FAF9F5" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0" oninput="sincronizarTextoDesdeColor('pz-color-fondo','pz-color-fondo-hex')">
+        <input type="text" id="pz-color-fondo-hex" maxlength="7" placeholder="FAF9F5" style="width:100px;flex-shrink:0;text-transform:uppercase" oninput="sincronizarColorDesdeTexto('pz-color-fondo','pz-color-fondo-hex')">
         <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">El fondo detrás de todo, en toda la app — distinto del color de acento.</span>
       </div>
     </div>
@@ -726,9 +728,11 @@
     <div class="form-group" style="margin-top:14px">
       <label>Color de tarjetas</label>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <input type="color" id="pz-color-tarjetas" value="#FFFFFF" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0">
+        <input type="color" id="pz-color-tarjetas" value="#FFFFFF" style="width:52px;height:38px;padding:2px;cursor:pointer;flex-shrink:0" oninput="sincronizarTextoDesdeColor('pz-color-tarjetas','pz-color-tarjetas-hex')">
+        <input type="text" id="pz-color-tarjetas-hex" maxlength="7" placeholder="FFFFFF" style="width:100px;flex-shrink:0;text-transform:uppercase" oninput="sincronizarColorDesdeTexto('pz-color-tarjetas','pz-color-tarjetas-hex')">
         <span style="font-size:12px;color:var(--muted);flex:1;min-width:180px">Los recuadros blancos (tarjetas, tablas, ventanas emergentes). El tono para inputs y hover se calcula solo.</span>
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">También puedes escribir el código directo (ej. F5E53A), con o sin "#".</div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn btn-primary btn-sm" onclick="guardarPersonalizacion()">💾 Guardar colores</button>
         <button style="background:none;border:1px solid var(--border);color:var(--muted);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="restaurarColorDefault()">Restaurar por defecto</button>
@@ -3108,6 +3112,9 @@ async function restaurarColorDefault(){
     document.getElementById('pz-color').value=DEFAULT_ACCENT;
     document.getElementById('pz-color-fondo').value=DEFAULT_BG;
     document.getElementById('pz-color-tarjetas').value=DEFAULT_SURFACE;
+    sincronizarTextoDesdeColor('pz-color','pz-color-hex');
+    sincronizarTextoDesdeColor('pz-color-fondo','pz-color-fondo-hex');
+    sincronizarTextoDesdeColor('pz-color-tarjetas','pz-color-tarjetas-hex');
     toast('Colores restaurados ✓');
   }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
@@ -3140,10 +3147,32 @@ function renderPersonalizacionModal(){
   }
   renderFondosPersonalizacion();
 }
+// Sincroniza cada selector <input type="color"> con su campo de texto hex hermano, para
+// que el gym pueda escribir el código directo (ej. "F5E53A", con o sin "#") en vez de tener
+// que usar el selector visual.
+function normalizarHex(valor){
+  let v=String(valor||'').trim();
+  if(v[0]!=='#')v='#'+v;
+  if(/^#[0-9a-fA-F]{3}$/.test(v))v='#'+v[1]+v[1]+v[2]+v[2]+v[3]+v[3];
+  return /^#[0-9a-fA-F]{6}$/.test(v)?v.toUpperCase():null;
+}
+function sincronizarTextoDesdeColor(colorId,hexId){
+  const c=document.getElementById(colorId),h=document.getElementById(hexId);
+  if(c&&h)h.value=c.value.replace('#','').toUpperCase();
+}
+function sincronizarColorDesdeTexto(colorId,hexId){
+  const c=document.getElementById(colorId),h=document.getElementById(hexId);
+  if(!c||!h)return;
+  const normal=normalizarHex(h.value);
+  if(normal)c.value=normal;
+}
 function abrirModalPersonalizacion(){
   document.getElementById('pz-color').value=personalizacion.colorAcento||DEFAULT_ACCENT;
   document.getElementById('pz-color-fondo').value=personalizacion.colorFondo||DEFAULT_BG;
   document.getElementById('pz-color-tarjetas').value=personalizacion.colorTarjetas||DEFAULT_SURFACE;
+  sincronizarTextoDesdeColor('pz-color','pz-color-hex');
+  sincronizarTextoDesdeColor('pz-color-fondo','pz-color-fondo-hex');
+  sincronizarTextoDesdeColor('pz-color-tarjetas','pz-color-tarjetas-hex');
   renderPersonalizacionModal();
   openModal('modal-personalizacion');
 }
