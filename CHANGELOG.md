@@ -4,6 +4,25 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Horas Pico: gráfica de tránsito por hora en la pestaña de Asistencia
+
+**Qué se hizo:**
+- Nueva sección "🕐 Horas de Mayor Tránsito" al final del tab de Asistencia (después del Historial, sin reordenar ni tocar la tabla de registro de hoy ni el historial existentes).
+- `renderHorasPico()`: recorre **todo** el array `asistencias` ya cargado en memoria (agregado histórico completo, sin filtrar por período) y cuenta cuántos registros caen en cada una de las 24 horas con `new Date(a.fecha).getHours()`. No hace ninguna lectura nueva a Firestore.
+- Gráfica de barras con Chart.js (mismo patrón que `renderEstadoCuenta`: variable de módulo `chartHorasPico`, se destruye antes de recrearse, y el mismo guard `if(typeof Chart==='undefined')return;` por si el CDN no cargó). Eje X = hora formateada legible ("6am", "7pm", etc. vía nuevo helper `fmtHora12(h)`), eje Y = número de asistencias en esa hora.
+- Si `asistencias` está vacío (o no cae ningún registro, lo cual en la práctica es lo mismo dado que se cuenta el array completo), se muestra el estado vacío `.empty`/`.empty-icon` de siempre en vez de una gráfica en blanco.
+- Se llama desde el final de `renderAsistencia()`, así se recalcula junto con el resto de la pestaña (carga inicial, después de registrar una asistencia, etc.) sin necesitar un gancho aparte.
+
+**Por qué:**
+El gym quiere saber a qué horas conviene tener más personal o equipo disponible, a partir de su propio historial real de check-ins — no una estimación, un conteo directo de lo que ya pasó.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `fmtHora12` probado con 8 horas (0,1,6,11,12,13,18,23) — los bordes de mediodía/medianoche (12am, 12pm) salen correctos, no solo los casos fáciles.
+- Conteo por hora probado con un array simulado de 9 asistencias en 6 horas distintas (incluida una a medianoche y otra a las 23:59, los extremos del día): el total coincide (9), cada hora individual coincide con lo esperado, y la hora pico calculada (6pm, 3 registros) es la correcta.
+- Array vacío probado por separado: el total da 0 y dispara la rama del estado vacío, no una gráfica en blanco.
+- Revisión manual de que `registrarAsistencia`, `calcularPatronAsistencia` (patrón individual por miembro, usado en Alertas) y el resto de las pestañas no aparecen en el diff — el cambio está acotado a la pestaña de Asistencia.
+
 ## 2026-08-25 — El campo de PIN ya no dispara el "¿Quieres guardar la contraseña?" de Chrome
 
 **Qué pasó:**

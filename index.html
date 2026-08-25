@@ -342,6 +342,8 @@
     <div class="table-wrap">
       <table><thead><tr><th>Miembro</th><th>Fecha</th><th>Hora</th></tr></thead><tbody id="tabla-historial"></tbody></table>
     </div>
+    <div class="section-title">Horas Pico</div>
+    <div class="ec-card" style="margin-bottom:24px"><h3>🕐 Horas de Mayor Tránsito</h3><div id="horas-pico-content"></div></div>
   </div>
 
   <!-- ALERTAS -->
@@ -803,6 +805,7 @@ const ALERTAS_PAGE_SIZE=50;
 let ecExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let chartTendencia=null;
+let chartHorasPico=null;
 let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
@@ -2027,6 +2030,38 @@ function renderAsistencia(filter=''){
   const hist=document.getElementById('tabla-historial');
   const sorted=[...asistencias].sort((a,b)=>b.fecha-a.fecha).slice(0,60);
   hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembrosPorId.get(a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
+  renderHorasPico();
+}
+// Formato legible de hora 24h -> "6am","12pm","11pm", etc.
+function fmtHora12(h){
+  const periodo=h<12?'am':'pm';
+  let h12=h%12;if(h12===0)h12=12;
+  return h12+periodo;
+}
+// HORAS PICO: agregado histórico completo (todo `asistencias`, sin filtrar por período) de
+// en qué hora del día suele venir la gente, para que el gym sepa cuándo hay más tránsito.
+// No hace ninguna lectura nueva a Firestore: solo cuenta lo que ya está cargado en memoria.
+function renderHorasPico(){
+  const el=document.getElementById('horas-pico-content');
+  if(!el)return;
+  const conteoPorHora=Array(24).fill(0);
+  asistencias.forEach(a=>{conteoPorHora[new Date(a.fecha).getHours()]++;});
+  const totalRegistros=conteoPorHora.reduce((s,n)=>s+n,0);
+  if(!totalRegistros){
+    if(chartHorasPico){chartHorasPico.destroy();chartHorasPico=null;}
+    el.innerHTML='<div class="empty"><div class="empty-icon">🕐</div><div>Aún no hay suficiente historial de asistencia</div></div>';
+    return;
+  }
+  el.innerHTML='<div class="chart-wrap" style="height:220px"><canvas id="chart-horas-pico"></canvas></div>';
+  if(typeof Chart==='undefined')return; // CDN de Chart.js no disponible (sin conexión)
+  if(chartHorasPico)chartHorasPico.destroy();
+  chartHorasPico=new Chart(document.getElementById('chart-horas-pico'),{
+    type:'bar',
+    data:{labels:conteoPorHora.map((_,h)=>fmtHora12(h)),datasets:[{label:'Asistencias',data:conteoPorHora,backgroundColor:'#C6E600',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' asistencia'+(c.parsed.y===1?'':'s')}}},
+      scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}
+  });
 }
 function renderAsistenciaPaginacion(total,totalPaginas){
   const el=document.getElementById('asistencia-paginacion');
