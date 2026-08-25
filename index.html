@@ -1034,6 +1034,31 @@ function desglosePorForma(pagosArr,ventasArr){
   });
   return{efectivo,tarjeta,sinEspecificar,total:efectivo+tarjeta+sinEspecificar};
 }
+// TENDENCIA DE INGRESOS POR PERÍODO (para la gráfica de línea de cada tarjeta de Finanzas).
+// 'hoy' se agrupa por hora (0..hora actual, sin horas futuras); semana/quincena/mes se
+// agrupan por día, desde el inicio real del período hasta hoy. Ingresos = pagos + ventas,
+// igual que el total que ya se muestra en cada tarjeta.
+function tendenciaPorHora(pagosDelDia,ventasDelDia){
+  const porHora=Array(24).fill(0);
+  pagosDelDia.forEach(p=>{porHora[new Date(p.fechaPago).getHours()]+=p.monto;});
+  ventasDelDia.forEach(v=>{porHora[new Date(v.fecha).getHours()]+=(v.total||0);});
+  const horaActual=new Date().getHours();
+  const labels=[],data=[];
+  for(let h=0;h<=horaActual;h++){labels.push(h+':00');data.push(porHora[h]);}
+  return{labels,data};
+}
+function tendenciaPorDia(inicioPeriodo,pagosDelPeriodo,ventasDelPeriodo){
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  const labels=[],data=[];
+  for(let d=new Date(inicioPeriodo);d<=hoy;d.setDate(d.getDate()+1)){
+    const dStr=d.toDateString();
+    const p=pagosDelPeriodo.filter(x=>new Date(x.fechaPago).toDateString()===dStr).reduce((s,x)=>s+x.monto,0);
+    const v=ventasDelPeriodo.filter(x=>new Date(x.fecha).toDateString()===dStr).reduce((s,x)=>s+(x.total||0),0);
+    labels.push(d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}));
+    data.push(p+v);
+  }
+  return{labels,data};
+}
 function corteCaja(pagosArr,ventasArr,gastosArr,incluirNomina){
   const ingresos=pagosArr.reduce((s,p)=>s+p.monto,0)+ventasArr.reduce((s,v)=>s+(v.total||0),0);
   const gastosManual=gastosArr.reduce((s,g)=>s+(g.monto||0),0);
@@ -1476,11 +1501,11 @@ function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/8
 
 // META SEMANAL DE ASISTENCIA (no confundir con "plan": esto es la meta de días/semana que
 // el miembro se compromete a venir, aplica a todos los miembros sin importar su plan de
-// membresía ni el plan de suscripción del gym). Semana = domingo a sábado, mismo criterio
+// membresía ni el plan de suscripción del gym). Semana = lunes a domingo, mismo criterio
 // que inicioSemana en renderEstadoCuenta, para no meter un criterio de semana distinto.
 function inicioSemanaActualTs(){
   const hoy=new Date();
-  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
+  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-((hoy.getDay()+6)%7));inicioSemana.setHours(0,0,0,0);
   return inicioSemana.getTime();
 }
 function normalizarMetaSemanal(val){
@@ -2187,7 +2212,7 @@ function renderEstadoCuenta(){
   if(!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','tu plan actual');return;}
   const hoy=new Date();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
-  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-hoy.getDay());inicioSemana.setHours(0,0,0,0);
+  const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-((hoy.getDay()+6)%7));inicioSemana.setHours(0,0,0,0);
   const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
   const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
   const pagosHoy=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoy.toDateString());
@@ -2328,27 +2353,37 @@ function renderEstadoCuenta(){
       scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false}}}}
   });
 
-  const crearGraficaPeriodo=(key,total,totalVentas)=>{
+  // 'pie' = de dónde vino el ingreso (Membresías vs Tienda). 'line' = tendencia real de
+  // ingresos en el tiempo: por hora en 'hoy' (lo que llevan hasta ahora), por día desde el
+  // inicio real del período en semana/quincena/mes (lunes / día 1 o 16 / día 1 del mes).
+  const crearGraficaPeriodo=(key,total,totalVentas,pagosPeriodo,ventasPeriodo,inicioPeriodo)=>{
     if(chartPeriodo[key])chartPeriodo[key].destroy();
     const canvas=document.getElementById('chart-periodo-'+key);
     if(!canvas)return;
     const tipo=tipoGraficaPeriodo[key];
-    const dataset=tipo==='pie'
-      ?{data:[total,totalVentas],backgroundColor:['#1F9D55','#C6E600'],borderWidth:0}
-      :{label:'Ingresos',data:[total,totalVentas],borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.3,pointBackgroundColor:'#C6E600',pointRadius:4};
+    if(tipo==='pie'){
+      chartPeriodo[key]=new Chart(canvas,{
+        type:'pie',
+        data:{labels:['Membresías','Tienda'],datasets:[{data:[total,totalVentas],backgroundColor:['#1F9D55','#C6E600'],borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:6,font:{size:10}}},
+            tooltip:{callbacks:{label:c=>c.label+': $'+c.parsed.toLocaleString()}}}}
+      });
+      return;
+    }
+    const{labels,data}=key==='hoy'?tendenciaPorHora(pagosPeriodo,ventasPeriodo):tendenciaPorDia(inicioPeriodo,pagosPeriodo,ventasPeriodo);
     chartPeriodo[key]=new Chart(canvas,{
-      type:tipo,
-      data:{labels:['Membresías','Tienda'],datasets:[dataset]},
+      type:'line',
+      data:{labels,datasets:[{label:'Ingresos',data,borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',fill:true,tension:0.3,pointBackgroundColor:'#C6E600',pointRadius:labels.length>15?0:3}]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:6,font:{size:10}}},
-          tooltip:{callbacks:{label:c=>c.label+': $'+(c.parsed.y??c.parsed).toLocaleString()}}},
-        scales:tipo==='line'?{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}}}:{}}
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y.toLocaleString()}}},
+        scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString()}},x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:8}}}}
     });
   };
-  crearGraficaPeriodo('hoy',totalHoy,totalVentasHoy);
-  crearGraficaPeriodo('semana',totalSemana,totalVentasSemana);
-  crearGraficaPeriodo('quincena',totalQuincena,totalVentasQuincena);
-  crearGraficaPeriodo('mes',totalMes,totalVentasMes);
+  crearGraficaPeriodo('hoy',totalHoy,totalVentasHoy,pagosHoy,ventasHoy,null);
+  crearGraficaPeriodo('semana',totalSemana,totalVentasSemana,pagosSemana,ventasSemana,inicioSemana);
+  crearGraficaPeriodo('quincena',totalQuincena,totalVentasQuincena,pagosQuincena,ventasQuincena,inicioQuincena);
+  crearGraficaPeriodo('mes',totalMes,totalVentasMes,pagosMes,ventasMes,inicioMes);
 }
 
 // REPORTES

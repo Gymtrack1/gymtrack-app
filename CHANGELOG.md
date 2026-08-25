@@ -4,6 +4,29 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Gráficas de línea en Finanzas: tendencia real de ingresos, no dos puntos fijos
+
+**Qué pasó:**
+En cada tarjeta de período de Finanzas (Hoy/Semana/Quincena/Mes) ya existía un toggle Pastel/Línea. El pastel muestra bien de dónde vino el ingreso (Membresías vs Tienda) — eso se queda igual. Pero la "línea" solo graficaba esos mismos 2 valores (Membresías, Tienda) como si fueran una serie de tiempo, lo cual no tenía sentido como tendencia.
+
+**Qué se hizo:**
+- Nuevas funciones `tendenciaPorHora(pagos, ventas)` y `tendenciaPorDia(inicioPeriodo, pagos, ventas)`: agrupan pagos+ventas (mismo criterio de "ingreso" que ya usa el total de cada tarjeta) en buckets reales de tiempo.
+- **Hoy**: la línea ahora muestra el ingreso por hora, desde las 0:00 hasta la hora actual (sin horas futuras) — "lo que llevan hoy", como se pidió.
+- **Semana**: por día, desde el **lunes** de esta semana hasta hoy.
+- **Quincena**: por día, desde el día 1 o el día 16 del mes (el inicio de quincena que ya usaba la app) hasta hoy.
+- **Mes**: por día, desde el día 1 del mes hasta hoy.
+- `crearGraficaPeriodo` ahora arma dos tipos de gráfica completamente distintos según el toggle: pastel (Membresías vs Tienda, sin cambios) o línea (tendencia real en el tiempo), en vez de forzar los mismos 2 datos en ambos tipos de chart.
+
+**Corrección relacionada — la semana ahora empieza en lunes, no domingo:**
+`inicioSemana` (en Finanzas) e `inicioSemanaActualTs()` (meta semanal de asistencia) ya estaban deliberadamente sincronizados por diseño (había un comentario explícito en el código pidiendo no romper esa consistencia). Como la tendencia semanal pedida debía empezar en lunes, se corrigieron **ambas** funciones juntas (de domingo-a-sábado a lunes-a-domingo) para no introducir una inconsistencia nueva entre Finanzas y meta semanal. Esto cambia también el rango de "ESTA SEMANA" en las tarjetas de Finanzas y el corte de caja semanal (antes empezaban domingo, ahora lunes).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `tendenciaPorHora` probado con pagos/ventas a horas específicas — los buckets caen en la hora correcta, la suma total coincide, y no aparecen horas futuras.
+- Cálculo de inicio de semana probado de forma aislada — confirmado que ahora cae en lunes (antes cayía en domingo).
+- `tendenciaPorDia` probado para semana (arranca lunes), quincena (arranca día 1 o 16, sin cambios respecto al criterio que ya existía) y mes (arranca día 1) — el número de días y las etiquetas coinciden con lo esperado en cada caso.
+- Revisión manual de que el pastel (Membresías vs Tienda) no cambió su lógica ni su estilo.
+
 ## 2026-08-25 — Contraste de texto automático sobre los 3 colores editables
 
 **Qué pasó:**
