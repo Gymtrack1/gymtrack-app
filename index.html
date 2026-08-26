@@ -386,6 +386,7 @@
           <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{dia}</code>
           <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{hora}</code>
           <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{meta}</code>
+          <code style="background:var(--surface2);padding:1px 6px;border-radius:4px;margin:0 2px">{producto}</code>
         </div>
       </div>
       <textarea id="wamsg-recordatorio-textarea" rows="3" placeholder="Escribe tu mensaje aquí..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
@@ -488,6 +489,12 @@
         <input type="text" id="p-nota-contenido" placeholder="Contenido" style="flex:2;min-width:180px">
         <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarNotaPlan()">+ Agregar</button>
       </div>
+    </div>
+
+    <div class="ec-card" id="p-compras-card" style="display:none;margin-top:16px;padding:16px 18px">
+      <h3>🛒 Compras</h3>
+      <div id="p-compras-patron" style="display:none;margin-bottom:8px"></div>
+      <div id="p-compras-lista"></div>
     </div>
 
     <div class="form-actions" style="margin-top:16px">
@@ -821,7 +828,7 @@ let planListener=null,listenerRetries=0,planPollInterval=null;
 let sesionInicializada=false; // evita reinicializar (loadAll + setInterval) si 'firebaseReady' se dispara más de una vez
 const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
-const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym!';
+const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym{producto}!';
 let msgWARecordatorio=MSG_WA_RECORDATORIO_DEFAULT;
 // Tolerancia tras la hora habitual antes de considerar "no vino" (evita falsos positivos por
 // llegar unos minutos tarde). Ver calcularPatronAsistencia/recordatoriosPendientes más abajo.
@@ -831,6 +838,11 @@ const RECORDATORIO_MIN_ASISTENCIAS=3;
 // menos al calcular el día/hora habitual — así un cambio de horario reciente predomina sobre
 // un patrón antiguo en vez de quedar diluido en un promedio plano de todo el historial.
 const RECORDATORIO_DECAY_SEMANAL=0.75;
+// Mínimo de compras REALES (sin ponderar) de un mismo producto en un mismo día de la semana
+// para considerarlo "patrón de compra" de ese miembro — mismo criterio que
+// RECORDATORIO_MIN_ASISTENCIAS, evita mencionar una compra aislada como si fuera un hábito.
+// Ver calcularPatronCompra más abajo.
+const COMPRA_MIN_VENTAS=3;
 const DIAS_SEMANA=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 let pinFinanzas=null;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
@@ -1608,6 +1620,40 @@ function fmtHoraPromedio(horaPromedio){
   d.setHours(Math.floor(horaPromedio),Math.round((horaPromedio%1)*60),0,0);
   return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 }
+
+// PATRÓN DE COMPRA POR MIEMBRO (mismo enfoque que calcularPatronAsistencia, ver arriba).
+// Agrupa las ventas de un miembro (colección `ventas`, filtrando por miembroId) por
+// producto + día de la semana de la venta, ponderando por antigüedad con el mismo
+// RECORDATORIO_DECAY_SEMANAL que el patrón de asistencia. Requiere al menos
+// COMPRA_MIN_VENTAS compras REALES de ese producto en ese día para considerarlo patrón — si
+// no hay suficiente historial, devuelve null (sin mención de producto en ningún lado).
+function calcularPatronCompra(mid){
+  const registros=ventas.filter(v=>v.miembroId===mid);
+  if(registros.length<COMPRA_MIN_VENTAS)return null;
+  const ahora=Date.now();
+  const porClave={};
+  registros.forEach(v=>{
+    const producto=v.productoNombre;
+    if(!producto)return;
+    const d=new Date(v.fecha);
+    const dia=d.getDay();
+    const clave=dia+'|'+producto;
+    const semanasAtras=Math.max(0,(ahora-v.fecha)/(7*86400000));
+    const peso=Math.pow(RECORDATORIO_DECAY_SEMANAL,semanasAtras);
+    if(!porClave[clave])porClave[clave]={diaSemana:dia,producto,compras:0,pesoTotal:0};
+    porClave[clave].compras++;
+    porClave[clave].pesoTotal+=peso;
+  });
+  // Igual que calcularPatronAsistencia: solo compiten las combinaciones producto+día con
+  // suficiente historial real; entre esas, gana la de mayor peso reciente.
+  let mejor=null;
+  Object.values(porClave).forEach(info=>{
+    if(info.compras<COMPRA_MIN_VENTAS)return;
+    if(!mejor||info.pesoTotal>mejor.pesoTotal)mejor=info;
+  });
+  if(!mejor)return null;
+  return{diaSemana:mejor.diaSemana,producto:mejor.producto,compras:mejor.compras};
+}
 // Miembros con patrón detectado, que hoy es su día habitual, ya pasó su hora habitual (+
 // margen de tolerancia) y no tienen asistencia registrada hoy. Respeta recibeRecordatorios:
 // un miembro con recibeRecordatorios===false nunca aparece aquí, sin importar su patrón.
@@ -2203,12 +2249,21 @@ function renderRecordatoriosPendientes(){
   }).join('');
 }
 
+// {producto} solo se rellena si el miembro tiene patrón de compra (calcularPatronCompra) para
+// el MISMO día que su patrón de asistencia (patron.diaSemana) — si compra otro producto otro
+// día distinto, no aplica a este recordatorio y {producto} queda vacío. La frase ya incluye el
+// espacio inicial, así el mensaje se lee bien tanto con como sin ella (sin espacios colgando).
 function _aplicarMsgWARecordatorio(m,patron){
+  const patronCompra=calcularPatronCompra(m.id);
+  const producto=(patronCompra&&patronCompra.diaSemana===patron.diaSemana)
+    ?` y no olvides tu ${patronCompra.producto} de siempre 💪`
+    :'';
   return msgWARecordatorio
     .replace(/\{nombre\}/g,m.nombre)
     .replace(/\{dia\}/g,DIAS_SEMANA[patron.diaSemana])
     .replace(/\{hora\}/g,fmtHoraPromedio(patron.horaPromedio))
-    .replace(/\{meta\}/g,metaProgresoTexto(m.id));
+    .replace(/\{meta\}/g,metaProgresoTexto(m.id))
+    .replace(/\{producto\}/g,producto);
 }
 
 function _updateMsgWARecordatorioPreview(){
@@ -2220,7 +2275,8 @@ function _updateMsgWARecordatorioPreview(){
     .replace(/\{nombre\}/g,'Juan Pérez')
     .replace(/\{dia\}/g,'lunes')
     .replace(/\{hora\}/g,'06:30 p.m.')
-    .replace(/\{meta\}/g,'2/3 días esta semana');
+    .replace(/\{meta\}/g,'2/3 días esta semana')
+    .replace(/\{producto\}/g,' y no olvides tu Creatina de siempre 💪');
 }
 
 function initMsgWARecordatorioEditor(){
@@ -2726,6 +2782,7 @@ function verPerfil(id){
   renderMetaSemanalPerfil(m.id);
   renderBeneficiosPerfil(m);
   renderSeguimientoPerfil(m);
+  renderComprasPerfil(m);
   document.getElementById('p-editar-btn').onclick=()=>{closeModal('modal-perfil');editMiembro(id);};
   document.getElementById('p-wha-btn').onclick=()=>enviarWhatsApp(id);
   openModal('modal-perfil');
@@ -2783,6 +2840,28 @@ async function eliminarNotaPlan(idx){
   recalcMiembrosPorId();
   renderSeguimientoPerfil(miembrosPorId.get(perfilActualId));
   toast('Nota eliminada ✓');
+}
+
+// Sección "Compras" del perfil: historial de ventas ligadas a este miembro (colección
+// `ventas`, ya en memoria), más recientes primero. Si tiene patrón de compra detectado
+// (calcularPatronCompra) para CUALQUIER día — no solo el de su patrón de asistencia — se
+// destaca arriba de la lista. Si no tiene ninguna venta ligada, la tarjeta se oculta (mismo
+// criterio que p-beneficios-card/p-seguimiento-card: sin datos, sin tarjeta vacía).
+function renderComprasPerfil(m){
+  const card=document.getElementById('p-compras-card');
+  const comprasM=ventas.filter(v=>v.miembroId===m.id).sort((a,b)=>b.fecha-a.fecha);
+  if(!comprasM.length){card.style.display='none';return;}
+  card.style.display='block';
+  const patronEl=document.getElementById('p-compras-patron');
+  const patron=calcularPatronCompra(m.id);
+  if(patron){
+    patronEl.style.display='block';
+    patronEl.innerHTML=`<div class="ec-row" style="color:var(--accent);font-weight:600">🔁 Compra frecuentemente: ${escAttr(patron.producto)} los ${DIAS_SEMANA[patron.diaSemana]}</div>`;
+  }else{
+    patronEl.style.display='none';
+    patronEl.innerHTML='';
+  }
+  document.getElementById('p-compras-lista').innerHTML=comprasM.map(v=>`<div class="ec-row"><span>${escAttr(v.productoNombre||'—')}${v.cantidad?` x${v.cantidad}`:''}</span><span>$${(v.total||0).toLocaleString()} · ${fmtDate(v.fecha)}</span></div>`).join('');
 }
 
 // SAVE MIEMBRO

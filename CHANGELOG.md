@@ -4,6 +4,21 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Patrón de compra: mención de producto en el recordatorio de asistencia + sección "Compras" en el perfil
+
+**Qué se hizo:**
+- Nueva `calcularPatronCompra(mid)`, calcada de `calcularPatronAsistencia`: agrupa las ventas de un miembro (`ventas`, filtrando por `miembroId`) por producto + día de la semana, ponderando por antigüedad con el mismo `RECORDATORIO_DECAY_SEMANAL`. Exige al menos `COMPRA_MIN_VENTAS` (3) compras reales de ese producto en ese día para considerarlo patrón; si no, devuelve `null` — cero cambio de comportamiento para miembros sin historial suficiente de compras.
+- Nueva variable `{producto}` en `MSG_WA_RECORDATORIO_DEFAULT` y `msgWARecordatorio`. `_aplicarMsgWARecordatorio(m,patron)` calcula `calcularPatronCompra(m.id)` y solo la rellena (con una frase completa, ej. " y no olvides tu Creatina de siempre 💪") cuando el día de ese patrón de compra coincide con `patron.diaSemana` (el día del patrón de asistencia de ese mismo recordatorio); si no hay patrón o es de otro día, `{producto}` queda como cadena vacía. La plantilla por defecto quedó `"...¡Te esperamos en el gym{producto}!"` — la frase ya trae el espacio inicial, así que el mensaje se lee limpio en ambos casos (sin espacios ni puntuación colgando).
+- `_updateMsgWARecordatorioPreview()` y el bloque de "Variables disponibles" del editor de mensaje (Alertas → Recordatorios) ahora incluyen `{producto}`, con el mismo texto de ejemplo en el preview estático.
+- Nueva sección "🛒 Compras" en el perfil del miembro (`modal-perfil`): lista su historial de ventas ligadas (`ventas` filtradas por `miembroId`, más recientes primero), igual patrón visual que las demás tarjetas del perfil (`ec-card`/`ec-row`). Si `calcularPatronCompra(m.id)` detecta un patrón para cualquier día (no solo el del patrón de asistencia), se destaca arriba, ej. "🔁 Compra frecuentemente: Creatina los miércoles". Si el miembro no tiene ninguna venta ligada, la tarjeta se oculta (mismo criterio que las tarjetas de Beneficios/Seguimiento, que ya se ocultan sin datos).
+- No se tocó `calcularPatronAsistencia`, `RECORDATORIO_MIN_ASISTENCIAS`, `RECORDATORIO_DECAY_SEMANAL` ni `recordatoriosPendientes()`; tampoco se replicó el patrón de compra en la tabla de Miembros ni en otra pantalla — solo en el mensaje de recordatorio y en el perfil, como se pidió.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `git diff` completo revisado: cambios contenidos a los puntos pedidos (constante nueva, `calcularPatronCompra`, `_aplicarMsgWARecordatorio`, preview, HTML de variables disponibles, HTML+función de la sección Compras del perfil, llamada agregada en `verPerfil`).
+- Simulación en Node de `calcularPatronCompra` y `_aplicarMsgWARecordatorio` con datos falsos: menos de `COMPRA_MIN_VENTAS` ventas totales → `null`; 3 compras del mismo producto el mismo día → patrón correcto; compras dispersas en productos/días distintos sin ninguna combinación repetida 3 veces → `null`; entre dos productos con igual número de compras, gana el de compras más recientes (peso por antigüedad) igual que en el patrón de asistencia; ventas de otro miembro no contaminan el cálculo.
+- Integración probada: cuando el día del patrón de compra coincide con el día del patrón de asistencia, el mensaje final incluye la mención de producto sin espacios dobles ni puntuación colgando; cuando el día no coincide, o el miembro no tiene ventas, el mensaje queda idéntico al de siempre ("...¡Te esperamos en el gym!").
+
 ## 2026-08-25 — Campo "Zona" en Equipo del Gym (Inventario)
 
 **Qué se hizo:**
