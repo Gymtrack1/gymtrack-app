@@ -828,7 +828,7 @@ let planListener=null,listenerRetries=0,planPollInterval=null;
 let sesionInicializada=false; // evita reinicializar (loadAll + setInterval) si 'firebaseReady' se dispara más de una vez
 const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
-const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym{producto}!';
+const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym!{producto}';
 let msgWARecordatorio=MSG_WA_RECORDATORIO_DEFAULT;
 // Tolerancia tras la hora habitual antes de considerar "no vino" (evita falsos positivos por
 // llegar unos minutos tarde). Ver calcularPatronAsistencia/recordatoriosPendientes más abajo.
@@ -2251,12 +2251,13 @@ function renderRecordatoriosPendientes(){
 
 // {producto} solo se rellena si el miembro tiene patrón de compra (calcularPatronCompra) para
 // el MISMO día que su patrón de asistencia (patron.diaSemana) — si compra otro producto otro
-// día distinto, no aplica a este recordatorio y {producto} queda vacío. La frase ya incluye el
-// espacio inicial, así el mensaje se lee bien tanto con como sin ella (sin espacios colgando).
+// día distinto, no aplica a este recordatorio y {producto} queda vacío. Es una frase corta y
+// separada (con su propio espacio inicial), no un remate pegado a la oración anterior, así el
+// mensaje se lee simple tanto con como sin ella (sin espacios colgando).
 function _aplicarMsgWARecordatorio(m,patron){
   const patronCompra=calcularPatronCompra(m.id);
   const producto=(patronCompra&&patronCompra.diaSemana===patron.diaSemana)
-    ?` y no olvides tu ${patronCompra.producto} de siempre 💪`
+    ?` Y no olvides tu ${patronCompra.producto} de siempre 💪`
     :'';
   return msgWARecordatorio
     .replace(/\{nombre\}/g,m.nombre)
@@ -2276,7 +2277,7 @@ function _updateMsgWARecordatorioPreview(){
     .replace(/\{dia\}/g,'lunes')
     .replace(/\{hora\}/g,'06:30 p.m.')
     .replace(/\{meta\}/g,'2/3 días esta semana')
-    .replace(/\{producto\}/g,' y no olvides tu Creatina de siempre 💪');
+    .replace(/\{producto\}/g,' Y no olvides tu Creatina de siempre 💪');
 }
 
 function initMsgWARecordatorioEditor(){

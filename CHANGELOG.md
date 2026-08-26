@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-08-25 — Ajuste de redacción: {producto} como oración separada en el recordatorio
+
+**Qué se hizo:**
+- El usuario reportó que la redacción anterior ("¡Te esperamos en el gym y no olvides tu Creatina de siempre 💪!") sonaba forzada, todo pegado en una sola oración larga.
+- Se cambió a dos oraciones simples: `MSG_WA_RECORDATORIO_DEFAULT` pasó de `"...¡Te esperamos en el gym{producto}!"` a `"...¡Te esperamos en el gym!{producto}"`, y la frase que arma `{producto}` en `_aplicarMsgWARecordatorio`/`_updateMsgWARecordatorioPreview` pasó de `" y no olvides tu X de siempre 💪"` a `" Y no olvides tu X de siempre 💪"` (mayúscula inicial, oración propia). Resultado: `"¡Te esperamos en el gym! Y no olvides tu Creatina de siempre 💪"` en vez de una sola frase corrida. Sigue igual de limpio sin producto: `"¡Te esperamos en el gym!"`.
+- Mismo comportamiento de fondo sin cambios (cuándo se rellena `{producto}`, `calcularPatronCompra`, etc.) — solo se ajustó el texto para que se lea más simple.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Reejecutada la simulación en Node de `_aplicarMsgWARecordatorio`: con patrón de compra coincidente el mensaje termina en `"...gym! Y no olvides tu Creatina de siempre 💪"` (oración separada, sin espacios dobles); sin patrón o sin ventas, el mensaje sigue idéntico al de siempre (`"...gym!"`).
+
 ## 2026-08-25 — Patrón de compra: mención de producto en el recordatorio de asistencia + sección "Compras" en el perfil
 
 **Qué se hizo:**
