@@ -4,6 +4,22 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Alerta de Promoción/Paquete en Alertas (envío masivo por WhatsApp con cola resumible)
+
+**Qué se hizo:**
+- Nueva sección "🎉 Alerta de Promoción/Paquete" al final de la pestaña Alertas, después de Recordatorios de meta semanal. Sigue el mismo patrón visual que los otros editores de mensaje de esa pestaña (tarjeta con textarea) y que las tarjetas `.alert-card` de las demás listas.
+- Textarea de mensaje libre (`wamsg-promo-textarea`): el staff escribe ahí la promoción del momento. **No se guarda en Firestore ni se conecta con la colección `promociones`** (esa se sigue usando solo al registrar pagos) — es una herramienta de aviso puntual, independiente. Se recuerda con `sessionStorage` mientras dure la pestaña del navegador (se pierde al cerrarla o reiniciar), no hay ningún valor hardcodeado.
+- `promoMiembrosElegibles()`: mismo criterio que `recordatoriosPendientes()` — excluye a los miembros con `recibeRecordatorios===false`.
+- Botón individual "📱" por miembro (`enviarWhatsAppPromo(mid)`): arma la URL `wa.me` con el teléfono del miembro y el texto del textarea (mismo patrón que la `enviarWhatsApp` ya existente — no se pudo reutilizar literalmente esa función porque su firma no acepta un mensaje arbitrario, siempre usa la plantilla de vencimiento `msgWA`; se replicó su mismo patrón de construcción de URL en vez de forzar un mensaje equivocado).
+- Botón "🚀 Enviar a todos" / "▶ Siguiente": como GymTrack no tiene integración con WhatsApp Business API, no hay forma de mandar de verdad a todos con una sola acción silenciosa (cada `wa.me` abre una pestaña que el staff debe confirmar a mano, y los navegadores bloquean abrir muchas de golpe). Es la MISMA función (`enviarWhatsAppPromoSiguiente`) en cada clic: abre el WhatsApp del primer miembro con teléfono que todavía no se marcó como enviado. No hace falta un índice de cola aparte — el propio registro de "ya enviados" (`promoEnviados`, un `Set` en memoria) recuerda el lugar, así que retomar un envío a medias es simplemente volver a darle clic al mismo botón, incluso si el staff se fue a atender otra cosa. El botón muestra el progreso ("▶ Siguiente (2/5 enviados)") y se deshabilita cuando ya no queda nadie pendiente con teléfono.
+- Cada miembro de la lista muestra "✅ Enviado" en vez del botón una vez que se le mandó el aviso (en esta sesión de la pestaña).
+- `initPromoAlerta()` se llama solo al entrar a la pestaña Alertas (`activarTab`), igual que los otros dos editores de mensaje (`initMsgWAEditor`/`initMsgWARecordatorioEditor`) — deliberadamente NO se enganchó a los mismos `renderAlertas()`/`renderRecordatoriosPendientes()` que se disparan tras cada pago/asistencia/etc., para que el progreso de envío y el texto del mensaje no se borren si el staff registra un pago mientras está a la mitad de mandar la promoción.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `git diff` completo revisado: cambios contenidos al HTML de la pestaña Alertas, las funciones nuevas de esta sección, y una sola línea agregada en `activarTab` — sin tocar `enviarWhatsApp`, `recordatoriosPendientes`, ni la colección `promociones`.
+- Simulación en Node de la lógica completa (mockeando `window.open`): `recibeRecordatorios===false` se excluye de la lista; mensaje vacío bloquea el envío (individual y masivo) sin marcar a nadie como enviado; envío individual exitoso arma la URL `wa.me` con el teléfono y mensaje correctos y marca al miembro; un miembro sin teléfono nunca se puede marcar como enviado y no rompe el flujo; "Enviar a todos"/"Siguiente" toma siempre al primer pendiente con teléfono, saltando a los ya enviados y a los que no tienen teléfono; sin pendientes, avisa que ya se envió a todos en vez de fallar; y se confirmó la resumibilidad — con un `Set` de enviados ya poblado (simulando que el staff se detuvo a la mitad), volver a llamar a la función no reenvía a quien ya estaba marcado.
+
 ## 2026-08-25 — Ajuste de redacción: {producto} como oración separada en el recordatorio
 
 **Qué se hizo:**

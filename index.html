@@ -400,6 +400,22 @@
     </div>
 
     <div id="recordatorios-content"></div>
+
+    <div class="section-title" style="margin-top:32px">🎉 Alerta de Promoción/Paquete</div>
+
+    <!-- Editor de mensaje de promoción: texto libre del momento, NO se guarda en Firestore ni
+    se conecta con la colección `promociones` (esa se usa solo al registrar pagos) — es solo
+    una herramienta de aviso puntual. Se recuerda con sessionStorage mientras dure la pestaña
+    del navegador (ver guardarPromoMsgSesion/initPromoAlerta). -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--muted);margin-bottom:10px">📢 MENSAJE DE LA PROMOCIÓN</div>
+      <textarea id="wamsg-promo-textarea" rows="3" placeholder="Ej: 🎉 Este mes: paga 3 meses y llévate el 4to gratis" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;line-height:1.5;box-sizing:border-box" oninput="guardarPromoMsgSesion()"></textarea>
+      <div style="display:flex;align-items:center;justify-content:flex-end;margin-top:10px">
+        <button id="promo-btn-todos" class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppPromoSiguiente()">🚀 Enviar a todos</button>
+      </div>
+    </div>
+
+    <div id="promo-lista-content"></div>
   </div>
 
   <!-- FINANZAS -->
@@ -2237,6 +2253,73 @@ function enviarWhatsAppTodos(){
   urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
 }
 
+// ALERTA DE PROMOCIÓN/PAQUETE (mensaje libre, no ligado a la colección `promociones` ni
+// guardado en Firestore — ver nota junto al HTML de esta sección). `promoEnviados` vive solo
+// en memoria (se reinicia al recargar la página): guarda qué miembros ya recibieron el aviso
+// en esta sesión, para no perder el lugar si el staff se detiene a la mitad del envío masivo.
+let promoEnviados=new Set();
+
+// GymTrack no tiene integración con WhatsApp Business API: no se puede "enviar a todos" de
+// verdad con una sola acción silenciosa (cada wa.me abre una pestaña que el staff confirma a
+// mano, y los navegadores bloquean abrir muchas de golpe). Por eso la lista solo incluye a
+// quien puede recibir avisos por WhatsApp — mismo criterio que recordatoriosPendientes().
+function promoMiembrosElegibles(){
+  return miembros.filter(m=>m.recibeRecordatorios!==false);
+}
+function _promoMensajeActual(){
+  const txt=document.getElementById('wamsg-promo-textarea');
+  return txt?txt.value.trim():'';
+}
+function guardarPromoMsgSesion(){
+  try{sessionStorage.setItem('gymtrackPromoMsg',document.getElementById('wamsg-promo-textarea').value);}catch(e){}
+}
+function initPromoAlerta(){
+  const txt=document.getElementById('wamsg-promo-textarea');
+  if(!txt)return;
+  try{txt.value=sessionStorage.getItem('gymtrackPromoMsg')||'';}catch(e){}
+  renderPromoLista();
+}
+function renderPromoLista(){
+  const el=document.getElementById('promo-lista-content');
+  if(!el)return;
+  const lista=promoMiembrosElegibles();
+  const btnTodos=document.getElementById('promo-btn-todos');
+  if(!lista.length){
+    el.innerHTML='<div class="empty"><div class="empty-icon">📢</div><div>No hay miembros para avisar (todos tienen desactivados los recordatorios)</div></div>';
+    if(btnTodos)btnTodos.disabled=true;
+    return;
+  }
+  const conTel=lista.filter(m=>m.telefono);
+  const enviados=conTel.filter(m=>promoEnviados.has(m.id)).length;
+  if(btnTodos){
+    btnTodos.disabled=!conTel.length||enviados>=conTel.length;
+    btnTodos.textContent=!conTel.length||enviados===0?'🚀 Enviar a todos':enviados<conTel.length?`▶ Siguiente (${enviados}/${conTel.length} enviados)`:`✅ Enviado a todos (${conTel.length}/${conTel.length})`;
+  }
+  el.innerHTML=lista.map(m=>{
+    const accion=promoEnviados.has(m.id)
+      ?'<span style="color:var(--green);font-weight:600;font-size:12px">✅ Enviado</span>'
+      :`<button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppPromo('${m.id}')" ${m.telefono?'':'disabled'}>📱</button>`;
+    return`<div class="alert-card"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px;align-items:center">${accion}</div></div>`;
+  }).join('');
+}
+function enviarWhatsAppPromo(mid){
+  const msg=_promoMensajeActual();
+  if(!msg)return alert('Escribe el mensaje de la promoción primero');
+  const m=miembros.find(x=>x.id===mid);if(!m||!m.telefono)return alert('Este miembro no tiene teléfono registrado');
+  const tel=m.telefono.replace(/\D/g,'');
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+  promoEnviados.add(mid);
+  renderPromoLista();
+}
+// "Enviar a todos" y "Siguiente" son el mismo botón/función: cada clic abre el WhatsApp del
+// primer miembro de la lista que TODAVÍA no se marcó como enviado. Así retomar un envío a
+// medias es simplemente volver a darle clic — no hace falta recordar en qué miembro se quedó.
+function enviarWhatsAppPromoSiguiente(){
+  const pendiente=promoMiembrosElegibles().find(m=>m.telefono&&!promoEnviados.has(m.id));
+  if(!pendiente)return alert('Ya se envió el aviso a todos los miembros con teléfono registrado.');
+  enviarWhatsAppPromo(pendiente.id);
+}
+
 function renderRecordatoriosPendientes(){
   const el=document.getElementById('recordatorios-content');
   if(!el)return;
@@ -3450,7 +3533,7 @@ function activarTab(name,event){
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
   aplicarFondoActivo();
-  if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();}
+  if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();initPromoAlerta();}
   // Detalle fila por fila de Miembros solo se construye al entrar a esta pestaña
   if(name==='miembros')renderMiembros(document.getElementById('search-miembros').value);
 }
