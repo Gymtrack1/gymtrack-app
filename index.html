@@ -340,6 +340,7 @@ contenedor, igual que app-screen/admin-screen. -->
         <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
         <button onclick="corregirFechasImportadas()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🛠 Corregir Fechas Importadas</button>
         <button onclick="abrirModalCategorias()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🏷️ Categorías</button>
+        <button onclick="sincronizarTodosLosMiembrosPublicos()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🔄 Sincronizar Portal QR</button>
         <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:var(--text-accent);border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
       </div>
     </div>
@@ -1648,9 +1649,29 @@ function fmtDateInputVal(ts){
 // segundo plano de la app).
 async function sincronizarMiembroPublico(miembroId){
   const m=miembros.find(x=>x.id===miembroId);
-  if(!m)return;
+  if(!m)return false;
   const data={numero:m.numero||0,nombre:m.nombre,vencimientoTs:getVencimiento(miembroId),estatura:m.estatura||null,fechaNacimiento:m.fechaNacimiento||null};
-  try{await setDoc(userDoc('miembrosPublicos',miembroId),data);}catch(e){/* espejo del portal: no crítico si falla */}
+  try{await setDoc(userDoc('miembrosPublicos',miembroId),data);return true;}catch(e){return false;/* espejo del portal: no crítico si falla */}
+}
+// Sincronización manual de TODOS los miembros al portal QR (botón en Miembros): necesaria una
+// sola vez para miembros que ya existían antes de esta función — sincronizarMiembroPublico
+// solo se dispara sola en saveMiembro/savePago/_guardarImportados (altas, ediciones y pagos
+// nuevos), así que un miembro que nadie ha vuelto a tocar desde entonces nunca generó su
+// espejo público y el portal QR no lo encuentra al buscar por número+nombre. No hace falta
+// volver a correr esto después de la primera vez, salvo que se sospeche que algo quedó
+// desincronizado.
+async function sincronizarTodosLosMiembrosPublicos(){
+  if(!miembros.length)return alert('No hay miembros que sincronizar');
+  if(!confirm(`¿Sincronizar los ${miembros.length} miembros con el portal QR? Es necesario una sola vez — a partir de ahora, cada alta, edición o pago nuevo se sincroniza solo.`))return;
+  toastPersistente(`Sincronizando 0 / ${miembros.length}...`);
+  let hechos=0,fallos=0;
+  await Promise.all(miembros.map(async m=>{
+    const ok=await sincronizarMiembroPublico(m.id);
+    if(!ok)fallos++;
+    hechos++;
+    toastPersistente(`Sincronizando ${hechos} / ${miembros.length}...`);
+  }));
+  toast(fallos?`Sincronizados ${miembros.length-fallos}/${miembros.length} — ${fallos} fallaron, intenta de nuevo`:'Todos los miembros sincronizados con el portal QR ✓');
 }
 // Mapeo compartido días<->nombre de plan (usado al registrar pagos y al importar desde Excel)
 const PLAN_DIAS_NOMBRE={15:'Quincenal',30:'Mensual',60:'Bimestral',90:'Trimestral',180:'Semestral',365:'Anual'};

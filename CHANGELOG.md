@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Fix: "No encontramos tu registro" para miembros que ya existían antes del portal QR
+
+**Qué se hizo:**
+- Con el mensaje de error real ya visible (ver entrada anterior), el usuario probó el portal QR con un miembro real (#001) y confirmó: ya no es error de conexión/permisos — ahora dice "No encontramos tu registro. Verifica tu número y tu nombre.".
+- Causa raíz: `miembrosPublicos` (el espejo que usa el portal para buscar por número+nombre) solo se llena automáticamente en `saveMiembro`/`savePago`/`_guardarImportados` — es decir, en altas, ediciones y pagos NUEVOS a partir de que se agregó esta función. Un miembro que ya existía antes y a quien nadie le ha vuelto a tocar el registro o cobrado un pago nuevo, nunca generó su espejo, así que el portal no lo encuentra (no es un bug de la búsqueda en sí, es que el documento simplemente no existe todavía).
+- Se agregó un botón nuevo "🔄 Sincronizar Portal QR" en la pestaña Miembros (junto a "🏷️ Categorías"), que llama a `sincronizarTodosLosMiembrosPublicos()`: recorre TODOS los miembros y crea/actualiza su espejo público de una sola vez. Solo hace falta usarlo una vez (para ponerse al día con los miembros existentes) — de ahí en adelante, cada alta/edición/pago nuevo se sigue sincronizando solo, como ya estaba.
+- `sincronizarMiembroPublico` ahora devuelve `true`/`false` según si la escritura tuvo éxito (antes no devolvía nada), para que la sincronización masiva pueda avisar si algo falló en vez de asumir que todo salió bien.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Simulación en Node de la lógica de conteo (éxitos/fallos) del sincronizado masivo: cuenta bien con todos exitosos, con fallos mezclados, y con una lista vacía (sin miembros) sin romperse.
+- Flujo esperado para el usuario: entrar a Miembros → clic en "🔄 Sincronizar Portal QR" → confirmar → esperar el toast de progreso → volver a intentar identificarse en el portal QR con el mismo número/nombre, que ahora sí debería encontrarlo.
+
 ## 2026-09-01 — Diagnóstico: mostrar el error real del portal ("No pudimos conectar")
 
 **Qué se hizo:**
