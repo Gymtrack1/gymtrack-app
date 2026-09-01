@@ -246,7 +246,10 @@ Contenido armado por JS (renderPortalIdentify/renderPortalHome) — este div sol
 contenedor, igual que app-screen/admin-screen. -->
 <div id="portal-screen">
   <div class="portal-box">
-    <div class="portal-header"><div class="login-logo">GYMTRACK</div></div>
+    <div class="portal-header">
+      <img id="portal-logo-img" class="login-logo-img" alt="Logo del gimnasio">
+      <div class="login-logo" id="portal-logo-txt">GYMTRACK</div>
+    </div>
     <div id="portal-content"></div>
   </div>
 </div>
@@ -1056,8 +1059,8 @@ function resetColorTarjetas(){
   document.documentElement.style.removeProperty('--text-surface');
 }
 function aplicarLogo(url){
-  const imgs=[document.getElementById('login-logo-img'),document.getElementById('nav-logo-img')];
-  const txts=[document.getElementById('login-logo-txt'),document.getElementById('nav-logo-txt')];
+  const imgs=[document.getElementById('login-logo-img'),document.getElementById('nav-logo-img'),document.getElementById('portal-logo-img')];
+  const txts=[document.getElementById('login-logo-txt'),document.getElementById('nav-logo-txt'),document.getElementById('portal-logo-txt')];
   imgs.forEach(img=>{if(!img)return;if(url){img.src=url;img.style.display='block';}else{img.style.display='none';img.removeAttribute('src');}});
   txts.forEach(txt=>{if(!txt)return;txt.style.display=url?'none':'';});
 }
@@ -1672,6 +1675,17 @@ async function sincronizarTodosLosMiembrosPublicos(){
     toastPersistente(`Sincronizando ${hechos} / ${miembros.length}...`);
   }));
   toast(fallos?`Sincronizados ${miembros.length-fallos}/${miembros.length} — ${fallos} fallaron, intenta de nuevo`:'Todos los miembros sincronizados con el portal QR ✓');
+}
+// Espejo público de la personalización visual (usuarios/{uid}/config/personalizacion): SOLO
+// colorAcento/colorFondo/colorTarjetas/logoUrl — el doc real usuarios/{uid} sigue cerrado a
+// lectura anónima (trae plan, pinFinanzas, email, etc), mismo motivo que existe
+// miembrosPublicos para los miembros. La usa el portal QR para verse con los colores/logo del
+// gimnasio en vez del verde/fondo por defecto de GymTrack. Se llama (sin await, no bloquea el
+// flujo principal si falla) cada vez que cambia algo de personalización: guardarPersonalizacion,
+// restaurarColorDefault, onLogoFileChange, quitarLogo.
+async function sincronizarPersonalizacionPublica(){
+  const data={colorAcento:personalizacion.colorAcento||null,colorFondo:personalizacion.colorFondo||null,colorTarjetas:personalizacion.colorTarjetas||null,logoUrl:personalizacion.logoUrl||null};
+  try{await setDoc(userDoc('config','personalizacion'),data);}catch(e){/* espejo del portal: no crítico si falla */}
 }
 // Mapeo compartido días<->nombre de plan (usado al registrar pagos y al importar desde Excel)
 const PLAN_DIAS_NOMBRE={15:'Quincenal',30:'Mensual',60:'Bimestral',90:'Trimestral',180:'Semestral',365:'Anual'};
@@ -3645,6 +3659,7 @@ async function onLogoFileChange(input){
     personalizacion.logoUrl=url;
     aplicarLogo(url);
     guardarBrandingCache();
+    sincronizarPersonalizacionPublica();
     renderPersonalizacionModal();
     toast('Logo actualizado ✓');
   }catch(e){toast('Error al subir el logo: '+mensajeError(e),'err');}
@@ -3657,6 +3672,7 @@ async function quitarLogo(){
     personalizacion.logoUrl=null;
     aplicarLogo(null);
     guardarBrandingCache();
+    sincronizarPersonalizacionPublica();
     renderPersonalizacionModal();
     toast('Logo eliminado ✓');
     if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
@@ -3709,6 +3725,7 @@ async function guardarPersonalizacion(){
     aplicarColorFondo(colorFondo);
     aplicarColorTarjetas(colorTarjetas);
     guardarBrandingCache();
+    sincronizarPersonalizacionPublica();
     toast('Colores guardados ✓');
   }catch(e){toast('Error al guardar: '+mensajeError(e),'err');}
 }
@@ -3723,6 +3740,7 @@ async function restaurarColorDefault(){
     resetColorFondo();
     resetColorTarjetas();
     guardarBrandingCache();
+    sincronizarPersonalizacionPublica();
     document.getElementById('pz-color').value=DEFAULT_ACCENT;
     document.getElementById('pz-color-fondo').value=DEFAULT_BG;
     document.getElementById('pz-color-tarjetas').value=DEFAULT_SURFACE;
@@ -3912,6 +3930,14 @@ async function submitPin(){
 // propio) — no es una regla de Firestore a prueba de manipulación técnica directa. Mismo nivel
 // de confianza que ya tiene hoy el resto del sistema.
 const TIPOS_SERIE=['Calentamiento','Normal','PR','Dropset','Al fallo'];
+// Ayuda chica debajo de los botones de tipo de serie, solo para los términos menos obvios —
+// se muestra la del tipo que esté seleccionado en ese momento (ver portalElegirTipo).
+const DESCRIPCION_TIPO_SERIE={
+  'Calentamiento':'Peso ligero para preparar el músculo antes de tu carga normal.',
+  'PR':'Tu mejor marca personal — el peso más alto que has levantado en esta máquina.',
+  'Dropset':'Bajas el peso a media serie sin descansar, para seguir hasta el fallo.',
+  'Al fallo':'Repites hasta que ya no puedas completar otra repetición con buena forma.'
+};
 let portalMiembro=null;     // {id, numero, nombre, vencimientoTs, estatura, fechaNacimiento} una vez identificado
 let portalMaquinas=[];      // catálogo de máquinas del gimnasio
 let portalRegistros=[];     // registrosProgreso del miembro identificado (solo los suyos)
@@ -3924,12 +3950,34 @@ function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 }
 
-window.addEventListener('portalReady',()=>{
+window.addEventListener('portalReady',async()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; queryFn=window._query; whereFn=window._where;
+  await cargarPersonalizacionPortal(); // antes del identify, para que ya se vea con los colores/logo del gym desde el primer paso
   renderPortalIdentify();
 });
+
+// Aplica la personalización visual del gimnasio (colorAcento/colorFondo/colorTarjetas/logoUrl)
+// al portal — lee usuarios/{gym}/config/personalizacion (espejo público, ver
+// sincronizarPersonalizacionPublica) y reutiliza EXACTAMENTE las mismas funciones que ya pinta
+// el panel de staff (aplicarColorAcento/Fondo/Tarjetas/Logo). Ojo: NO usa
+// aplicarPersonalizacion()/guardarBrandingCache() — esas existen para la pantalla de login del
+// panel de staff, y usarlas aquí sobreescribiría el cache local de branding de esa pantalla si
+// alguien escanea un QR en el MISMO dispositivo que su staff a veces usa (ej. una tablet
+// compartida en recepción). Si el gimnasio nunca configuró nada, el doc no existe y el portal
+// se ve exactamente igual que siempre (verde/fondo por defecto) — cero cambio visual.
+async function cargarPersonalizacionPortal(){
+  try{
+    const snap=await getDoc(gymDoc(window._portalGym,'config','personalizacion'));
+    if(!snap.exists())return;
+    const d=snap.data();
+    if(d.colorAcento)aplicarColorAcento(d.colorAcento);
+    if(d.colorFondo)aplicarColorFondo(d.colorFondo);
+    if(d.colorTarjetas)aplicarColorTarjetas(d.colorTarjetas);
+    if(d.logoUrl)aplicarLogo(d.logoUrl);
+  }catch(e){/* sin personalización o falló la lectura: el portal se ve default, no se rompe nada */}
+}
 
 function renderPortalIdentify(){
   const el=document.getElementById('portal-content');
@@ -3985,6 +4033,9 @@ function portalUltimoPeso(){
   return ps.length?ps[0].peso:null;
 }
 
+// Orden de las secciones = qué tan seguido se usan: 1) Registrar serie, lo que motivó el
+// escaneo del QR; 2) Mi progreso, para revisar la bitácora de esa misma máquina justo después
+// de registrar; 3) Mi Perfil Físico al final, porque se edita con mucha menos frecuencia.
 function renderPortalHome(){
   const el=document.getElementById('portal-content');
   let html=`<div class="portal-hello">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
@@ -3992,12 +4043,13 @@ function renderPortalHome(){
     const maquina=portalMaquinas.find(x=>x.id===window._portalMaquina);
     html+=renderPortalRegistrarSerieSeccion(maquina);
   }
-  html+=renderPortalDatosSeccion();
-  html+=renderPortalPesoSeccion();
   html+=renderPortalProgresoSeccion();
+  html+=renderPortalPerfilFisicoSeccion();
   el.innerHTML=html;
   const otro=document.getElementById('portal-tipo-otro');
   if(otro)otro.style.display=portalTipoSel==='__otro__'?'block':'none';
+  const ayuda=document.getElementById('portal-tipo-ayuda');
+  if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':'');
   dibujarChartPortalPeso();
   dibujarChartPortalProgreso();
 }
@@ -4013,6 +4065,7 @@ function renderPortalRegistrarSerieSeccion(maquina){
         ${TIPOS_SERIE.map(t=>`<button type="button" class="btn ${t===portalTipoSel?'btn-primary':'btn-ghost'} btn-sm" data-tipo="${t}" onclick="portalElegirTipo('${t}')">${t}</button>`).join('')}
         <button type="button" class="btn ${portalTipoSel==='__otro__'?'btn-primary':'btn-ghost'} btn-sm" data-tipo="__otro__" onclick="portalElegirTipo('__otro__')">Otro</button>
       </div>
+      <div id="portal-tipo-ayuda" style="font-size:11px;color:var(--muted);margin-top:6px;min-height:14px">${escAttr(DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':''))}</div>
       <input type="text" id="portal-tipo-otro" placeholder="Escribe el tipo" style="display:none;margin-top:8px;width:100%">
     </div>
     <div class="form-row">
@@ -4031,6 +4084,8 @@ function portalElegirTipo(t){
   });
   const otro=document.getElementById('portal-tipo-otro');
   if(otro)otro.style.display=t==='__otro__'?'block':'none';
+  const ayuda=document.getElementById('portal-tipo-ayuda');
+  if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[t]||(t==='__otro__'?'Escribe el nombre del tipo de serie.':'');
 }
 async function portalGuardarSerie(){
   if(!portalTipoSel)return alert('Elige el tipo de serie');
@@ -4085,21 +4140,6 @@ function dibujarChartPortalProgreso(){
   });
 }
 
-// MI PESO CORPORAL (Parte 2a)
-function renderPortalPesoSeccion(){
-  const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>⚖️ Mi peso corporal</h3>
-    <div class="form-row">
-      <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-peso-valor" placeholder="70.5"></div>
-      <div class="form-group" style="align-self:flex-end"><button class="btn btn-primary" style="width:100%" onclick="portalGuardarPeso()">Guardar</button></div>
-    </div>
-    ${historial.length?`
-    <div class="chart-wrap" style="height:180px"><canvas id="chart-portal-peso"></canvas></div>
-    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${p.peso}kg</td></tr>`).join('')}</tbody></table></div>`
-    :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
-  </div>`;
-}
 async function portalGuardarPeso(){
   const peso=parseFloat(document.getElementById('portal-peso-valor').value);
   if(!peso)return alert('Escribe tu peso');
@@ -4124,18 +4164,34 @@ function dibujarChartPortalPeso(){
   });
 }
 
-// MIS DATOS: estatura, fecha de nacimiento, edad calculada, IMC (Parte 2b/2c/2d)
-function renderPortalDatosSeccion(){
+// MI PERFIL FÍSICO: fecha de nacimiento + estatura + IMC (Parte 2b/2c/2d) y peso corporal con
+// historial (Parte 2a) en una sola tarjeta — son datos relacionados, y el IMC solo se puede
+// calcular con los dos juntos (peso más reciente + estatura), así que separarlos en dos
+// tarjetas obligaba a saltar entre ellas para ver el número completo. Va al final del portal
+// porque se edita con mucha menos frecuencia que registrar una serie o revisar el progreso.
+function renderPortalPerfilFisicoSeccion(){
   const edad=edadMostrar(portalMiembro);
   const imc=calcularIMC(portalUltimoPeso(),portalMiembro.estatura);
+  const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>📋 Mis datos</h3>
+    <h3>🧍 Mi Perfil Físico</h3>
     <div class="form-row">
       <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
       <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${portalMiembro.estatura||''}"></div>
     </div>
-    <button class="btn btn-ghost btn-sm" onclick="portalGuardarDatos()">Guardar datos</button>
-    <div style="margin-top:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años<br>`:''}${imc!==null?`IMC: ${imc}`:''}</div>
+    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarDatos()">Guardar datos</button>
+    ${(edad||imc!==null)?`<div style="margin-top:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC: ${imc}`:''}</div>`:''}
+
+    <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+
+    <div class="form-row">
+      <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-peso-valor" placeholder="70.5"></div>
+      <div class="form-group" style="align-self:flex-end"><button class="btn btn-primary" style="width:100%" onclick="portalGuardarPeso()">Guardar peso</button></div>
+    </div>
+    ${historial.length?`
+    <div class="chart-wrap" style="height:180px"><canvas id="chart-portal-peso"></canvas></div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${p.peso}kg</td></tr>`).join('')}</tbody></table></div>`
+    :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
   </div>`;
 }
 async function portalGuardarDatos(){

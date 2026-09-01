@@ -15,6 +15,7 @@ rules_version = '2';
 //   usuarios/{gymId}/miembrosPublicos/{id}  espejo público mínimo por miembro (ver más abajo)
 //   usuarios/{gymId}/registrosProgreso/{id} series registradas desde el QR (ver más abajo)
 //   usuarios/{gymId}/pesoCorporal/{id}      peso corporal (staff + portal QR, ver más abajo)
+//   usuarios/{gymId}/config/personalizacion espejo público de colores/logo (ver más abajo)
 //
 // Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
 // datos de otro gimnasio, sin importar que llame al SDK de Firestore
@@ -68,6 +69,16 @@ rules_version = '2';
 //
 //   usuarios/{gymId}/pesoCorporal      — igual que registrosProgreso arriba,
 //     mismo alcance y misma nota de confianza.
+//
+//   usuarios/{gymId}/config/personalizacion — espejo público de SOLO
+//     colorAcento/colorFondo/colorTarjetas/logoUrl (mantenido por el staff vía
+//     sincronizarPersonalizacionPublica() en index.html). El doc real
+//     usuarios/{gymId} sigue 100% cerrado a lectura anónima (trae plan,
+//     pinFinanzas, email, etc.) — mismo motivo que miembrosPublicos: Firestore
+//     no puede exponer solo algunos campos de un documento vía reglas. Lo usa
+//     el portal para verse con los colores/logo del gimnasio en vez del
+//     verde/fondo por defecto de GymTrack. Lectura pública, sin escritura
+//     pública (el portal nunca cambia la personalización, solo la lee).
 //
 //   usuarios/{gymId}/miembros          — SIGUE cerrada a lectura anónima (por
 //     eso existe el espejo miembrosPublicos). Se abre una única excepción de
@@ -168,6 +179,12 @@ service cloud.firestore {
       }
       match /pesoCorporal/{docId} {
         allow read, create: if isSignedIn();
+      }
+
+      // Espejo público de personalización visual (colores/logo) — solo lectura, el portal
+      // nunca lo modifica. Alta/edición sigue siendo del staff vía la regla genérica de abajo.
+      match /config/{docId} {
+        allow read: if isSignedIn();
       }
 
       // Excepción de escritura sobre miembros/: el portal público necesita

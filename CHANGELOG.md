@@ -4,6 +4,31 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Personalización visual en el portal QR + reorganización y simplificación del portal
+
+**Qué se hizo:**
+
+*1) Personalización visual del gimnasio en el portal:*
+- El portal ahora se pinta con los colores/logo del gimnasio, reutilizando EXACTAMENTE las mismas funciones que ya usa el panel de staff (`aplicarColorAcento`/`aplicarColorFondo`/`aplicarColorTarjetas`/`aplicarLogo`) — no se duplicó ninguna lógica de color.
+- El doc real `usuarios/{uid}` (con `colorAcento`/`colorFondo`/`colorTarjetas`/`logoUrl`) sigue 100% cerrado a lectura anónima porque también trae `plan`, `pinFinanzas`, `email`, etc. Igual que se hizo para miembros (`miembrosPublicos`), se creó un espejo público mínimo nuevo `usuarios/{uid}/config/personalizacion` con SOLO esos 4 campos de color/logo. Nueva función `sincronizarPersonalizacionPublica()`, llamada (sin `await`, no bloquea el flujo principal si falla) desde los 4 lugares donde cambia la personalización: `guardarPersonalizacion`, `restaurarColorDefault`, `onLogoFileChange`, `quitarLogo`.
+- Nueva `cargarPersonalizacionPortal()`, llamada al inicio de `portalReady` (antes de mostrar la pantalla de identificación, para que se vea personalizado desde el primer paso) — lee ese espejo y aplica solo lo que el gimnasio configuró; si no configuró nada, el doc no existe y el portal se ve exactamente como antes (cero cambio visual, sin forzar ningún color por default distinto al actual).
+- **Ojo, decisión deliberada**: el portal NO usa `aplicarPersonalizacion()`/`guardarBrandingCache()` (las funciones que sí usa el panel de staff) — esas existen para precachear el branding de la pantalla de login del staff en `localStorage`, y usarlas en el portal sobreescribiría ese cache si alguien escanea un QR en el MISMO dispositivo que su staff a veces usa (ej. una tablet compartida en recepción).
+- Logo: se agregaron `#portal-logo-img`/`#portal-logo-txt` al encabezado del portal (mismo patrón que `login-logo-img`/`nav-logo-img`) y se extendió `aplicarLogo()` para que también los controle — un gimnasio con `logoUrl` configurado ve su logo en vez del texto "GYMTRACK", igual que ya pasa en login/nav.
+- `firestore.rules`: nueva regla `usuarios/{gymId}/config/{docId}` — lectura pública (`isSignedIn()`), sin escritura pública (el portal nunca cambia la personalización, solo la lee).
+
+*2) Reorganización y simplificación del portal:*
+- Se fusionaron "Mis datos" (fecha de nacimiento/estatura) y "Mi peso corporal" en una sola tarjeta nueva, "🧍 Mi Perfil Físico" — son datos relacionados y el IMC solo se puede calcular con los dos juntos, así que tenerlos separados obligaba a saltar entre tarjetas para ver el dato completo. `renderPortalDatosSeccion`/`renderPortalPesoSeccion` se reemplazaron por `renderPortalPerfilFisicoSeccion()` (una sola función); `portalGuardarDatos`/`portalGuardarPeso` no cambiaron de lógica, solo de dónde se renderizan sus campos.
+- Orden de secciones ajustado por frecuencia de uso: 1° Registrar serie (lo que motivó escanear el QR), 2° Mi progreso (subida justo después, para revisar la bitácora de esa misma máquina sin bajar tanto), 3° Mi Perfil Físico al final (se edita con mucha menos frecuencia).
+- Nuevo texto de ayuda chico (gris, una línea) debajo de los botones de "Tipo de serie", que muestra la definición del tipo que esté seleccionado en ese momento — solo para los términos menos obvios (Calentamiento, PR, Dropset, Al fallo); "Normal" no tiene texto porque ya es autoexplicativo. Nueva constante `DESCRIPCION_TIPO_SERIE`, actualizada en `portalElegirTipo()` y en el render inicial.
+- "Guardar datos" (dentro de Mi Perfil Físico) pasó de `btn-ghost` a `btn-primary`, igual que "Guardar serie" y "Guardar peso" — los tres botones de acción del portal ahora usan el mismo color de acento en vez de verse uno apagado y dos resaltados.
+- No se tocó ninguna colección, regla de Firestore existente, cálculo de IMC, ni el bloqueo por membresía vencida — esto es solo reorganización visual y personalización, tal como se pidió.
+
+**Qué se verificó:**
+- `node --check` sobre los 2 bloques `<script>` — sintaxis válida.
+- `git diff` completo revisado: cambios contenidos al portal, `aplicarLogo`, y los 4 call-sites de personalización del staff — sin tocar Finanzas, Inventario, ni el resto del panel de administración.
+- `rules-test/firestore.rules` sincronizado con la raíz y `rules-test/test.mjs` con 2 casos nuevos — corrido contra el emulador real de Firestore: **39 OK / 0 FAIL**, incluyendo que un cliente anónimo SÍ puede leer el espejo de personalización pública pero NO puede escribirlo/alterarlo.
+- Simulación en Node de la lógica pura: `DESCRIPCION_TIPO_SERIE` da el texto correcto para cada tipo (vacío para "Normal" y sin selección, mensaje propio para "Otro"); la línea combinada "Edad · IMC" arma bien los 4 casos (ambos, solo uno, ninguno) sin dejar separadores colgando; `aplicarPersonalizacionPortal` (simulado) no hace ninguna llamada si el gimnasio no configuró nada (cero cambio visual) y aplica solo los campos que sí están configurados si el gimnasio configuró apenas uno; y la forma del espejo que arma `sincronizarPersonalizacionPublica` trae exactamente los 4 campos esperados, nunca `fondosPorTab`/`plan`/`pinFinanzas`/etc.
+
 ## 2026-09-01 — Fix: "No encontramos tu registro" para miembros que ya existían antes del portal QR
 
 **Qué se hizo:**

@@ -32,6 +32,7 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   // Datos del portal QR (Parte 1/2, ver CHANGELOG.md)
   await setDoc(doc(db, 'usuarios', 'uidA', 'inventario', 'maq1'), { nombre: 'Press de banca', cantidad: 1, estado: 'bueno' });
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { numero: 1, nombre: 'Juan', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
+  await setDoc(doc(db, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#FF0000', colorFondo: null, colorTarjetas: null, logoUrl: null });
 });
 
 const gymA = testEnv.authenticatedContext('uidA', { email: 'gymA@test.com' }).firestore();
@@ -120,6 +121,8 @@ await check('El staff (dueño del gym) sigue pudiendo leer y escribir inventario
 // leyéndolo no es una fuga: nunca contiene teléfono/dirección/notas. Lo que SÍ debe seguir
 // cerrado es el documento completo de miembros/ (probado arriba) y todo lo demás (pagos, etc).
 await check('Gym B (otro gimnasio) también puede leer el espejo público de Gym A (dato no sensible, por diseño)', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembrosPublicos', 'm1')), true);
+await check('Cliente anónimo puede leer el espejo público de personalización (colores/logo) de un gimnasio', getDoc(doc(cliente, 'usuarios', 'uidA', 'config', 'personalizacion')), true);
+await check('Cliente anónimo NO puede escribir/alterar la personalización pública', setDoc(doc(cliente, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#000000' }), false);
 await check('Pero Gym B sigue sin poder leer el documento completo de miembros/ de Gym A', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembros', 'm1')), false);
 
 console.log('\n--- Límite conocido: auto-elevación de plan ---');
