@@ -4,6 +4,51 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Portal QR del cliente (progreso por máquina + peso corporal) y datos de salud (estatura, IMC, fecha de nacimiento)
+
+**Qué se hizo:**
+
+*Parte 1 — Registro de progreso por QR en cada máquina:*
+- Nueva colección `usuarios/{uid}/maquinas` (nombre por máquina), con CRUD idéntico al patrón ya usado para `categoriasMembresia`/`promociones` (modal `modal-maquinas`, abierto desde un botón nuevo "📷 Máquinas y QR" en Inventario → Equipo del Gym).
+- Cada máquina tiene un botón "⬇️ QR" que genera (librería `qrcode` vía CDN, mismo patrón que Chart.js/SheetJS en `<head>`, sin subir nada a Storage) y descarga un PNG con un QR que codifica `?gym={uid}&maquina={id}` — listo para imprimir y pegar en la máquina.
+- **Portal público del cliente** (`#portal-screen`, nuevo, completamente separado del panel de staff): cuando la URL trae `?gym=...`, el `<script type="module">` del `<head>` desvía el arranque ANTES de tocar `onAuthStateChanged`/login — nunca se mezcla con una sesión de staff que ya esté abierta en el mismo navegador (ej. una tablet en recepción). Se autentica con `signInAnonymously` (nuevo import de `firebase-auth.js`) y dispara un evento `portalReady` (mismo patrón que `firebaseReady`/`adminReady`).
+- Identificación: formulario de número de miembro + nombre (comparación tolerante a mayúsculas/acentos/espacios vía `normalizarNombreComparacion`, `String.normalize('NFD')`). Busca en la nueva colección `usuarios/{uid}/miembrosPublicos` (ver más abajo) — nunca en `miembros` directamente.
+- Bloqueo por membresía vencida: si `vencimientoTs` del miembro encontrado ya pasó, el portal muestra un mensaje fijo y no deja continuar. Es una verificación del lado de la app (igual que el resto de GymTrack, sin backend propio) — no a prueba de manipulación técnica directa, documentado así en el propio `firestore.rules`.
+- Registro de series: tipo (Calentamiento/Normal/PR/Dropset/Al fallo + "Otro" con texto libre) + peso + repeticiones, guardado en la nueva colección `usuarios/{uid}/registrosProgreso` con `{miembroId, maquinaId, tipo, peso, repeticiones, fecha}`.
+- Vista de progreso (portal y perfil del miembro, lado staff): historial + gráfica Chart.js de evolución de peso, filtrable por máquina y por tipo de serie (para no mezclar un PR con la carga normal del día a día).
+- Tarjeta nueva "📈 Progreso por Máquina" en el perfil del miembro (`modal-perfil`): mismo criterio que "Este plan incluye"/Compras — solo aparece si el miembro tiene al menos un registro; si nunca usó el QR, cero cambio visual.
+
+*Parte 2 — Peso corporal, estatura, IMC y fecha de nacimiento:*
+- Nueva colección `usuarios/{uid}/pesoCorporal` (`{miembroId, peso, fecha}`, con historial completo, no un solo valor). Registrable desde el perfil del miembro (tarjeta nueva "⚖️ Peso Corporal", SIEMPRE visible a diferencia de las condicionales, porque desde ahí mismo se registra el primer peso) y desde el portal del cliente. Historial + gráfica Chart.js en ambos lados.
+- Estatura: campo simple `estatura` (cm) en el documento del miembro, sin historial. Editable desde `modal-miembro` (staff) y desde el portal (cliente).
+- IMC: `calcularIMC(pesoKg, estaturaCm)` — se calcula a partir del peso corporal más reciente + estatura, se muestra como número plano ("IMC: 23.4"), sin categorías tipo bajo peso/normal/sobrepeso (fuera del alcance de la app, no es consejo médico). Si falta cualquiera de los dos datos, el campo `#p-imc-field` del perfil simplemente se oculta (`display:none`), sin mensaje de error.
+- Fecha de nacimiento: campo nuevo y opcional `fechaNacimiento` (input `type="date"` en `modal-miembro`, junto a Edad). El campo `edad` viejo NO se toca ni se sobreescribe — sigue como respaldo. `edadMostrar(m)` usa `calcularEdad(fechaNacimiento)` si existe, si no cae de vuelta al `edad` guardado. Visible en perfil (staff) y portal (cliente).
+- Excel: nueva columna "Fecha de Nacimiento" en `exportarMiembros`, `descargarPlantilla` e `importarMiembros` (alias de columna + reutiliza `_parseFechaES` ya existente, que ya soportaba tanto celdas de fecha reales de Excel como texto `dd/mm/yyyy`), sin quitar la columna de Edad.
+
+*Espejo público mínimo (`miembrosPublicos`) — por qué existe:*
+- Firestore no puede ocultar campos dentro de un mismo documento vía reglas: si se permite leer `miembros/{id}`, se lee TODO el documento (teléfono, dirección, notas incluidos). Por eso se creó `usuarios/{uid}/miembrosPublicos/{miembroId}` (mismo id que el miembro real), con SOLO `numero`, `nombre`, `vencimientoTs`, `estatura`, `fechaNacimiento` — nunca los campos sensibles.
+- Lo mantiene `sincronizarMiembroPublico(miembroId)`, llamada (sin `await`, no bloquea el flujo principal si falla) desde `saveMiembro()` (alta/edición), `savePago()` (el vencimiento cambia con cada pago) y `_guardarImportados()` (import masivo por Excel, para que un miembro recién importado pueda usar el QR de inmediato sin que el staff tenga que volver a guardarlo o cobrarle a mano). `delMiembro()` también borra el espejo y los registros de progreso/peso huérfanos del miembro eliminado (mismo criterio que ya aplicaba a pagos/asistencias).
+- El cliente SÍ puede actualizar estatura/fechaNacimiento en su propio miembro real y en el espejo (necesita escritura real, no solo mostrar) — pero acotado por regla a EXACTAMENTE esos dos campos vía `request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])`, el mecanismo nativo de Firestore para reglas de escritura por campo. Nunca puede tocar nombre/teléfono/notas/etc.
+
+**`firestore.rules` — qué se abrió y por qué (documentado también en comentarios dentro del propio archivo):**
+- `maquinas`: lectura pública (`isSignedIn()`, incluye anónimos). Alta/edición/borrado siguen solo para el staff vía la regla genérica existente.
+- `miembrosPublicos`: lectura pública + escritura pública ACOTADA a `estatura`/`fechaNacimiento`.
+- `registrosProgreso`, `pesoCorporal`: lectura + creación pública. Sin edición ni borrado desde el portal.
+- `miembros`: se mantiene 100% cerrada a lectura anónima (de ahí el espejo). Se agregó una única excepción de ESCRITURA, acotada a `estatura`/`fechaNacimiento` con el mismo mecanismo `diff().affectedKeys().hasOnly(...)`.
+- Nada de esto reemplaza la regla genérica existente (`isAdmin()||isOwnerDoc(gymId)`) — Firestore concede acceso si CUALQUIER regla que aplique a la ruta lo permite, así que el staff sigue teniendo control total sobre las 4 colecciones nuevas.
+- `storage.rules` NO se tocó: los QR se generan y descargan en el navegador, nunca se suben a Storage — no hacía falta.
+
+**Qué se verificó:**
+- `node --check` sobre todo el JS embebido (2 bloques `<script>`, el módulo y el principal) — sintaxis válida.
+- Simulación en Node de la lógica pura: `calcularEdad` (cumpleaños exacto/futuro/pasado, sin fecha), `edadMostrar` (usa `fechaNacimiento` si existe, cae a `edad` si no, `null` si no hay ninguno), `calcularIMC` (cálculo correcto, `null` si falta peso o estatura o cualquiera es 0), `fmtDateInputVal` (ida y vuelta sin corrimiento de zona horaria), `normalizarNombreComparacion` (tolera acentos/mayúsculas/espacios, pero SÍ distingue nombres genuinamente distintos), la lógica de bloqueo por vencimiento de `portalIdentificar` (encontrado y al corriente → pasa; vencido → bloqueado; `vencimientoTs` null/nunca pagó → NO se trata como vencido; número o nombre incorrecto → no encontrado), y la forma exacta del documento que arma `sincronizarMiembroPublico` (exactamente 5 campos, nunca teléfono/dirección/notas).
+- **`firestore.rules` corrido contra el emulador real de Firestore** (`rules-test/`, ya existía de una entrega anterior — se sincronizó `rules-test/firestore.rules` con la raíz y se le agregaron 17 casos nuevos a `rules-test/test.mjs`): **37 OK / 0 FAIL**, incluyendo — cliente anónimo SÍ puede leer máquinas/miembrosPublicos y crear registrosProgreso/pesoCorporal; cliente anónimo NO puede leer el documento completo de `miembros/` (teléfono/dirección/notas quedan protegidos); cliente anónimo SÍ puede actualizar estatura/fechaNacimiento en `miembros/` pero NO puede colar el teléfono en esa misma escritura (`affectedKeys().hasOnly(...)` probado directamente, no solo razonado); cliente anónimo NO puede escribir en pagos/gastos/máquinas (nuevas); el staff sigue con control total sobre las 4 colecciones nuevas; un segundo gimnasio (Gym B) puede leer el espejo público de Gym A (por diseño, dato no sensible) pero sigue sin poder leer su `miembros/` completo.
+- Revisado que no se tocó `calcularPatronAsistencia`, `calcularPatronCompra`, personalización visual, Finanzas ni Inventario (aparte del botón nuevo de Máquinas) — cambios aditivos.
+
+**Pasos manuales pendientes (fuera del alcance de este cambio de código):**
+- Verificar/activar **Authentication → Sign-in method → Anonymous** en Firebase Console (Build → Authentication) — no se pudo confirmar remotamente si ya está habilitado en el proyecto `mi-gimnasio-8d528`. Sin esto, `signInAnonymously()` falla y el portal muestra su pantalla de error de conexión en vez de la de identificación.
+- Publicar el `firestore.rules` actualizado (Firestore Database → Reglas → pegar el contenido del archivo → Publicar, o `firebase deploy --only firestore:rules` si se usa la CLI) — el código ya asume estas reglas, pero el proyecto real de Firebase sigue con las reglas viejas hasta que se publiquen a mano.
+- Imprimir los QR de cada máquina desde Inventario → Equipo del Gym → 📷 Máquinas y QR, una vez dadas de alta.
+
 ## 2026-09-01 — Alerta de Promoción/Paquete en Alertas (envío masivo por WhatsApp con cola resumible)
 
 **Qué se hizo:**

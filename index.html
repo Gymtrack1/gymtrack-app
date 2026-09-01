@@ -7,24 +7,46 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   const firebaseConfig = { apiKey:"AIzaSyDP2XgeXRfnuu2skfXvgFf9_xkRC9pLJOQ", authDomain:"mi-gimnasio-8d528.firebaseapp.com", projectId:"mi-gimnasio-8d528", storageBucket:"mi-gimnasio-8d528.firebasestorage.app", messagingSenderId:"19052651365", appId:"1:19052651365:web:6914d31e8dbbd63330b78c" };
   const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
   window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._query=query; window._where=where; window._writeBatch=writeBatch; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
   window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
   const ADMIN_EMAIL='luismolinac06@gmail.com';
-  onAuthStateChanged(auth, async(user)=>{
-    if(user){
-      document.getElementById('login-screen').style.display='none';
-      document.getElementById('user-email').textContent=user.email;
-      if(user.email===ADMIN_EMAIL){ document.getElementById('admin-screen').style.display='block'; document.getElementById('app-screen').style.display='none'; window.dispatchEvent(new Event('adminReady')); }
-      else { document.getElementById('app-screen').style.display='block'; document.getElementById('admin-screen').style.display='none'; window.dispatchEvent(new Event('firebaseReady')); }
-    } else { document.getElementById('login-screen').style.display='flex'; document.getElementById('app-screen').style.display='none'; document.getElementById('admin-screen').style.display='none'; }
-  });
+
+  // PORTAL PÚBLICO DEL CLIENTE (QR de máquina / progreso / peso corporal, ver CHANGELOG.md):
+  // si la URL trae ?gym=..., esto es un cliente escaneando un QR físico, NO el staff. Se
+  // desvía por completo del flujo normal de login/admin/app: nunca toca login-screen, nunca
+  // usa signInWithEmailAndPassword, y se autentica de forma ANÓNIMA (signInAnonymously) solo
+  // para tener una sesión válida de Firestore. Esto corta antes de registrar onAuthStateChanged
+  // para que el ciclo de vida del portal (sesión anónima) nunca interfiera con una sesión de
+  // staff que ya esté abierta en el mismo navegador (ej. una tablet compartida en recepción).
+  const _portalParams=new URLSearchParams(location.search);
+  const _portalGym=_portalParams.get('gym');
+  if(_portalGym){
+    window._portalGym=_portalGym;
+    window._portalMaquina=_portalParams.get('maquina')||null;
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('portal-screen').style.display='block';
+    signInAnonymously(auth).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
+      console.error('Error de autenticación anónima del portal:',err);
+      document.getElementById('portal-screen').innerHTML='<div class="portal-box"><div class="empty"><div class="empty-icon">⚠️</div><div>No se pudo conectar. Verifica tu internet e intenta de nuevo.</div></div></div>';
+    });
+  } else {
+    onAuthStateChanged(auth, async(user)=>{
+      if(user){
+        document.getElementById('login-screen').style.display='none';
+        document.getElementById('user-email').textContent=user.email;
+        if(user.email===ADMIN_EMAIL){ document.getElementById('admin-screen').style.display='block'; document.getElementById('app-screen').style.display='none'; window.dispatchEvent(new Event('adminReady')); }
+        else { document.getElementById('app-screen').style.display='block'; document.getElementById('admin-screen').style.display='none'; window.dispatchEvent(new Event('firebaseReady')); }
+      } else { document.getElementById('login-screen').style.display='flex'; document.getElementById('app-screen').style.display='none'; document.getElementById('admin-screen').style.display='none'; }
+    });
+  }
 </script>
 <style>
   :root{--bg:#FAF9F5;--surface:#FFFFFF;--surface2:#F0EFE8;--border:#E3E1D6;--accent:#C6E600;--accent-dark:#98AE00;--text:#16160F;--text-surface:#16160F;--text-accent:#000000;--muted:#85847A;--green:#1F9D55;--orange:#D97706;--red:#DC3B30;--blue:#2563EB;--shadow:rgba(22,22,15,0.08);--shadow-lg:rgba(22,22,15,0.14);}
@@ -36,7 +58,12 @@
   .login-logo-img{display:none;max-height:64px;max-width:220px;object-fit:contain;margin:0 auto 4px;}
   .login-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:32px;}
   .login-error{background:rgba(220,59,48,0.1);border:1px solid rgba(220,59,48,0.3);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none;}
-  #app-screen{display:none;} #admin-screen{display:none;}
+  #app-screen{display:none;} #admin-screen{display:none;} #portal-screen{display:none;}
+  #portal-screen{min-height:100vh;padding:24px 16px 60px;}
+  .portal-box{max-width:480px;margin:0 auto;}
+  .portal-header{text-align:center;margin-bottom:20px;}
+  .portal-header .login-logo{margin-bottom:2px;}
+  .portal-hello{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;}
   nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:4px;height:60px;position:sticky;top:0;z-index:100;overflow-x:auto;}
   .logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent);letter-spacing:2px;margin-right:12px;white-space:nowrap;}
   .nav-logo-img{display:none;height:32px;max-width:140px;object-fit:contain;margin-right:12px;}
@@ -212,6 +239,16 @@
 <body>
 
 <div id="toast"></div>
+
+<!-- PORTAL PÚBLICO DEL CLIENTE (acceso vía QR, ?gym=...&maquina=..., ver CHANGELOG.md).
+Contenido armado por JS (renderPortalIdentify/renderPortalHome) — este div solo es el
+contenedor, igual que app-screen/admin-screen. -->
+<div id="portal-screen">
+  <div class="portal-box">
+    <div class="portal-header"><div class="login-logo">GYMTRACK</div></div>
+    <div id="portal-content"></div>
+  </div>
+</div>
 
 <!-- LOGIN -->
 <div id="login-screen">
@@ -452,6 +489,10 @@
       <div class="form-group"><label>Edad</label><input type="number" id="m-edad" placeholder="25"></div>
     </div>
     <div class="form-group"><label>Dirección</label><input type="text" id="m-direccion" placeholder="Calle, Colonia, Ciudad"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="m-fecha-nacimiento"></div>
+      <div class="form-group"><label>Estatura (cm)</label><input type="number" id="m-estatura" placeholder="170"></div>
+    </div>
     <div class="form-group"><label>Categoría de membresía</label><select id="m-categoria-membresia"><option value="">— Sin categoría —</option></select></div>
     <div class="form-group"><label>Meta semanal (días que se compromete a venir)</label><input type="number" id="m-meta-semanal" min="1" max="7" placeholder="Opcional, ej. 3"></div>
     <div class="form-group"><label>¿Le gusta que le escribamos recordatorios?</label><select id="m-recibe-recordatorios"><option value="true">Sí</option><option value="false">No</option></select></div>
@@ -478,6 +519,8 @@
       <div class="perfil-field"><div class="perfil-field-label">Teléfono</div><div class="perfil-field-val" id="p-tel-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Correo</div><div class="perfil-field-val" id="p-correo-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Edad</div><div class="perfil-field-val" id="p-edad-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">Estatura</div><div class="perfil-field-val" id="p-estatura-display">—</div></div>
+      <div class="perfil-field" id="p-imc-field" style="display:none"><div class="perfil-field-label">IMC</div><div class="perfil-field-val" id="p-imc-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Plan de membresía</div><div class="perfil-field-val" id="p-plan-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Categoría de membresía</div><div class="perfil-field-val" id="p-categoria-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Última promoción usada</div><div class="perfil-field-val" id="p-promocion-display">—</div></div>
@@ -511,6 +554,20 @@
       <h3>🛒 Compras</h3>
       <div id="p-compras-patron" style="display:none;margin-bottom:8px"></div>
       <div id="p-compras-lista"></div>
+    </div>
+
+    <div class="ec-card" style="margin-top:16px;padding:16px 18px">
+      <h3>⚖️ Peso Corporal</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input type="number" id="p-peso-nuevo" placeholder="Peso (kg)" style="flex:1;min-width:120px">
+        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarPesoCorporalPerfil()">+ Registrar</button>
+      </div>
+      <div id="p-peso-contenido"></div>
+    </div>
+
+    <div class="ec-card" id="p-progreso-card" style="display:none;margin-top:16px;padding:16px 18px">
+      <h3>📈 Progreso por Máquina</h3>
+      <div id="p-progreso-contenido"></div>
     </div>
 
     <div class="form-actions" style="margin-top:16px">
@@ -731,6 +788,25 @@
   </div>
 </div>
 
+<!-- MODAL MÁQUINAS Y CÓDIGOS QR (autoservicio de máquinas por gimnasio, ver CHANGELOG.md) -->
+<div class="modal-overlay" id="modal-maquinas">
+  <div class="modal">
+    <h2>Máquinas y Códigos QR</h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Cada máquina tiene su propio código QR. Descárgalo e imprímelo para pegarlo en la máquina — al escanearlo, el cliente entra directo al registro de progreso de esa máquina.</div>
+    <div class="form-group">
+      <label>Nueva máquina</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="maquina-nombre-nueva" placeholder="Ej. Press de banca, Sentadilla..." onkeydown="if(event.key==='Enter')agregarMaquina()" style="flex:1">
+        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarMaquina()">+ Agregar</button>
+      </div>
+    </div>
+    <div id="lista-maquinas"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-maquinas')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PERSONALIZACIÓN (color, logo, fondos por pestaña — solo para el propio gym, no admin) -->
 <div class="modal-overlay" id="modal-personalizacion">
   <div class="modal" style="max-width:560px">
@@ -814,7 +890,7 @@ let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],
 // Categorías de membresía y promociones: configurables por cada gimnasio, listas vacías por
 // defecto. NO usan la palabra "plan" (ver userPlan/planNombre) para evitar la colisión de
 // nombres que ya causó bugs antes ("objetos de planes sin usar").
-let categoriasMembresia=[],promociones=[];
+let categoriasMembresia=[],promociones=[],maquinas=[],registrosProgreso=[],pesoCorporal=[];
 // Caches O(1): se recalculan cada vez que se recargan miembros/pagos (ver loadMiembros/loadPagos)
 let miembrosPorId=new Map();
 let pagosPorMiembroFin=new Map();  // miembroId -> pagos ordenados desc por fechaFin (vencimiento)
@@ -834,6 +910,7 @@ let corteExpandido={hoy:false,semana:false,quincena:false,mes:false};
 let chartTendencia=null;
 let chartHorasPico=null;
 let chartHorasPicoCompras=null;
+let chartProgresoPerfil=null,chartPesoPerfil=null;
 let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
@@ -889,6 +966,12 @@ function defaultFunciones(plan){
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
 function userDoc(name,id){return docFn(db,`usuarios/${uid}/${name}/${id}`);}
+// Igual que userCol/userDoc pero con el gymId explícito en vez del uid del staff logueado —
+// las usa tanto el propio staff (gymId=uid, ej. sincronizarMiembroPublico) como el portal
+// público del cliente (gymId=el ?gym=... de la URL, que nunca coincide con ningún uid logueado
+// porque el cliente entra con una sesión anónima). Ver sección "PORTAL PÚBLICO DEL CLIENTE".
+function gymCol(gymId,name){return col(db,`usuarios/${gymId}/${name}`);}
+function gymDoc(gymId,name,id){return docFn(db,`usuarios/${gymId}/${name}/${id}`);}
 
 // PERSONALIZACIÓN VISUAL POR GYM (color de acento, logo, fondos por pestaña). Vive en el
 // propio doc usuarios/{uid} (colorAcento, logoUrl, fondosPorTab) — NO en miembros ni
@@ -1452,7 +1535,7 @@ async function doLogout(){await window._signOut(window._auth);}
 // escribir, evitando releer la colección completa por cada alta/edición/baja (antes era la
 // causa principal de lecturas excesivas: p.ej. registrar UN pago releía los ~5,000 pagos).
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadMaquinas(),loadRegistrosProgreso(),loadPesoCorporal()]);
   renderDashboard();renderPagos();renderAsistencia();
   renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
   // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
@@ -1510,6 +1593,9 @@ async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=
 async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
 async function loadCategoriasMembresia(){try{const s=await getDocs(userCol('categoriasMembresia'));categoriasMembresia=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){categoriasMembresia=[];}}
 async function loadPromociones(){try{const s=await getDocs(userCol('promociones'));promociones=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){promociones=[];}}
+async function loadMaquinas(){try{const s=await getDocs(userCol('maquinas'));maquinas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){maquinas=[];}}
+async function loadRegistrosProgreso(){try{const s=await getDocs(userCol('registrosProgreso'));registrosProgreso=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){registrosProgreso=[];}}
+async function loadPesoCorporal(){try{const s=await getDocs(userCol('pesoCorporal'));pesoCorporal=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){pesoCorporal=[];}}
 
 // Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
 // volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).
@@ -1523,6 +1609,55 @@ function getVencimiento(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
 function getUltimoPlan(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].planNombre:'—';}
 function getUltimoMonto(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].monto||0:0;}
+
+// PESO CORPORAL / ESTATURA / IMC / FECHA DE NACIMIENTO
+// `edad` (campo viejo, fijo) NUNCA se borra ni se sobreescribe — sigue siendo el respaldo si
+// el miembro no tiene fechaNacimiento cargada. calcularIMC no clasifica el resultado (bajo
+// peso/normal/sobrepeso/etc): solo el número, sin meterse en terreno de consejo médico.
+function calcularEdad(fechaNacimientoTs){
+  if(!fechaNacimientoTs)return null;
+  const hoy=new Date(),nac=new Date(fechaNacimientoTs);
+  let edad=hoy.getFullYear()-nac.getFullYear();
+  const m=hoy.getMonth()-nac.getMonth();
+  if(m<0||(m===0&&hoy.getDate()<nac.getDate()))edad--;
+  return edad>=0?edad:null;
+}
+function edadMostrar(m){
+  const calc=calcularEdad(m.fechaNacimiento);
+  return calc!==null?calc:(m.edad||null);
+}
+function calcularIMC(pesoKg,estaturaCm){
+  if(!pesoKg||!estaturaCm)return null;
+  const h=estaturaCm/100;
+  if(!h)return null;
+  return Math.round((pesoKg/(h*h))*10)/10;
+}
+// Último peso registrado de un miembro (de más reciente a más viejo) — usado tanto por el
+// perfil (lado staff) como por el cálculo de IMC.
+function ultimoPesoCorporal(mid){
+  const ps=pesoCorporal.filter(p=>p.miembroId===mid).sort((a,b)=>b.fecha-a.fecha);
+  return ps.length?ps[0].peso:null;
+}
+// "dd" de un input type=date a partir de un timestamp, usando fecha LOCAL (no toISOString,
+// que puede recorrerse un día según la zona horaria del navegador).
+function fmtDateInputVal(ts){
+  if(!ts)return'';
+  const d=new Date(ts);
+  return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+// Espejo público mínimo de un miembro (usuarios/{uid}/miembrosPublicos/{miembroId}): SOLO los
+// campos que el portal del cliente necesita para identificarse y ver su IMC — numero, nombre,
+// vencimientoTs (para el bloqueo por membresía vencida) y estatura/fechaNacimiento (no
+// sensibles, a diferencia de teléfono/dirección/notas que NUNCA se copian aquí). Se llama
+// desde saveMiembro, savePago y _guardarImportados — cualquier cambio que afecte estos campos.
+// No bloquea el flujo principal si falla (mismo criterio que el resto de sincronizaciones en
+// segundo plano de la app).
+async function sincronizarMiembroPublico(miembroId){
+  const m=miembros.find(x=>x.id===miembroId);
+  if(!m)return;
+  const data={numero:m.numero||0,nombre:m.nombre,vencimientoTs:getVencimiento(miembroId),estatura:m.estatura||null,fechaNacimiento:m.fechaNacimiento||null};
+  try{await setDoc(userDoc('miembrosPublicos',miembroId),data);}catch(e){/* espejo del portal: no crítico si falla */}
+}
 // Mapeo compartido días<->nombre de plan (usado al registrar pagos y al importar desde Excel)
 const PLAN_DIAS_NOMBRE={15:'Quincenal',30:'Mensual',60:'Bimestral',90:'Trimestral',180:'Semestral',365:'Anual'};
 function diasPorNombrePlan(nombre){
@@ -1771,6 +1906,7 @@ function exportarMiembros(){
     'Teléfono': m.telefono||'',
     'Correo': m.correo||'',
     'Edad': m.edad||'',
+    'Fecha de Nacimiento': m.fechaNacimiento?new Date(m.fechaNacimiento).toLocaleDateString('es-MX'):'',
     'Dirección': m.direccion||'',
     'Categoría de membresía': m.categoriaMembresia||'',
     'Meta semanal (días)': m.metaSemanal||'',
@@ -1782,7 +1918,7 @@ function exportarMiembros(){
   }));
   const ws=XLSX.utils.json_to_sheet(filas);
   // Ancho de columnas
-  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:32},{wch:20},{wch:14},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
+  ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:32},{wch:20},{wch:14},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   const fecha=new Date().toISOString().slice(0,10);
@@ -1797,6 +1933,7 @@ function descargarPlantilla(){
     'Teléfono':'8121234567',
     'Correo':'juan@gmail.com',
     'Edad':'28',
+    'Fecha de Nacimiento':'12/03/1997',
     'Dirección':'Calle Roble 45, Col. Centro',
     'Categoría de membresía':'Full access',
     'Meta semanal (días)':'3',
@@ -1806,7 +1943,7 @@ function descargarPlantilla(){
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
@@ -1837,6 +1974,7 @@ async function importarMiembros(input){
           telefono:   get('Teléfono','Telefono','Tel'),
           correo:     get('Correo','Email','Correo electrónico'),
           edad:       get('Edad'),
+          fechaNacimiento: get('Fecha de Nacimiento','Fecha de nacimiento','Nacimiento'),
           direccion:  get('Dirección','Direccion'),
           categoriaMembresia: get('Categoría de membresía','Categoria de membresia','Categoría','Categoria'),
           metaSemanal: get('Meta semanal (días)','Meta semanal','Meta Semanal'),
@@ -1906,7 +2044,7 @@ function _parseFechaES(str){
   return isNaN(ts)?null:ts;
 }
 
-const IMPORT_BATCH_SIZE=200; // 200 filas × hasta 2 writes = hasta 400 ops, bajo el límite de 500 por batch
+const IMPORT_BATCH_SIZE=150; // 150 filas × hasta 3 writes (miembro + espejo público + pago) = hasta 450 ops, bajo el límite de 500 por batch
 
 async function _guardarImportados(rows){
   const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
@@ -1929,6 +2067,7 @@ async function _guardarImportados(rows){
       chunk.forEach((r,idx)=>{
         const i=start+idx;
         const miembroRef=docFn(userCol('miembros'));
+        const fechaNacimiento=_parseFechaES(r.fechaNacimiento);
         const miembroData={
           nombre:    r.nombre,
           telefono:  r.telefono||'',
@@ -1939,6 +2078,8 @@ async function _guardarImportados(rows){
           metaSemanal: normalizarMetaSemanal(r.metaSemanal),
           notas:     r.notas||'',
           numero:    maxNum+i+1,
+          fechaNacimiento,
+          estatura:  null,
           creadoEn:  Date.now()
         };
         batch.set(miembroRef,miembroData);
@@ -1947,6 +2088,11 @@ async function _guardarImportados(rows){
 
         // Si hay fecha de vencimiento válida, crear registro de pago
         const fechaFin=_parseFechaES(r.fechaVencimiento);
+        // Espejo público mínimo para el portal QR (ver sincronizarMiembroPublico) — se crea
+        // aquí también, no solo en saveMiembro/savePago, para que un miembro recién importado
+        // por Excel pueda usar el QR de inmediato sin que el staff tenga que volver a
+        // guardarlo/cobrarle un pago manualmente primero.
+        batch.set(userDoc('miembrosPublicos',miembroRef.id),{numero:miembroData.numero,nombre:miembroData.nombre,vencimientoTs:fechaFin||null,estatura:null,fechaNacimiento});
         if(fechaFin){
           const planNombre=r.planActual&&r.planActual!=='—'?r.planActual:'Importado';
           // La fecha real de pago no viene en el Excel, pero se puede inferir:
@@ -2654,7 +2800,10 @@ function renderInventario(seccion='equipo'){
   <div class="inv-section ${seccion==='equipo'?'active':''}">
     <div class="header-row" style="margin-bottom:12px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Equipo y Maquinaria</div>
-      <button class="btn btn-primary btn-sm" onclick="openModal('modal-inventario')">+ Agregar Equipo</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="abrirModalMaquinas()">📷 Máquinas y QR</button>
+        <button class="btn btn-primary btn-sm" onclick="openModal('modal-inventario')">+ Agregar Equipo</button>
+      </div>
     </div>
     <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Zona</th><th>Notas</th><th>Acciones</th></tr></thead>
     <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.zona||'—'}</td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
@@ -2854,7 +3003,13 @@ function verPerfil(id){
   document.getElementById('p-estado-display').innerHTML=estadoBadge(estado);
   document.getElementById('p-tel-display').textContent=m.telefono||'—';
   document.getElementById('p-correo-display').textContent=m.correo||'—';
-  document.getElementById('p-edad-display').textContent=m.edad?`${m.edad} años`:'—';
+  const edad=edadMostrar(m);
+  document.getElementById('p-edad-display').textContent=edad?`${edad} años`:'—';
+  document.getElementById('p-estatura-display').textContent=m.estatura?`${m.estatura} cm`:'—';
+  const imc=calcularIMC(ultimoPesoCorporal(m.id),m.estatura);
+  const imcField=document.getElementById('p-imc-field');
+  if(imc!==null){imcField.style.display='block';document.getElementById('p-imc-display').textContent=imc;}
+  else{imcField.style.display='none';}
   document.getElementById('p-plan-display').textContent=getUltimoPlan(m.id);
   document.getElementById('p-categoria-display').textContent=m.categoriaMembresia||'—';
   const ultimoPago=(pagosPorMiembroPago.get(m.id)||[])[0];
@@ -2867,6 +3022,8 @@ function verPerfil(id){
   renderBeneficiosPerfil(m);
   renderSeguimientoPerfil(m);
   renderComprasPerfil(m);
+  renderPesoCorporalPerfil(m);
+  renderProgresoPerfil(m);
   document.getElementById('p-editar-btn').onclick=()=>{closeModal('modal-perfil');editMiembro(id);};
   document.getElementById('p-wha-btn').onclick=()=>enviarWhatsApp(id);
   openModal('modal-perfil');
@@ -2948,6 +3105,81 @@ function renderComprasPerfil(m){
   document.getElementById('p-compras-lista').innerHTML=comprasM.map(v=>`<div class="ec-row"><span>${escAttr(v.productoNombre||'—')}${v.cantidad?` x${v.cantidad}`:''}</span><span>$${(v.total||0).toLocaleString()} · ${fmtDate(v.fecha)}</span></div>`).join('');
 }
 
+// Tarjeta "Peso Corporal" (Parte 2 del portal QR): SIEMPRE visible, a diferencia de
+// Beneficios/Seguimiento/Compras/Progreso — desde aquí mismo se puede registrar el primer
+// peso, no depende de que ya exista historial. Misma colección `pesoCorporal` que usa el
+// propio miembro desde el portal QR (ver sección "PORTAL PÚBLICO DEL CLIENTE").
+function renderPesoCorporalPerfil(m){
+  const el=document.getElementById('p-peso-contenido');
+  const historial=pesoCorporal.filter(p=>p.miembroId===m.id).sort((a,b)=>b.fecha-a.fecha);
+  if(!historial.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:12px">Aún no hay registros de peso.</div>';
+    if(chartPesoPerfil){chartPesoPerfil.destroy();chartPesoPerfil=null;}
+    return;
+  }
+  el.innerHTML=`<div class="chart-wrap" style="height:180px"><canvas id="chart-peso-perfil"></canvas></div>
+    <div style="margin-top:10px">${historial.map(p=>`<div class="ec-row"><span>${fmtDate(p.fecha)}</span><span>${p.peso}kg</span></div>`).join('')}</div>`;
+  if(typeof Chart==='undefined')return;
+  if(chartPesoPerfil){chartPesoPerfil.destroy();chartPesoPerfil=null;}
+  const asc=[...historial].sort((a,b)=>a.fecha-b.fecha);
+  chartPesoPerfil=new Chart(document.getElementById('chart-peso-perfil'),{
+    type:'line',
+    data:{labels:asc.map(p=>fmtDate(p.fecha)),datasets:[{label:'Peso (kg)',data:asc.map(p=>p.peso),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
+  });
+}
+async function agregarPesoCorporalPerfil(){
+  if(!perfilActualId)return;
+  const peso=parseFloat(document.getElementById('p-peso-nuevo').value);
+  if(!peso)return alert('Escribe el peso');
+  const data={miembroId:perfilActualId,peso,fecha:Date.now()};
+  const ref=await addDoc(userCol('pesoCorporal'),data);
+  pesoCorporal.push({id:ref.id,...data});
+  document.getElementById('p-peso-nuevo').value='';
+  const m=miembros.find(x=>x.id===perfilActualId);
+  renderPesoCorporalPerfil(m);
+  // El IMC en los datos generales de arriba depende del último peso — se recalcula también.
+  const imc=calcularIMC(ultimoPesoCorporal(perfilActualId),m.estatura);
+  const imcField=document.getElementById('p-imc-field');
+  if(imc!==null){imcField.style.display='block';document.getElementById('p-imc-display').textContent=imc;}
+  toast('Peso registrado ✓');
+}
+
+// Tarjeta "Progreso por Máquina" (Parte 1f): solo aparece si el miembro tiene AL MENOS un
+// registro en `registrosProgreso` — si nunca ha usado el QR, cero cambio visual (mismo
+// criterio que Beneficios/Seguimiento/Compras). Muestra lo mismo que ve el propio miembro en
+// el portal: selector de máquina + filtro por tipo de serie + historial + gráfica de peso.
+let perfilProgresoMaquinaSel='',perfilProgresoFiltroTipo='';
+function renderProgresoPerfil(m){
+  const card=document.getElementById('p-progreso-card');
+  const registros=registrosProgreso.filter(r=>r.miembroId===m.id);
+  if(!registros.length){card.style.display='none';if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}return;}
+  card.style.display='block';
+  const maquinaIds=[...new Set(registros.map(r=>r.maquinaId))];
+  if(!perfilProgresoMaquinaSel||!maquinaIds.includes(perfilProgresoMaquinaSel))perfilProgresoMaquinaSel=maquinaIds[0];
+  const nombreMaquina=id=>{const mq=maquinas.find(x=>x.id===id);return mq?mq.nombre:'Máquina eliminada';};
+  const tipos=[...new Set(registros.filter(r=>r.maquinaId===perfilProgresoMaquinaSel).map(r=>r.tipo))];
+  if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
+  const filtrados=registros.filter(r=>r.maquinaId===perfilProgresoMaquinaSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  document.getElementById('p-progreso-contenido').innerHTML=`
+    <div class="form-row">
+      <div class="form-group"><label>Máquina</label><select onchange="perfilProgresoMaquinaSel=this.value;perfilProgresoFiltroTipo='';renderProgresoPerfil(miembrosPorId.get('${m.id}'))">${maquinaIds.map(id=>`<option value="${id}" ${id===perfilProgresoMaquinaSel?'selected':''}>${escAttr(nombreMaquina(id))}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Tipo de serie</label><select onchange="perfilProgresoFiltroTipo=this.value;renderProgresoPerfil(miembrosPorId.get('${m.id}'))"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
+    </div>
+    <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
+    <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
+      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${r.peso}kg</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
+    }</tbody></table></div>`;
+  if(typeof Chart==='undefined')return;
+  if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}
+  const asc=[...filtrados].sort((a,b)=>a.fecha-b.fecha);
+  chartProgresoPerfil=new Chart(document.getElementById('chart-progreso-perfil'),{
+    type:'line',
+    data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Peso (kg)',data:asc.map(r=>r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
+  });
+}
+
 // SAVE MIEMBRO
 async function saveMiembro(){
   const nombre=document.getElementById('m-nombre').value.trim();
@@ -2960,18 +3192,22 @@ async function saveMiembro(){
   }
   // FIX: creadoEn y numero solo se asignan al crear, nunca al editar
   // Antes creadoEn siempre se sobreescribía, rompiendo "nuevos este mes" en Finanzas
-  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),categoriaMembresia:document.getElementById('m-categoria-membresia').value||null,notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value),recibeRecordatorios:document.getElementById('m-recibe-recordatorios').value==='true'};
+  const fechaNacStr=document.getElementById('m-fecha-nacimiento').value;
+  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),categoriaMembresia:document.getElementById('m-categoria-membresia').value||null,notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value),recibeRecordatorios:document.getElementById('m-recibe-recordatorios').value==='true',estatura:parseFloat(document.getElementById('m-estatura').value)||null,fechaNacimiento:fechaNacStr?new Date(fechaNacStr+'T12:00:00').getTime():null};
   if(!editId){data.numero=numero;data.creadoEn=Date.now();}
   // Parcheo local en vez de loadMiembros(): con miles de miembros, releer toda la
   // colección por cada alta/edición es la lectura más cara y más frecuente de la app.
+  let savedId=editId;
   if(editId){
     await updateDoc(userDoc('miembros',editId),data);
     _actualizarLocal(miembros,editId,data);
   }else{
     const ref=await addDoc(userCol('miembros'),data);
     _agregarLocal(miembros,ref.id,data);
+    savedId=ref.id;
   }
   recalcMiembrosPorId();
+  sincronizarMiembroPublico(savedId); // portal público del cliente, ver nota junto a la función
   closeModal('modal-miembro');
   renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();renderRecordatoriosPendientes();
   toast(editId?'Miembro actualizado ✓':'Miembro agregado ✓');
@@ -2984,11 +3220,20 @@ async function delMiembro(id){
   await Promise.all(pagosMiembro.map(p=>deleteDoc(userDoc('pagos',p.id))));
   const asistMiembro=asistencias.filter(a=>a.miembroId===id);
   await Promise.all(asistMiembro.map(a=>deleteDoc(userDoc('asistencias',a.id))));
+  // Datos del portal QR ligados a este miembro (progreso por máquina, peso corporal, y su
+  // espejo público) — mismo criterio que pagos/asistencias arriba: no dejar huérfanos.
+  const progresoMiembro=registrosProgreso.filter(r=>r.miembroId===id);
+  await Promise.all(progresoMiembro.map(r=>deleteDoc(userDoc('registrosProgreso',r.id))));
+  const pesoMiembro=pesoCorporal.filter(p=>p.miembroId===id);
+  await Promise.all(pesoMiembro.map(p=>deleteDoc(userDoc('pesoCorporal',p.id))));
+  await deleteDoc(userDoc('miembrosPublicos',id)).catch(()=>{});
   await deleteDoc(userDoc('miembros',id));
   // Ya sabemos exactamente qué se borró: se filtra localmente en vez de loadAll()
   // (que releía las 8 colecciones completas por la baja de UN solo miembro).
   pagos=pagos.filter(p=>p.miembroId!==id);
   asistencias=asistencias.filter(a=>a.miembroId!==id);
+  registrosProgreso=registrosProgreso.filter(r=>r.miembroId!==id);
+  pesoCorporal=pesoCorporal.filter(p=>p.miembroId!==id);
   _eliminarLocal(miembros,id);
   recalcMiembrosPorId();recalcPagosPorMiembro();
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderReportes();
@@ -3003,6 +3248,8 @@ function editMiembro(id){
   document.getElementById('m-correo').value=m.correo||'';
   document.getElementById('m-edad').value=m.edad||'';
   document.getElementById('m-direccion').value=m.direccion||'';
+  document.getElementById('m-estatura').value=m.estatura||'';
+  document.getElementById('m-fecha-nacimiento').value=fmtDateInputVal(m.fechaNacimiento);
   populateCategoriaMembresiaSelect(m.categoriaMembresia||'');
   document.getElementById('m-meta-semanal').value=m.metaSemanal||'';
   document.getElementById('m-recibe-recordatorios').value=m.recibeRecordatorios===false?'false':'true';
@@ -3028,6 +3275,7 @@ async function savePago(){
   // basta con parchear el array local y recalcular los mapas derivados.
   _agregarLocal(pagos,ref.id,data);
   recalcPagosPorMiembro();
+  sincronizarMiembroPublico(mid); // el vencimiento cambió — refleja el nuevo estado en el portal
   closeModal('modal-pago');
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Pago registrado ✓');
@@ -3291,6 +3539,60 @@ function populatePromocionSelect(){
   sel.value='';
 }
 
+// MÁQUINAS Y CÓDIGOS QR (autoservicio de máquinas por gimnasio, Parte 1a) — mismo patrón CRUD
+// que categoriasMembresia/promociones arriba.
+async function agregarMaquina(){
+  const nombre=document.getElementById('maquina-nombre-nueva').value.trim();
+  if(!nombre)return alert('Escribe un nombre para la máquina');
+  const data={nombre,creadoEn:Date.now()};
+  const ref=await addDoc(userCol('maquinas'),data);
+  _agregarLocal(maquinas,ref.id,data);
+  document.getElementById('maquina-nombre-nueva').value='';
+  renderMaquinasModal();
+  toast('Máquina agregada ✓');
+}
+async function editarMaquina(id){
+  const mq=maquinas.find(x=>x.id===id);if(!mq)return;
+  const nuevo=prompt('Nuevo nombre de la máquina:',mq.nombre);
+  if(nuevo===null)return;
+  const nombre=nuevo.trim();
+  if(!nombre)return alert('El nombre no puede quedar vacío');
+  await updateDoc(userDoc('maquinas',id),{nombre});
+  _actualizarLocal(maquinas,id,{nombre});
+  renderMaquinasModal();
+  toast('Máquina actualizada ✓');
+}
+async function eliminarMaquina(id){
+  if(!confirm('¿Eliminar esta máquina? El QR impreso dejará de funcionar. Los registros de progreso ya guardados con esta máquina se conservan.'))return;
+  await deleteDoc(userDoc('maquinas',id));
+  _eliminarLocal(maquinas,id);
+  renderMaquinasModal();
+  toast('Máquina eliminada ✓');
+}
+function renderMaquinasModal(){
+  const el=document.getElementById('lista-maquinas');
+  el.innerHTML=maquinas.length?maquinas.map(mq=>`<div class="ec-row"><span>${escAttr(mq.nombre)}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="descargarQRMaquina('${mq.id}')">⬇️ QR</button><button class="btn btn-ghost btn-sm" onclick="editarMaquina('${mq.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarMaquina('${mq.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">📷</div><div>Aún no tienes máquinas. Agrega la primera arriba.</div></div>';
+}
+function abrirModalMaquinas(){renderMaquinasModal();openModal('modal-maquinas');}
+
+// QR de una máquina: codifica la URL del portal público del cliente ya con el gimnasio Y la
+// máquina identificados (?gym={uid}&maquina={id}) — el cliente solo escanea, no busca nada a
+// mano (Parte 1a). Se genera y se descarga en el propio navegador (librería `qrcode` vía CDN,
+// ver <head>); no se sube nada a Storage.
+function descargarQRMaquina(id){
+  const mq=maquinas.find(x=>x.id===id);if(!mq)return;
+  if(typeof QRCode==='undefined'){toast('No se pudo cargar el generador de QR. Revisa tu conexión e intenta de nuevo.','err');return;}
+  const url=`${location.origin}${location.pathname}?gym=${uid}&maquina=${id}`;
+  QRCode.toDataURL(url,{width:400,margin:1}).then(dataUrl=>{
+    const a=document.createElement('a');
+    a.href=dataUrl;
+    a.download=`QR-${mq.nombre.replace(/[^a-z0-9]+/gi,'-')}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }).catch(()=>{toast('No se pudo generar el QR. Intenta de nuevo.','err');});
+}
+
 // PERSONALIZACIÓN — subida a Storage y guardado en usuarios/{uid}. Logo y fondos se suben y
 // se guardan de inmediato al elegir el archivo (no tiene sentido "deshacer" un upload ya
 // hecho); el color de acento sí usa un botón Guardar explícito porque es una elección
@@ -3489,7 +3791,7 @@ function abrirModalPersonalizacion(){
 
 // MODALES
 function openModal(id){
-  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
+  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
   if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'){
@@ -3589,6 +3891,264 @@ async function submitPin(){
   const n=pinTabPendiente,e=pinEventPendiente;
   pinTabPendiente=null;pinEventPendiente=null;
   if(n)activarTab(n,e);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PORTAL PÚBLICO DEL CLIENTE (acceso vía QR, ver CHANGELOG.md)
+// ═══════════════════════════════════════════════════════════════════════════
+// Todo lo de aquí abajo corre SOLO cuando la URL trae ?gym=... — el script type="module" del
+// <head> desvía el boot hacia el evento 'portalReady' en vez de 'firebaseReady'/'adminReady' en
+// ese caso, así que este bloque nunca se activa dentro de una sesión normal de staff. Usa los
+// mismos bridges window._xxx que el resto de la app (asignados abajo, igual que en el listener
+// de 'firebaseReady'), pero NUNCA usa userCol/userDoc — esos apuntan al uid del gimnasio
+// logueado como staff, que aquí no existe (el cliente está autenticado de forma ANÓNIMA). En su
+// lugar usa gymCol/gymDoc (declaradas junto a userCol/userDoc), parametrizadas con el gymId que
+// viene en la URL (window._portalGym).
+//
+// Nota de seguridad: el bloqueo por membresía vencida de abajo (portalIdentificar) es una
+// verificación del LADO DE LA APP, igual que el resto de GymTrack (que no tiene backend
+// propio) — no es una regla de Firestore a prueba de manipulación técnica directa. Mismo nivel
+// de confianza que ya tiene hoy el resto del sistema.
+const TIPOS_SERIE=['Calentamiento','Normal','PR','Dropset','Al fallo'];
+let portalMiembro=null;     // {id, numero, nombre, vencimientoTs, estatura, fechaNacimiento} una vez identificado
+let portalMaquinas=[];      // catálogo de máquinas del gimnasio
+let portalRegistros=[];     // registrosProgreso del miembro identificado (solo los suyos)
+let portalPesos=[];         // pesoCorporal del miembro identificado (solo los suyos)
+let portalMaquinaSel='',portalFiltroTipo=''; // filtros activos en "Mi progreso"
+let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
+let chartPortalProgreso=null,chartPortalPeso=null;
+
+function normalizarNombreComparacion(s){
+  return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+}
+
+window.addEventListener('portalReady',()=>{
+  db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
+  docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
+  setDoc=window._setDoc; getDoc=window._getDoc; queryFn=window._query; whereFn=window._where;
+  renderPortalIdentify();
+});
+
+function renderPortalIdentify(){
+  const el=document.getElementById('portal-content');
+  if(!el)return;
+  el.innerHTML=`<div class="ec-card">
+    <h3>Identifícate</h3>
+    <div class="form-group"><label>Número de miembro</label><input type="number" id="portal-numero" placeholder="Ej. 42"></div>
+    <div class="form-group"><label>Nombre</label><input type="text" id="portal-nombre" placeholder="Como está registrado" onkeydown="if(event.key==='Enter')portalIdentificar()"></div>
+    <div id="portal-identify-error" class="login-error"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="portalIdentificar()">Continuar</button>
+  </div>`;
+}
+
+async function portalIdentificar(){
+  const errEl=document.getElementById('portal-identify-error');
+  errEl.style.display='none';
+  const numero=parseInt(document.getElementById('portal-numero').value);
+  const nombre=document.getElementById('portal-nombre').value.trim();
+  if(!numero||!nombre){errEl.textContent='Escribe tu número de miembro y tu nombre.';errEl.style.display='block';return;}
+  const gymId=window._portalGym;
+  try{
+    const snap=await getDocs(queryFn(gymCol(gymId,'miembrosPublicos'),whereFn('numero','==',numero)));
+    const nObjetivo=normalizarNombreComparacion(nombre);
+    let match=null;
+    snap.forEach(d=>{const data=d.data();if(normalizarNombreComparacion(data.nombre)===nObjetivo)match={id:d.id,...data};});
+    if(!match){errEl.textContent='No encontramos tu registro. Verifica tu número y tu nombre.';errEl.style.display='block';return;}
+    if(match.vencimientoTs&&match.vencimientoTs<Date.now()){
+      document.getElementById('portal-content').innerHTML='<div class="ec-card"><div class="empty"><div class="empty-icon">🔒</div><div>Tu membresía está vencida. Pasa a recepción para ponerte al corriente y volver a usar esta función.</div></div></div>';
+      return;
+    }
+    portalMiembro=match;
+    await portalCargarDatos();
+    renderPortalHome();
+  }catch(e){
+    errEl.textContent='No pudimos conectar. Intenta de nuevo.';errEl.style.display='block';
+  }
+}
+
+async function portalCargarDatos(){
+  const gymId=window._portalGym;
+  try{const s=await getDocs(gymCol(gymId,'maquinas'));portalMaquinas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalMaquinas=[];}
+  try{const s=await getDocs(queryFn(gymCol(gymId,'registrosProgreso'),whereFn('miembroId','==',portalMiembro.id)));portalRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalRegistros=[];}
+  try{const s=await getDocs(queryFn(gymCol(gymId,'pesoCorporal'),whereFn('miembroId','==',portalMiembro.id)));portalPesos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalPesos=[];}
+}
+
+function portalUltimoPeso(){
+  const ps=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
+  return ps.length?ps[0].peso:null;
+}
+
+function renderPortalHome(){
+  const el=document.getElementById('portal-content');
+  let html=`<div class="portal-hello">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
+  if(window._portalMaquina){
+    const maquina=portalMaquinas.find(x=>x.id===window._portalMaquina);
+    html+=renderPortalRegistrarSerieSeccion(maquina);
+  }
+  html+=renderPortalDatosSeccion();
+  html+=renderPortalPesoSeccion();
+  html+=renderPortalProgresoSeccion();
+  el.innerHTML=html;
+  const otro=document.getElementById('portal-tipo-otro');
+  if(otro)otro.style.display=portalTipoSel==='__otro__'?'block':'none';
+  dibujarChartPortalPeso();
+  dibujarChartPortalProgreso();
+}
+
+// REGISTRAR SERIE (Parte 1d)
+function renderPortalRegistrarSerieSeccion(maquina){
+  const nombreMaquina=maquina?maquina.nombre:'esta máquina';
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>🏋️ Registrar serie — ${escAttr(nombreMaquina)}</h3>
+    <div class="form-group">
+      <label>Tipo de serie</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="portal-tipo-botones">
+        ${TIPOS_SERIE.map(t=>`<button type="button" class="btn ${t===portalTipoSel?'btn-primary':'btn-ghost'} btn-sm" data-tipo="${t}" onclick="portalElegirTipo('${t}')">${t}</button>`).join('')}
+        <button type="button" class="btn ${portalTipoSel==='__otro__'?'btn-primary':'btn-ghost'} btn-sm" data-tipo="__otro__" onclick="portalElegirTipo('__otro__')">Otro</button>
+      </div>
+      <input type="text" id="portal-tipo-otro" placeholder="Escribe el tipo" style="display:none;margin-top:8px;width:100%">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-serie-peso" placeholder="60"></div>
+      <div class="form-group"><label>Repeticiones</label><input type="number" id="portal-serie-reps" placeholder="10"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarSerie()">Guardar serie</button>
+  </div>`;
+}
+function portalElegirTipo(t){
+  portalTipoSel=t;
+  document.querySelectorAll('#portal-tipo-botones button').forEach(b=>{
+    const sel=b.dataset.tipo===t;
+    b.classList.toggle('btn-primary',sel);
+    b.classList.toggle('btn-ghost',!sel);
+  });
+  const otro=document.getElementById('portal-tipo-otro');
+  if(otro)otro.style.display=t==='__otro__'?'block':'none';
+}
+async function portalGuardarSerie(){
+  if(!portalTipoSel)return alert('Elige el tipo de serie');
+  const tipo=portalTipoSel==='__otro__'?document.getElementById('portal-tipo-otro').value.trim():portalTipoSel;
+  if(!tipo)return alert('Escribe el tipo de serie');
+  const peso=parseFloat(document.getElementById('portal-serie-peso').value);
+  const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
+  if(!peso||!repeticiones)return alert('Escribe el peso y las repeticiones');
+  const data={miembroId:portalMiembro.id,maquinaId:window._portalMaquina,tipo,peso,repeticiones,fecha:Date.now()};
+  try{
+    const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
+    portalRegistros.push({id:ref.id,...data});
+    portalTipoSel='';
+    toast('Serie guardada ✓');
+    renderPortalHome();
+  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+}
+
+// MI PROGRESO POR MÁQUINA (Parte 1e)
+function renderPortalProgresoSeccion(){
+  if(!portalRegistros.length)return''; // nunca ha usado el QR: cero cambio, no se muestra nada
+  const maquinaIds=[...new Set(portalRegistros.map(r=>r.maquinaId))];
+  if(!portalMaquinaSel||!maquinaIds.includes(portalMaquinaSel))portalMaquinaSel=maquinaIds[0];
+  const nombreMaquina=id=>{const mq=portalMaquinas.find(x=>x.id===id);return mq?mq.nombre:'Máquina';};
+  const tipos=[...new Set(portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel).map(r=>r.tipo))];
+  if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
+  const filtrados=portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>📈 Mi progreso</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Máquina</label><select id="portal-progreso-maquina" onchange="portalCambiarMaquinaSel(this.value)">${maquinaIds.map(id=>`<option value="${id}" ${id===portalMaquinaSel?'selected':''}>${escAttr(nombreMaquina(id))}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
+    </div>
+    <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
+      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${r.peso}kg</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
+    }</tbody></table></div>
+  </div>`;
+}
+function portalCambiarMaquinaSel(id){portalMaquinaSel=id;portalFiltroTipo='';renderPortalHome();}
+function portalCambiarFiltroTipo(t){portalFiltroTipo=t;renderPortalHome();}
+function dibujarChartPortalProgreso(){
+  const canvas=document.getElementById('chart-portal-progreso');
+  if(!canvas)return;
+  if(typeof Chart==='undefined')return;
+  if(chartPortalProgreso){chartPortalProgreso.destroy();chartPortalProgreso=null;}
+  const datos=portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
+  chartPortalProgreso=new Chart(canvas,{
+    type:'line',
+    data:{labels:datos.map(r=>fmtDate(r.fecha)),datasets:[{label:'Peso (kg)',data:datos.map(r=>r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
+  });
+}
+
+// MI PESO CORPORAL (Parte 2a)
+function renderPortalPesoSeccion(){
+  const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>⚖️ Mi peso corporal</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-peso-valor" placeholder="70.5"></div>
+      <div class="form-group" style="align-self:flex-end"><button class="btn btn-primary" style="width:100%" onclick="portalGuardarPeso()">Guardar</button></div>
+    </div>
+    ${historial.length?`
+    <div class="chart-wrap" style="height:180px"><canvas id="chart-portal-peso"></canvas></div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${p.peso}kg</td></tr>`).join('')}</tbody></table></div>`
+    :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
+  </div>`;
+}
+async function portalGuardarPeso(){
+  const peso=parseFloat(document.getElementById('portal-peso-valor').value);
+  if(!peso)return alert('Escribe tu peso');
+  const data={miembroId:portalMiembro.id,peso,fecha:Date.now()};
+  try{
+    const ref=await addDoc(gymCol(window._portalGym,'pesoCorporal'),data);
+    portalPesos.push({id:ref.id,...data});
+    toast('Peso guardado ✓');
+    renderPortalHome();
+  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+}
+function dibujarChartPortalPeso(){
+  const canvas=document.getElementById('chart-portal-peso');
+  if(!canvas)return;
+  if(typeof Chart==='undefined')return;
+  if(chartPortalPeso){chartPortalPeso.destroy();chartPortalPeso=null;}
+  const datos=[...portalPesos].sort((a,b)=>a.fecha-b.fecha);
+  chartPortalPeso=new Chart(canvas,{
+    type:'line',
+    data:{labels:datos.map(p=>fmtDate(p.fecha)),datasets:[{label:'Peso (kg)',data:datos.map(p=>p.peso),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
+  });
+}
+
+// MIS DATOS: estatura, fecha de nacimiento, edad calculada, IMC (Parte 2b/2c/2d)
+function renderPortalDatosSeccion(){
+  const edad=edadMostrar(portalMiembro);
+  const imc=calcularIMC(portalUltimoPeso(),portalMiembro.estatura);
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>📋 Mis datos</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
+      <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${portalMiembro.estatura||''}"></div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="portalGuardarDatos()">Guardar datos</button>
+    <div style="margin-top:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años<br>`:''}${imc!==null?`IMC: ${imc}`:''}</div>
+  </div>`;
+}
+async function portalGuardarDatos(){
+  const fechaStr=document.getElementById('portal-fecha-nacimiento').value;
+  const estaturaVal=parseFloat(document.getElementById('portal-estatura').value)||null;
+  const fechaNacimiento=fechaStr?new Date(fechaStr+'T12:00:00').getTime():null;
+  const cambios={};
+  if(estaturaVal!==null)cambios.estatura=estaturaVal;
+  if(fechaNacimiento!==null)cambios.fechaNacimiento=fechaNacimiento;
+  if(!Object.keys(cambios).length)return alert('Escribe tu estatura o tu fecha de nacimiento');
+  const gymId=window._portalGym;
+  try{
+    // Reglas de Firestore: solo se permite tocar estatura/fechaNacimiento desde aquí, nunca
+    // el resto del documento (nombre, teléfono, notas, etc. quedan intactos y protegidos).
+    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),cambios);
+    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),cambios);
+    portalMiembro={...portalMiembro,...cambios};
+    toast('Datos guardados ✓');
+    renderPortalHome();
+  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
 }
 </script>
 </body>

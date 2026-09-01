@@ -12,6 +12,10 @@ rules_version = '2';
 //   usuarios/{gymId}/productos/{id}
 //   usuarios/{gymId}/ventas/{id}
 //   usuarios/{gymId}/gastos/{id}
+//   usuarios/{gymId}/maquinas/{id}          catálogo de máquinas con QR (ver más abajo)
+//   usuarios/{gymId}/miembrosPublicos/{id}  espejo público mínimo por miembro (ver más abajo)
+//   usuarios/{gymId}/registrosProgreso/{id} series registradas desde el QR (ver más abajo)
+//   usuarios/{gymId}/pesoCorporal/{id}      peso corporal (staff + portal QR, ver más abajo)
 //
 // Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
 // datos de otro gimnasio, sin importar que llame al SDK de Firestore
@@ -23,6 +27,61 @@ rules_version = '2';
 // no impiden que un gimnasio se reescriba su propio plan/funciones —
 // cerrar eso del todo requiere mover esa migración a una Cloud Function.
 // Lo que sí garantizan es el aislamiento entre gimnasios.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// PORTAL PÚBLICO DEL CLIENTE (QR físico en cada máquina → registro de
+// progreso, peso corporal, estatura, fecha de nacimiento — ver CHANGELOG.md)
+// ─────────────────────────────────────────────────────────────────────────
+// Un cliente que escanea el QR se autentica de forma ANÓNIMA (signInAnonymously,
+// sin cuenta ni contraseña) solo para tener una sesión válida de Firestore. Su
+// uid NUNCA coincide con el uid del gimnasio (isOwnerDoc siempre da false para
+// él), así que necesita reglas propias, acotadas a lo mínimo:
+//
+//   usuarios/{gymId}/maquinas          — lectura pública (mostrar el nombre de
+//     la máquina al escanear el QR). Alta/edición/borrado sigue siendo solo
+//     del staff, vía la regla genérica de más abajo.
+//
+//   usuarios/{gymId}/miembrosPublicos  — espejo de SOLO numero, nombre,
+//     vencimientoTs, estatura y fechaNacimiento de cada miembro (mismo id de
+//     documento que en miembros/{id}), mantenido por el propio staff
+//     (sincronizarMiembroPublico() en index.html, llamada desde saveMiembro,
+//     savePago y _guardarImportados). Existe PORQUE Firestore no puede ocultar
+//     campos dentro de un mismo documento vía reglas — así el cliente anónimo
+//     NUNCA llega a leer teléfono, dirección, notas, etc. de miembros/{id}
+//     (esa colección sigue 100% cerrada más abajo, salvo la excepción de
+//     escritura acotada que se explica junto a su regla). Lectura pública
+//     (get + list) porque el propio dato ya es mínimo/no sensible — el
+//     cliente necesita poder buscar por numero+nombre sin backend propio.
+//     También permite ACTUALIZAR, pero solo los campos estatura/
+//     fechaNacimiento (el cliente los edita desde el portal); numero, nombre
+//     y vencimientoTs quedan protegidos, solo el staff los cambia.
+//
+//   usuarios/{gymId}/registrosProgreso — lectura + creación para cualquier
+//     autenticado (incluye anónimos). El cliente arma su propia consulta
+//     filtrada por where('miembroId','==', su propio id) para ver solo su
+//     historial — la regla en sí NO puede garantizar ese filtro (Firestore no
+//     puede ligar un uid anónimo a un miembroId), así que el límite real es
+//     el mismo nivel de confianza que ya tiene el resto de GymTrack: cierra
+//     la puerta a cualquier OTRA colección, pero dentro de esta colección
+//     puntual no hay aislamiento por miembro a prueba de manipulación técnica
+//     directa. No se permite editar ni borrar desde el portal.
+//
+//   usuarios/{gymId}/pesoCorporal      — igual que registrosProgreso arriba,
+//     mismo alcance y misma nota de confianza.
+//
+//   usuarios/{gymId}/miembros          — SIGUE cerrada a lectura anónima (por
+//     eso existe el espejo miembrosPublicos). Se abre una única excepción de
+//     ESCRITURA: un autenticado puede actualizar un miembro, pero solo si los
+//     campos que cambia son exactamente estatura y/o fechaNacimiento — nunca
+//     nombre, teléfono, dirección, notas, etc. (verificado con
+//     request.resource.data.diff(resource.data).affectedKeys().hasOnly(...),
+//     el mecanismo nativo de Firestore para reglas de escritura por campo).
+//
+// El bloqueo por membresía vencida (no dejar registrar nada si el miembro
+// está vencido) se aplica del lado de la app (portalIdentificar en
+// index.html) — no es una regla de Firestore a prueba de manipulación
+// técnica directa. Mismo nivel de confianza que ya tiene hoy el resto de
+// GymTrack, que no tiene backend propio.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -70,15 +129,62 @@ service cloud.firestore {
 
       // Actualización: admin puede editar cualquier cuenta (plan,
       // funciones, etc). Un gimnasio solo puede editar su propio doc
-      // (pinFinanzas, msgWhatsApp, y la migración pending_ -> uid real).
+      // (pinFinanzas, msgWhatsApp, msgWhatsAppRecordatorio, y la migración pending_ -> uid real).
       allow update: if isAdmin() || isOwnerDoc(gymId);
 
       // Borrado: admin (elimina clientes), o el propio dueño borrando su
       // doc "pending_<email>" tras migrarse a su uid real.
       allow delete: if isAdmin() || ownsByEmail();
 
+      // ── PORTAL PÚBLICO DEL CLIENTE — ver nota extensa arriba ──
+
+      // Catálogo de máquinas: lectura pública (incluye anónimos). Alta/
+      // edición/borrado siguen cubiertos por la regla genérica de más abajo
+      // (isOwnerDoc/isAdmin), que también le sigue dando lectura al staff.
+      match /maquinas/{docId} {
+        allow read: if isSignedIn();
+      }
+
+      // Espejo público mínimo de miembros (numero, nombre, vencimientoTs,
+      // estatura, fechaNacimiento — NUNCA teléfono/dirección/notas/etc).
+      // Lectura pública; escritura pública acotada solo a estatura/
+      // fechaNacimiento (el cliente edita sus propios datos desde el
+      // portal). El resto de los campos del espejo los mantiene el staff
+      // vía la regla genérica de más abajo.
+      match /miembrosPublicos/{docId} {
+        allow read: if isSignedIn();
+        allow update: if isSignedIn() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento']);
+      }
+
+      // Series de progreso por máquina y peso corporal: cualquier
+      // autenticado (incluye anónimos) puede leer y crear. No hay edición
+      // ni borrado desde el portal. Ver nota de confianza arriba sobre el
+      // alcance real de "leer" aquí (no hay aislamiento por miembro a
+      // prueba de manipulación técnica directa con auth anónima).
+      match /registrosProgreso/{docId} {
+        allow read, create: if isSignedIn();
+      }
+      match /pesoCorporal/{docId} {
+        allow read, create: if isSignedIn();
+      }
+
+      // Excepción de escritura sobre miembros/: el portal público necesita
+      // poder guardar estatura/fechaNacimiento directamente en el documento
+      // real (no solo en el espejo), y esta es la única forma de permitirlo
+      // sin abrir el resto del documento (teléfono, dirección, notas, etc.
+      // — esos siguen 100% cerrados, ni siquiera de lectura, a cualquiera
+      // que no sea el dueño del gimnasio o el admin).
+      match /miembros/{miembroId} {
+        allow update: if isSignedIn() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento']);
+      }
+
       // Datos operativos del gimnasio (miembros, pagos, asistencias, etc).
-      // Solo el dueño de esa cuenta (o el admin) puede leer/escribir.
+      // Solo el dueño de esa cuenta (o el admin) puede leer/escribir. Esto
+      // sigue exactamente igual que antes de agregar el portal: las reglas
+      // de arriba son ADICIONALES (Firestore concede acceso si CUALQUIER
+      // regla que aplique a la ruta lo permite), nunca reemplazan esta.
       match /{coleccion}/{docId} {
         allow read, write: if isAdmin() || isOwnerDoc(gymId);
       }

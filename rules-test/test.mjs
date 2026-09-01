@@ -26,9 +26,12 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, 'usuarios', 'uidA'), { email: 'gymA@test.com', uid: 'uidA', plan: 'sencillo', funciones: ['dashboard'], pinFinanzas: 'hash-a' });
   await setDoc(doc(db, 'usuarios', 'uidB'), { email: 'gymB@test.com', uid: 'uidB', plan: 'pro', funciones: ['dashboard'], pinFinanzas: 'hash-b' });
-  await setDoc(doc(db, 'usuarios', 'uidA', 'miembros', 'm1'), { nombre: 'Juan' });
+  await setDoc(doc(db, 'usuarios', 'uidA', 'miembros', 'm1'), { nombre: 'Juan', telefono: '5551234567', direccion: 'Calle Falsa 123', notas: 'nota privada' });
   await setDoc(doc(db, 'usuarios', 'uidB', 'miembros', 'm2'), { nombre: 'Pedro' });
   await setDoc(doc(db, 'usuarios', 'pending_gymC_test_com'), { email: 'gymC@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true });
+  // Datos del portal QR (Parte 1/2, ver CHANGELOG.md)
+  await setDoc(doc(db, 'usuarios', 'uidA', 'maquinas', 'maq1'), { nombre: 'Press de banca' });
+  await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { numero: 1, nombre: 'Juan', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
 });
 
 const gymA = testEnv.authenticatedContext('uidA', { email: 'gymA@test.com' }).firestore();
@@ -36,6 +39,7 @@ const gymB = testEnv.authenticatedContext('uidB', { email: 'gymB@test.com' }).fi
 const gymC = testEnv.authenticatedContext('uidC', { email: 'gymC@test.com' }).firestore(); // aún no migrado
 const admin = testEnv.authenticatedContext('adminUid', { email: 'luismolinac06@gmail.com' }).firestore();
 const anon = testEnv.unauthenticatedContext().firestore();
+const cliente = testEnv.authenticatedContext('clienteAnonUid', {}).firestore(); // signInAnonymously: auth!=null, sin email
 
 console.log('\n--- Aislamiento entre gimnasios (lo más importante) ---');
 await check('Gym A puede leer su propio doc', getDoc(doc(gymA, 'usuarios', 'uidA')), true);
@@ -85,6 +89,38 @@ await check('Gym A NO puede borrar el pending_ de otro (ya migrado, pero probamo
   });
   await deleteDoc(doc(gymA, 'usuarios', 'pending_gymD_test_com'));
 })(), false);
+
+console.log('\n--- Portal público del cliente (auth anónima, QR de máquina) ---');
+await check('Cliente anónimo puede leer el catálogo de máquinas de un gimnasio', getDoc(doc(cliente, 'usuarios', 'uidA', 'maquinas', 'maq1')), true);
+await check('Cliente anónimo puede leer el espejo público de un miembro (solo numero/nombre/vencimiento)', getDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1')), true);
+await check('Cliente anónimo puede buscar en miembrosPublicos filtrando por numero (where)', (async()=>{
+  const q = query(collection(cliente, 'usuarios', 'uidA', 'miembrosPublicos'), where('numero','==',1));
+  const snap = await getDocs(q);
+  if (snap.empty) throw new Error('no encontró el miembro por numero');
+})(), true);
+await check('Cliente anónimo NO puede leer el documento completo de miembros/ (teléfono/dirección/notas)', getDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1')), false);
+await check('Cliente anónimo SÍ puede actualizar SOLO estatura/fechaNacimiento en miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { estatura: 175, fechaNacimiento: 123456 }), true);
+await check('Cliente anónimo NO puede colar el teléfono al "actualizar estatura" en miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { estatura: 180, telefono: '0000000000' }), false);
+await check('Cliente anónimo NO puede cambiar nombre/notas de un miembro vía miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { notas: 'hackeado' }), false);
+await check('Cliente anónimo SÍ puede actualizar estatura/fechaNacimiento en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { estatura: 175 }), true);
+await check('Cliente anónimo NO puede tocar numero/vencimientoTs en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { vencimientoTs: 0 }), false);
+await check('Cliente anónimo puede crear un registro de progreso', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1'), { miembroId: 'm1', maquinaId: 'maq1', tipo: 'Normal', peso: 60, repeticiones: 10, fecha: Date.now() }), true);
+await check('Cliente anónimo puede leer los registros de progreso que acaba de crear', getDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1')), true);
+await check('Cliente anónimo puede crear un registro de peso corporal', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'p1'), { miembroId: 'm1', peso: 70.5, fecha: Date.now() }), true);
+await check('Cliente anónimo NO puede escribir en pagos/ (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'pagos', 'pFalso'), { monto: 999999 }), false);
+await check('Cliente anónimo NO puede escribir en inventario/gastos/empleados (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'gastos', 'gFalso'), { concepto: 'hackeo' }), false);
+await check('Cliente anónimo NO puede crear/editar máquinas (solo lectura, alta sigue siendo del staff)', setDoc(doc(cliente, 'usuarios', 'uidA', 'maquinas', 'maqFalsa'), { nombre: 'Intrusa' }), false);
+await check('El staff (dueño del gym) sigue pudiendo leer y escribir maquinas/registrosProgreso/pesoCorporal normalmente', (async()=>{
+  await setDoc(doc(gymA, 'usuarios', 'uidA', 'maquinas', 'maq2'), { nombre: 'Sentadilla' });
+  await getDoc(doc(gymA, 'usuarios', 'uidA', 'registrosProgreso', 'r1'));
+  await deleteDoc(doc(gymA, 'usuarios', 'uidA', 'pesoCorporal', 'p1'));
+})(), true);
+// miembrosPublicos/maquinas son deliberadamente legibles por CUALQUIER autenticado (no solo
+// anónimos) — es el mismo dato que vería cualquiera escaneando el QR físico, así que Gym B
+// leyéndolo no es una fuga: nunca contiene teléfono/dirección/notas. Lo que SÍ debe seguir
+// cerrado es el documento completo de miembros/ (probado arriba) y todo lo demás (pagos, etc).
+await check('Gym B (otro gimnasio) también puede leer el espejo público de Gym A (dato no sensible, por diseño)', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembrosPublicos', 'm1')), true);
+await check('Pero Gym B sigue sin poder leer el documento completo de miembros/ de Gym A', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembros', 'm1')), false);
 
 console.log('\n--- Límite conocido: auto-elevación de plan ---');
 await check('(esperado que PASE hoy) Gym A puede reescribir su propio plan/funciones', updateDoc(doc(gymA, 'usuarios', 'uidA'), { plan: 'premium', funciones: ['dashboard','finanzas','empleados'] }), true);
