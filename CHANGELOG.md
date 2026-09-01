@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Diagnóstico: mostrar el error real del portal ("No pudimos conectar")
+
+**Qué se hizo:**
+- El usuario reportó "No pudimos conectar" al identificarse en el portal QR desde su iPhone, ya con Anonymous Authentication activado y `firestore.rules` publicado (ambos confirmados por el usuario) — es decir, con los dos pasos manuales pendientes ya hechos, así que el error es otra cosa y no se podía seguir adivinando a ciegas.
+- El mensaje de error era genérico a propósito (para no mostrarle un código técnico al cliente final), pero eso mismo hacía imposible diagnosticar desde un teléfono sin acceso fácil a la consola del navegador. Se cambió tanto en `portalIdentificar()` como en el catch de `signInAnonymously()` (script del `<head>`) para que el texto incluya el código/mensaje real del error entre paréntesis, ej. "No pudimos conectar. Intenta de nuevo. (permission-denied)".
+- También se agregó `console.error` en ambos catch, por si en algún momento sí hay acceso a devtools (Mac + cable a un iPhone, por ejemplo).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- No es un fix del bug en sí (todavía no se sabe la causa exacta) — es la herramienta para encontrarlo sin más rondas de "prueba y adivina". Pendiente: que el usuario reintente y mande el nuevo mensaje con el código de error real.
+
 ## 2026-09-01 — Fix: "No se pudo cargar el generador de QR" (la librería QR usada no existía)
 
 **Qué se hizo:**

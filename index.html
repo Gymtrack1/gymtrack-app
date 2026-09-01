@@ -35,7 +35,8 @@
     document.getElementById('portal-screen').style.display='block';
     signInAnonymously(auth).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
       console.error('Error de autenticación anónima del portal:',err);
-      document.getElementById('portal-screen').innerHTML='<div class="portal-box"><div class="empty"><div class="empty-icon">⚠️</div><div>No se pudo conectar. Verifica tu internet e intenta de nuevo.</div></div></div>';
+      const detalle=(err&&err.code)?err.code:(err&&err.message)?err.message:'error desconocido';
+      document.getElementById('portal-screen').innerHTML=`<div class="portal-box"><div class="empty"><div class="empty-icon">⚠️</div><div>No se pudo conectar. Verifica tu internet e intenta de nuevo. (${detalle})</div></div></div>`;
     });
   } else {
     onAuthStateChanged(auth, async(user)=>{
@@ -3942,7 +3943,12 @@ async function portalIdentificar(){
     await portalCargarDatos();
     renderPortalHome();
   }catch(e){
-    errEl.textContent='No pudimos conectar. Intenta de nuevo.';errEl.style.display='block';
+    console.error('portalIdentificar error:',e);
+    // Se incluye el código/mensaje real del error (ej. "permission-denied") para poder
+    // diagnosticar sin necesitar acceso a la consola del navegador — en un teléfono no hay
+    // forma fácil de verla.
+    const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
+    errEl.textContent=`No pudimos conectar. Intenta de nuevo. (${detalle})`;errEl.style.display='block';
   }
 }
 
