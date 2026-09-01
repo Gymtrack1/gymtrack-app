@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -3546,19 +3546,31 @@ function abrirModalMaquinas(){renderMaquinasModal();openModal('modal-maquinas');
 // QR de una máquina: codifica la URL del portal público del cliente ya con el gimnasio Y el
 // artículo de equipo identificados (?gym={uid}&maquina={id-del-artículo-en-inventario}) — el
 // cliente solo escanea, no busca nada a mano (Parte 1a). Se genera y se descarga en el propio
-// navegador (librería `qrcode` vía CDN, ver <head>); no se sube nada a Storage.
+// navegador (librería `qrcode-generator` vía CDN, ver <head>, global `qrcode`); no se sube
+// nada a Storage. `qrcode(typeNumber, nivel)` exige indicar el "typeNumber" (tamaño de la
+// cuadrícula QR) de antemano — no hay modo automático en esta librería — así que se prueba
+// typeNumber creciente hasta que el texto (la URL completa) quepa, en vez de calcular a mano
+// cuántos caracteres caben en cada tamaño.
 function descargarQRMaquina(id){
   const eq=inventario.find(x=>x.id===id);if(!eq)return;
-  if(typeof QRCode==='undefined'){toast('No se pudo cargar el generador de QR. Revisa tu conexión e intenta de nuevo.','err');return;}
+  if(typeof qrcode==='undefined'){toast('No se pudo cargar el generador de QR. Revisa tu conexión e intenta de nuevo.','err');return;}
   const url=`${location.origin}${location.pathname}?gym=${uid}&maquina=${id}`;
-  QRCode.toDataURL(url,{width:400,margin:1}).then(dataUrl=>{
-    const a=document.createElement('a');
-    a.href=dataUrl;
-    a.download=`QR-${eq.nombre.replace(/[^a-z0-9]+/gi,'-')}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }).catch(()=>{toast('No se pudo generar el QR. Intenta de nuevo.','err');});
+  let qr=null;
+  for(let typeNumber=4;typeNumber<=40&&!qr;typeNumber++){
+    try{
+      const intento=qrcode(typeNumber,'M');
+      intento.addData(url);
+      intento.make();
+      qr=intento;
+    }catch(e){/* este typeNumber es muy chico para el largo de la URL, prueba el siguiente */}
+  }
+  if(!qr){toast('No se pudo generar el QR. Intenta de nuevo.','err');return;}
+  const a=document.createElement('a');
+  a.href=qr.createDataURL(8,4); // 8px por módulo, margen de 4 módulos
+  a.download=`QR-${eq.nombre.replace(/[^a-z0-9]+/gi,'-')}.gif`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // PERSONALIZACIÓN — subida a Storage y guardado en usuarios/{uid}. Logo y fondos se suben y

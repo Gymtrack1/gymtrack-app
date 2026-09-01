@@ -4,6 +4,20 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Fix: "No se pudo cargar el generador de QR" (la librería QR usada no existía)
+
+**Qué se hizo:**
+- El usuario reportó el error "No se pudo cargar el generador de QR" al intentar descargar el QR de un artículo desde Inventario → Máquinas y QR.
+- Causa raíz confirmada (no solo sospechada): la librería QR que se había cargado en el `<head>`, `https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js`, apunta a un archivo que el paquete `qrcode@1.5.3` publicado en npm **no tiene** — se verificó descargando el `.tgz` real del registro de npm y confirmando que solo contiene `lib/` (código fuente sin empaquetar para navegador), sin ninguna carpeta `build/`. Ese `<script src>` siempre devolvía 404, por eso `typeof QRCode` daba `undefined` y el botón nunca podía generar nada.
+- Se reemplazó por `qrcode-generator@2.0.4` (`https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js`), verificado de la misma forma (descargando el `.tgz` real de npm) — este paquete SÍ trae `dist/qrcode.js`, un archivo plano que al cargarse como `<script>` normal crea el global `qrcode` (función), sin necesitar módulos ni bundler — mismo estilo que Chart.js/SheetJS ya usados en el `<head>`.
+- `descargarQRMaquina(id)` se reescribió para la API real de esta librería: `qrcode(typeNumber, nivel)` + `.addData(url)` + `.make()` + `.createDataURL(cellSize, margin)`. A diferencia de la librería anterior, esta exige indicar de antemano el "typeNumber" (tamaño de cuadrícula QR) — no tiene modo automático — así que se prueba typeNumber creciente (4 a 40) hasta que la URL completa quepa, en vez de calcular a mano cuántos caracteres caben en cada tamaño. El archivo descargado ahora es `.gif` (formato real que genera esta librería) en vez de `.png`.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida; confirmado que no queda ninguna referencia al global `QRCode` roto.
+- **Verificación real, no solo razonada**: se descargó el `.tgz` publicado de `qrcode-generator@2.0.4` desde el registro de npm, se extrajo `dist/qrcode.js`, y se cargó ese archivo REAL en Node (`require`) para generar un QR de una URL de prueba con el mismo largo que tendrá una real (uid de Firebase de 28 caracteres + id de documento de Firestore de 20 caracteres, ~103 caracteres totales) — la misma lógica de `descargarQRMaquina` (probar typeNumber creciente) encontró typeNumber=6 automáticamente y `createDataURL` devolvió un `data:image/gif;base64,...` válido.
+- Se decodificó ese base64 a un archivo `.gif` real y se confirmó con `file` que es una imagen GIF válida de 336×336, y se inspeccionó visualmente: los tres patrones de esquina característicos de un QR están presentes y bien formados.
+- No se tocó nada más de la Parte 1/2 del portal QR (identificación, registro de progreso, peso corporal, IMC, fecha de nacimiento) — el problema estaba aislado a la generación del QR en sí.
+
 ## 2026-09-01 — "Máquinas y QR" ahora usa directamente el Equipo del Gym (sin lista duplicada)
 
 **Qué se hizo:**
