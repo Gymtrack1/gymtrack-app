@@ -788,18 +788,12 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 </div>
 
-<!-- MODAL MÁQUINAS Y CÓDIGOS QR (autoservicio de máquinas por gimnasio, ver CHANGELOG.md) -->
+<!-- MODAL MÁQUINAS Y CÓDIGOS QR (usa directamente el Equipo del Gym ya registrado en
+Inventario — nada que dar de alta por separado, ver CHANGELOG.md) -->
 <div class="modal-overlay" id="modal-maquinas">
   <div class="modal">
     <h2>Máquinas y Códigos QR</h2>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Cada máquina tiene su propio código QR. Descárgalo e imprímelo para pegarlo en la máquina — al escanearlo, el cliente entra directo al registro de progreso de esa máquina.</div>
-    <div class="form-group">
-      <label>Nueva máquina</label>
-      <div style="display:flex;gap:8px">
-        <input type="text" id="maquina-nombre-nueva" placeholder="Ej. Press de banca, Sentadilla..." onkeydown="if(event.key==='Enter')agregarMaquina()" style="flex:1">
-        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="agregarMaquina()">+ Agregar</button>
-      </div>
-    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Cada artículo de tu Equipo del Gym tiene su propio código QR automáticamente. Descárgalo e imprímelo para pegarlo en la máquina — al escanearlo, el cliente entra directo al registro de progreso de esa máquina. Para agregar o renombrar equipo, usa "+ Agregar Equipo" en Inventario.</div>
     <div id="lista-maquinas"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-maquinas')">Cerrar</button>
@@ -890,7 +884,7 @@ let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],
 // Categorías de membresía y promociones: configurables por cada gimnasio, listas vacías por
 // defecto. NO usan la palabra "plan" (ver userPlan/planNombre) para evitar la colisión de
 // nombres que ya causó bugs antes ("objetos de planes sin usar").
-let categoriasMembresia=[],promociones=[],maquinas=[],registrosProgreso=[],pesoCorporal=[];
+let categoriasMembresia=[],promociones=[],registrosProgreso=[],pesoCorporal=[];
 // Caches O(1): se recalculan cada vez que se recargan miembros/pagos (ver loadMiembros/loadPagos)
 let miembrosPorId=new Map();
 let pagosPorMiembroFin=new Map();  // miembroId -> pagos ordenados desc por fechaFin (vencimiento)
@@ -1535,7 +1529,7 @@ async function doLogout(){await window._signOut(window._auth);}
 // escribir, evitando releer la colección completa por cada alta/edición/baja (antes era la
 // causa principal de lecturas excesivas: p.ej. registrar UN pago releía los ~5,000 pagos).
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadMaquinas(),loadRegistrosProgreso(),loadPesoCorporal()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal()]);
   renderDashboard();renderPagos();renderAsistencia();
   renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
   // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
@@ -1593,7 +1587,6 @@ async function loadVentas(){try{const s=await getDocs(userCol('ventas'));ventas=
 async function loadGastos(){try{const s=await getDocs(userCol('gastos'));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
 async function loadCategoriasMembresia(){try{const s=await getDocs(userCol('categoriasMembresia'));categoriasMembresia=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){categoriasMembresia=[];}}
 async function loadPromociones(){try{const s=await getDocs(userCol('promociones'));promociones=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){promociones=[];}}
-async function loadMaquinas(){try{const s=await getDocs(userCol('maquinas'));maquinas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){maquinas=[];}}
 async function loadRegistrosProgreso(){try{const s=await getDocs(userCol('registrosProgreso'));registrosProgreso=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){registrosProgreso=[];}}
 async function loadPesoCorporal(){try{const s=await getDocs(userCol('pesoCorporal'));pesoCorporal=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){pesoCorporal=[];}}
 
@@ -3157,7 +3150,7 @@ function renderProgresoPerfil(m){
   card.style.display='block';
   const maquinaIds=[...new Set(registros.map(r=>r.maquinaId))];
   if(!perfilProgresoMaquinaSel||!maquinaIds.includes(perfilProgresoMaquinaSel))perfilProgresoMaquinaSel=maquinaIds[0];
-  const nombreMaquina=id=>{const mq=maquinas.find(x=>x.id===id);return mq?mq.nombre:'Máquina eliminada';};
+  const nombreMaquina=id=>{const eq=inventario.find(x=>x.id===id);return eq?eq.nombre:'Equipo eliminado';};
   const tipos=[...new Set(registros.filter(r=>r.maquinaId===perfilProgresoMaquinaSel).map(r=>r.tipo))];
   if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
   const filtrados=registros.filter(r=>r.maquinaId===perfilProgresoMaquinaSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
@@ -3539,54 +3532,29 @@ function populatePromocionSelect(){
   sel.value='';
 }
 
-// MÁQUINAS Y CÓDIGOS QR (autoservicio de máquinas por gimnasio, Parte 1a) — mismo patrón CRUD
-// que categoriasMembresia/promociones arriba.
-async function agregarMaquina(){
-  const nombre=document.getElementById('maquina-nombre-nueva').value.trim();
-  if(!nombre)return alert('Escribe un nombre para la máquina');
-  const data={nombre,creadoEn:Date.now()};
-  const ref=await addDoc(userCol('maquinas'),data);
-  _agregarLocal(maquinas,ref.id,data);
-  document.getElementById('maquina-nombre-nueva').value='';
-  renderMaquinasModal();
-  toast('Máquina agregada ✓');
-}
-async function editarMaquina(id){
-  const mq=maquinas.find(x=>x.id===id);if(!mq)return;
-  const nuevo=prompt('Nuevo nombre de la máquina:',mq.nombre);
-  if(nuevo===null)return;
-  const nombre=nuevo.trim();
-  if(!nombre)return alert('El nombre no puede quedar vacío');
-  await updateDoc(userDoc('maquinas',id),{nombre});
-  _actualizarLocal(maquinas,id,{nombre});
-  renderMaquinasModal();
-  toast('Máquina actualizada ✓');
-}
-async function eliminarMaquina(id){
-  if(!confirm('¿Eliminar esta máquina? El QR impreso dejará de funcionar. Los registros de progreso ya guardados con esta máquina se conservan.'))return;
-  await deleteDoc(userDoc('maquinas',id));
-  _eliminarLocal(maquinas,id);
-  renderMaquinasModal();
-  toast('Máquina eliminada ✓');
-}
+// MÁQUINAS Y CÓDIGOS QR (Parte 1a) — usa DIRECTAMENTE el array `inventario` (Equipo del
+// Gym, ya cargado) en vez de mantener una lista aparte: así cualquier artículo que ya tengas
+// o que agregues desde "+ Agregar Equipo" aparece aquí automáticamente con su propio QR, sin
+// tener que darlo de alta dos veces. Renombrar/editar/eliminar equipo sigue siendo desde el
+// modal de Inventario (editInventario/delInventario) — aquí solo se genera y descarga el QR.
 function renderMaquinasModal(){
   const el=document.getElementById('lista-maquinas');
-  el.innerHTML=maquinas.length?maquinas.map(mq=>`<div class="ec-row"><span>${escAttr(mq.nombre)}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="descargarQRMaquina('${mq.id}')">⬇️ QR</button><button class="btn btn-ghost btn-sm" onclick="editarMaquina('${mq.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarMaquina('${mq.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">📷</div><div>Aún no tienes máquinas. Agrega la primera arriba.</div></div>';
+  el.innerHTML=inventario.length?inventario.map(i=>`<div class="ec-row"><span>${escAttr(i.nombre)}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="descargarQRMaquina('${i.id}')">⬇️ Descargar QR</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">📷</div><div>Aún no tienes equipo registrado. Agrégalo primero con "+ Agregar Equipo" en Inventario.</div></div>';
 }
 function abrirModalMaquinas(){renderMaquinasModal();openModal('modal-maquinas');}
 
-// QR de una máquina: codifica la URL del portal público del cliente ya con el gimnasio Y la
-// máquina identificados (?gym={uid}&maquina={id}) — el cliente solo escanea, no busca nada a
-// mano (Parte 1a). Se genera y se descarga en el propio navegador (librería `qrcode` vía CDN,
-// ver <head>); no se sube nada a Storage.
+// QR de una máquina: codifica la URL del portal público del cliente ya con el gimnasio Y el
+// artículo de equipo identificados (?gym={uid}&maquina={id-del-artículo-en-inventario}) — el
+// cliente solo escanea, no busca nada a mano (Parte 1a). Se genera y se descarga en el propio
+// navegador (librería `qrcode` vía CDN, ver <head>); no se sube nada a Storage.
 function descargarQRMaquina(id){
-  const mq=maquinas.find(x=>x.id===id);if(!mq)return;
+  const eq=inventario.find(x=>x.id===id);if(!eq)return;
   if(typeof QRCode==='undefined'){toast('No se pudo cargar el generador de QR. Revisa tu conexión e intenta de nuevo.','err');return;}
   const url=`${location.origin}${location.pathname}?gym=${uid}&maquina=${id}`;
   QRCode.toDataURL(url,{width:400,margin:1}).then(dataUrl=>{
     const a=document.createElement('a');
     a.href=dataUrl;
-    a.download=`QR-${mq.nombre.replace(/[^a-z0-9]+/gi,'-')}.png`;
+    a.download=`QR-${eq.nombre.replace(/[^a-z0-9]+/gi,'-')}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -3968,7 +3936,7 @@ async function portalIdentificar(){
 
 async function portalCargarDatos(){
   const gymId=window._portalGym;
-  try{const s=await getDocs(gymCol(gymId,'maquinas'));portalMaquinas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalMaquinas=[];}
+  try{const s=await getDocs(gymCol(gymId,'inventario'));portalMaquinas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalMaquinas=[];}
   try{const s=await getDocs(queryFn(gymCol(gymId,'registrosProgreso'),whereFn('miembroId','==',portalMiembro.id)));portalRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalRegistros=[];}
   try{const s=await getDocs(queryFn(gymCol(gymId,'pesoCorporal'),whereFn('miembroId','==',portalMiembro.id)));portalPesos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalPesos=[];}
 }

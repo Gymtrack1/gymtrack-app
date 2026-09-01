@@ -12,7 +12,6 @@ rules_version = '2';
 //   usuarios/{gymId}/productos/{id}
 //   usuarios/{gymId}/ventas/{id}
 //   usuarios/{gymId}/gastos/{id}
-//   usuarios/{gymId}/maquinas/{id}          catálogo de máquinas con QR (ver más abajo)
 //   usuarios/{gymId}/miembrosPublicos/{id}  espejo público mínimo por miembro (ver más abajo)
 //   usuarios/{gymId}/registrosProgreso/{id} series registradas desde el QR (ver más abajo)
 //   usuarios/{gymId}/pesoCorporal/{id}      peso corporal (staff + portal QR, ver más abajo)
@@ -37,9 +36,10 @@ rules_version = '2';
 // uid NUNCA coincide con el uid del gimnasio (isOwnerDoc siempre da false para
 // él), así que necesita reglas propias, acotadas a lo mínimo:
 //
-//   usuarios/{gymId}/maquinas          — lectura pública (mostrar el nombre de
-//     la máquina al escanear el QR). Alta/edición/borrado sigue siendo solo
-//     del staff, vía la regla genérica de más abajo.
+//   usuarios/{gymId}/inventario        — lectura pública (mostrar el nombre del
+//     artículo de equipo al escanear su QR — cada artículo de "Equipo del Gym"
+//     ES la máquina, no hay una colección aparte). Alta/edición/borrado sigue
+//     siendo solo del staff, vía la regla genérica de más abajo.
 //
 //   usuarios/{gymId}/miembrosPublicos  — espejo de SOLO numero, nombre,
 //     vencimientoTs, estatura y fechaNacimiento de cada miembro (mismo id de
@@ -138,10 +138,11 @@ service cloud.firestore {
 
       // ── PORTAL PÚBLICO DEL CLIENTE — ver nota extensa arriba ──
 
-      // Catálogo de máquinas: lectura pública (incluye anónimos). Alta/
+      // Equipo del Gym: lectura pública (incluye anónimos) — cada artículo ES
+      // la "máquina" que identifica el QR, no hay una colección aparte. Alta/
       // edición/borrado siguen cubiertos por la regla genérica de más abajo
       // (isOwnerDoc/isAdmin), que también le sigue dando lectura al staff.
-      match /maquinas/{docId} {
+      match /inventario/{docId} {
         allow read: if isSignedIn();
       }
 

@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — "Máquinas y QR" ahora usa directamente el Equipo del Gym (sin lista duplicada)
+
+**Qué se hizo:**
+- El usuario reportó que tener que dar de alta cada máquina por separado (colección `maquinas`) además de ya tenerlas registradas como "Equipo del Gym" (Inventario) era doble trabajo: pidió que un artículo ya existente apareciera directo en "Máquinas y QR", y que uno nuevo generara su QR automáticamente al agregarlo.
+- Se eliminó la colección `maquinas` y su CRUD por separado (`agregarMaquina`/`editarMaquina`/`eliminarMaquina`/`loadMaquinas`). "Máquinas y QR" ahora lista directamente el array `inventario` (Equipo del Gym) ya cargado — cualquier artículo que ya tengas, o que agregues desde "+ Agregar Equipo", aparece ahí solo, con su botón "⬇️ Descargar QR". Renombrar/editar/eliminar sigue siendo desde el modal de Inventario de siempre (`editInventario`/`delInventario`) — no hay nada que mantener sincronizado a mano.
+- El QR sigue codificando `?gym={uid}&maquina={id}`, solo que ahora `{id}` es el id del artículo de `inventario` en vez de un id de una colección aparte.
+- Portal del cliente y la tarjeta "Progreso por Máquina" del perfil (staff) actualizados para leer el nombre de la máquina desde `inventario` en vez de `maquinas`.
+- `firestore.rules`: la regla de lectura pública que antes era para `maquinas` ahora es para `inventario` (mismo alcance: solo lectura pública, alta/edición/borrado siguen siendo solo del staff vía la regla genérica existente).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida; grep confirma que no queda ninguna referencia a la colección `maquinas` en el código.
+- `rules-test/firestore.rules` sincronizado con la raíz y `rules-test/test.mjs` actualizado (seed e inventario en vez de máquinas) — vuelto a correr contra el emulador real de Firestore: **37 OK / 0 FAIL**, incluyendo que el cliente anónimo puede LEER inventario (para mostrar el nombre del equipo al escanear el QR) pero NO puede crear/editar artículos de equipo (eso sigue siendo solo del staff).
+
 ## 2026-09-01 — Portal QR del cliente (progreso por máquina + peso corporal) y datos de salud (estatura, IMC, fecha de nacimiento)
 
 **Qué se hizo:**
