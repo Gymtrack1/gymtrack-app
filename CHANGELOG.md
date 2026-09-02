@@ -4,6 +4,16 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Causa real confirmada: reglas de Firestore desactualizadas (se quita el diagnóstico temporal)
+
+**Qué se hizo:**
+- El texto de diagnóstico temporal reveló la causa exacta: `permission-denied` al leer `config/personalizacion`. No era ningún bug de código — las reglas publicadas en el proyecto real de Firebase del usuario eran una versión anterior a la que agregó el permiso de lectura pública para esa colección (el archivo se fue actualizando varias veces durante esta conversación y esa pieza en particular no se había vuelto a publicar). El usuario publicó la versión correcta de `firestore.rules` y confirmó que ya funciona.
+- Se quitó el texto de diagnóstico temporal (`#portal-debug-personalizacion` en el HTML, y la lógica de `debug` en `cargarPersonalizacionPortal()`) — ya cumplió su propósito. `cargarPersonalizacionPortal()` queda igual que antes de agregarlo: aplica los colores/logo si el doc existe, no hace nada visible si falla o no existe.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida; confirmado que no queda ninguna referencia a `portal-debug-personalizacion`.
+- Confirmado por el usuario en producción: el portal QR ya se ve con los colores/logo reales del gimnasio.
+
 ## 2026-09-01 — Diagnóstico temporal: por qué el portal no toma los colores/logo
 
 **Qué se hizo:**
