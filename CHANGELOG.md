@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Diagnóstico temporal: por qué el portal no toma los colores/logo
+
+**Qué se hizo:**
+- El usuario ya usó el botón "Sincronizar Portal QR" y el portal sigue sin verse con sus colores/logo. Dos intentos de arreglo (sincronizar en cada login, luego un botón explícito) no lo resolvieron, así que en vez de seguir adivinando causas a distancia, se agregó un texto de diagnóstico TEMPORAL visible directo en la página del portal (`#portal-debug-personalizacion`, debajo del formulario) — nada de consola ni devtools, que en un teléfono son difíciles de alcanzar.
+- `cargarPersonalizacionPortal()` ahora escribe en ese texto exactamente uno de tres casos: (1) el documento `config/personalizacion` no existe todavía para ese gym, (2) si existe, qué valores trae exactamente (colorAcento/colorFondo/colorTarjetas/si hay logo), o (3) el código de error real si la lectura falló (ej. `permission-denied`).
+- Es temporal — se quita en cuanto la próxima captura del usuario confirme la causa real.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Pendiente: que el usuario reintente y mande captura de lo que dice ahora `#portal-debug-personalizacion` para localizar la causa exacta.
+
 ## 2026-09-01 — El botón "Sincronizar Portal QR" también sincroniza colores/logo
 
 **Qué se hizo:**

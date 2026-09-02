@@ -251,6 +251,7 @@ contenedor, igual que app-screen/admin-screen. -->
       <div class="login-logo" id="portal-logo-txt">GYMTRACK</div>
     </div>
     <div id="portal-content"></div>
+    <div id="portal-debug-personalizacion" style="font-size:10px;color:#999;text-align:center;margin-top:24px;padding:0 12px"></div>
   </div>
 </div>
 
@@ -3983,15 +3984,27 @@ window.addEventListener('portalReady',()=>{
 // compartida en recepción). Si el gimnasio nunca configuró nada, el doc no existe y el portal
 // se ve exactamente igual que siempre (verde/fondo por defecto) — cero cambio visual.
 async function cargarPersonalizacionPortal(){
+  let debug;
   try{
     const snap=await getDoc(gymDoc(window._portalGym,'config','personalizacion'));
-    if(!snap.exists())return;
-    const d=snap.data();
-    if(d.colorAcento)aplicarColorAcento(d.colorAcento);
-    if(d.colorFondo)aplicarColorFondo(d.colorFondo);
-    if(d.colorTarjetas)aplicarColorTarjetas(d.colorTarjetas);
-    if(d.logoUrl)aplicarLogo(d.logoUrl);
-  }catch(e){/* sin personalización o falló la lectura: el portal se ve default, no se rompe nada */}
+    if(!snap.exists()){
+      debug=`el documento config/personalizacion no existe todavía para gym=${window._portalGym}`;
+    }else{
+      const d=snap.data();
+      debug=`doc encontrado — colorAcento:${d.colorAcento||'—'} colorFondo:${d.colorFondo||'—'} colorTarjetas:${d.colorTarjetas||'—'} logoUrl:${d.logoUrl?'sí':'—'}`;
+      if(d.colorAcento)aplicarColorAcento(d.colorAcento);
+      if(d.colorFondo)aplicarColorFondo(d.colorFondo);
+      if(d.colorTarjetas)aplicarColorTarjetas(d.colorTarjetas);
+      if(d.logoUrl)aplicarLogo(d.logoUrl);
+    }
+  }catch(e){
+    debug=`ERROR leyendo personalización: ${(e&&e.code)?e.code:(e&&e.message)?e.message:'desconocido'}`;
+  }
+  // TEMPORAL, para diagnosticar por qué el portal no toma los colores/logo del gym — se quita
+  // en cuanto se confirme la causa. No usa alert/console porque en un teléfono no hay forma
+  // fácil de ver la consola; esto se ve directo en la pantalla.
+  const el=document.getElementById('portal-debug-personalizacion');
+  if(el)el.textContent='🔧 '+debug;
 }
 
 function renderPortalIdentify(){
