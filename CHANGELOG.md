@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Fix: portal QR en blanco (solo el encabezado "GYMTRACK", sin el formulario)
+
+**Qué se hizo:**
+- El usuario reportó que, tras la actualización de personalización visual del portal, la página se quedaba mostrando solo el encabezado "GYMTRACK" — el formulario de "Identifícate" nunca aparecía.
+- Causa raíz: `portalReady` había quedado como `await cargarPersonalizacionPortal(); renderPortalIdentify();` — es decir, la app esperaba a que terminara la lectura a Firestore de los colores del gimnasio ANTES de mostrar el formulario. Si esa lectura se tarda o se traba (mala conexión, algún borde de la sesión anónima), `renderPortalIdentify()` nunca se llegaba a ejecutar y la pantalla se quedaba en blanco para siempre — sin ningún error visible, porque `cargarPersonalizacionPortal()` ya atrapa sus propios errores con try/catch (por diseño, para no romper el portal si falla la personalización), pero un `await` colgado no es un error, es simplemente una espera que nunca termina.
+- Se quitó el `await`: ahora `cargarPersonalizacionPortal()` se dispara en paralelo (fire-and-forget) y `renderPortalIdentify()` se llama de inmediato, sin esperar nada. El formulario para identificarse aparece al instante siempre; si la personalización llega, los colores se aplican un momento después — y si nunca llega (conexión mala, lo que sea), el portal simplemente se queda con los colores por defecto en vez de quedarse en blanco.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Revisado que `cargarPersonalizacionPortal()` no cambió de lógica interna (sigue aplicando solo lo que el gimnasio configuró, sigue sin romper nada si falla) — el único cambio es que ya no bloquea el primer render del portal.
+
 ## 2026-09-01 — Un solo botón "Guardar" en Mi Perfil Físico del portal QR
 
 **Qué se hizo:**

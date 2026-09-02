@@ -3950,11 +3950,15 @@ function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 }
 
-window.addEventListener('portalReady',async()=>{
+window.addEventListener('portalReady',()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; queryFn=window._query; whereFn=window._where;
-  await cargarPersonalizacionPortal(); // antes del identify, para que ya se vea con los colores/logo del gym desde el primer paso
+  // El formulario se muestra YA, sin esperar la personalización — si esa lectura a Firestore
+  // se traba (mala conexión, o simplemente tarda), el cliente igual puede identificarse. Los
+  // colores/logo del gym se aplican en cuanto lleguen, en paralelo (fire-and-forget); si nunca
+  // llegan, el portal se queda con los colores por defecto en vez de quedarse en blanco.
+  cargarPersonalizacionPortal();
   renderPortalIdentify();
 });
 
