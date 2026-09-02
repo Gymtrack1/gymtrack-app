@@ -1672,7 +1672,7 @@ async function sincronizarMiembroPublico(miembroId){
 // desincronizado.
 async function sincronizarTodosLosMiembrosPublicos(){
   if(!miembros.length)return alert('No hay miembros que sincronizar');
-  if(!confirm(`¿Sincronizar los ${miembros.length} miembros con el portal QR? Es necesario una sola vez — a partir de ahora, cada alta, edición o pago nuevo se sincroniza solo.`))return;
+  if(!confirm(`¿Sincronizar los ${miembros.length} miembros y la personalización (colores/logo) con el portal QR? Es necesario una sola vez — a partir de ahora, cada cambio nuevo se sincroniza solo.`))return;
   toastPersistente(`Sincronizando 0 / ${miembros.length}...`);
   let hechos=0,fallos=0;
   await Promise.all(miembros.map(async m=>{
@@ -1681,7 +1681,11 @@ async function sincronizarTodosLosMiembrosPublicos(){
     hechos++;
     toastPersistente(`Sincronizando ${hechos} / ${miembros.length}...`);
   }));
-  toast(fallos?`Sincronizados ${miembros.length-fallos}/${miembros.length} — ${fallos} fallaron, intenta de nuevo`:'Todos los miembros sincronizados con el portal QR ✓');
+  // También la personalización (colores/logo) — un solo doc chico, se sincroniza junto con
+  // los miembros para que este botón sea "sincronizar TODO lo del portal QR de una vez".
+  const okPersonalizacion=await sincronizarPersonalizacionPublica();
+  if(!okPersonalizacion)fallos++;
+  toast(fallos?`Sincronizados ${miembros.length-fallos}/${miembros.length} — ${fallos} fallaron, intenta de nuevo`:'Miembros y personalización sincronizados con el portal QR ✓');
 }
 // Espejo público de la personalización visual (usuarios/{uid}/config/personalizacion): SOLO
 // colorAcento/colorFondo/colorTarjetas/logoUrl — el doc real usuarios/{uid} sigue cerrado a
@@ -1692,7 +1696,7 @@ async function sincronizarTodosLosMiembrosPublicos(){
 // restaurarColorDefault, onLogoFileChange, quitarLogo.
 async function sincronizarPersonalizacionPublica(){
   const data={colorAcento:personalizacion.colorAcento||null,colorFondo:personalizacion.colorFondo||null,colorTarjetas:personalizacion.colorTarjetas||null,logoUrl:personalizacion.logoUrl||null};
-  try{await setDoc(userDoc('config','personalizacion'),data);}catch(e){/* espejo del portal: no crítico si falla */}
+  try{await setDoc(userDoc('config','personalizacion'),data);return true;}catch(e){return false;/* espejo del portal: no crítico si falla */}
 }
 // Mapeo compartido días<->nombre de plan (usado al registrar pagos y al importar desde Excel)
 const PLAN_DIAS_NOMBRE={15:'Quincenal',30:'Mensual',60:'Bimestral',90:'Trimestral',180:'Semestral',365:'Anual'};

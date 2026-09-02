@@ -4,6 +4,18 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — El botón "Sincronizar Portal QR" también sincroniza colores/logo
+
+**Qué se hizo:**
+- El usuario probó de nuevo tras el fix anterior (sincronizar personalización en cada login) y el portal seguía sin verse con sus colores/logo. La sincronización automática al hacer login depende de que realmente se haya recargado con el código nuevo (Cmd+Shift+R en el momento correcto) — es difícil de confirmar desde afuera si en verdad ocurrió, así que en vez de seguir dependiendo de algo invisible en segundo plano, se le dio al usuario una acción explícita y verificable.
+- El botón "🔄 Sincronizar Portal QR" (Miembros) ahora también sincroniza la personalización (colores/logo), no solo los miembros — un clic, un mensaje de confirmación, sin depender de que el login por sí solo haya disparado la sincronización a tiempo.
+- `sincronizarPersonalizacionPublica()` ahora devuelve `true`/`false` según si la escritura tuvo éxito (antes no devolvía nada), igual que ya hacía `sincronizarMiembroPublico`, para que el botón pueda avisar si algo falló.
+- La sincronización automática en cada login (agregada en la entrada anterior) se queda tal cual, como respaldo — este botón es la forma confiable y explícita de forzarla ahora mismo.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Flujo esperado: Miembros → "🔄 Sincronizar Portal QR" → confirmar → esperar el toast de progreso y el mensaje final "Miembros y personalización sincronizados con el portal QR ✓" → volver a escanear el QR.
+
 ## 2026-09-01 — Fix: portal QR sin colores/logo del gimnasio (mismo problema que miembrosPublicos)
 
 **Qué se hizo:**
