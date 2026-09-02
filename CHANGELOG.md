@@ -4,6 +4,20 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Marca visual (color claro) en los botones de WhatsApp ya usados
+
+**Qué se hizo:**
+- El usuario pidió que, al darle clic a un botón de WhatsApp en Alertas o Recordatorios, quede alguna señal de que ya se le picó — para no perder de vista a quién ya se le contactó en la sesión de trabajo — con un color más claro en el botón.
+- Nueva clase CSS `.btn-whatsapp-enviado` (verde claro, texto verde oscuro) como variante de `.btn-whatsapp` (verde sólido). Dos sets nuevos en memoria, `whatsappEnviadoAlerta` y `whatsappEnviadoRecordatorio` — por separado porque son mensajes distintos (uno es el de cobro vencido, el otro el de recordatorio de asistencia), así que marcar uno no marca el otro para el mismo miembro.
+- `enviarWhatsApp(mid)` (Alertas: vencidos/por vencer) y `enviarWhatsAppRecordatorio(mid)` (Recordatorios de meta semanal) ahora, después de abrir la pestaña de WhatsApp, agregan el id del miembro al set correspondiente y vuelven a pintar esa sección — el botón que se acaba de usar cambia a verde claro de inmediato, sin recargar la página.
+- Igual que `promoEnviados` (la cola de envío de promociones ya existente), esta marca vive SOLO en memoria del navegador — se reinicia si se recarga la página. Es un recordatorio visual para el staff dentro de la sesión, no un registro de que el mensaje se envió de verdad (eso GymTrack no lo puede saber una vez que abre WhatsApp, solo que se le dio clic al botón) ni queda guardado en Firestore.
+- El botón NO se deshabilita ni desaparece — sigue siendo clickeable por si hay que reenviar, solo cambia de color.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- `git diff` revisado: cambios contenidos a los dos botones de WhatsApp de Alertas/Recordatorios y su CSS — sin tocar la cola de promociones, el editor de mensajes, ni ninguna otra pestaña.
+- Simulación en Node de la lógica de selección de clase: antes de dar clic sale `btn-whatsapp` (verde sólido); después de dar clic en Alertas sale `btn-whatsapp-enviado` (verde claro) solo para Alertas, sin afectar Recordatorios del mismo miembro (y viceversa); otro miembro sin clic se mantiene sin marcar.
+
 ## 2026-09-01 — "Mi progreso" abre en la máquina que se acaba de escanear
 
 **Qué se hizo:**

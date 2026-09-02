@@ -100,6 +100,7 @@
   .btn-danger{background:rgba(220,59,48,0.15);color:var(--red);border:1px solid rgba(220,59,48,0.3);} .btn-danger:hover{background:rgba(220,59,48,0.22);}
   .btn-green{background:rgba(31,157,85,0.12);color:var(--green);border:1px solid rgba(31,157,85,0.3);}
   .btn-whatsapp{background:#25d366;color:#fff;border:none;}  .btn-whatsapp:hover{background:#1da851;}
+  .btn-whatsapp-enviado{background:#c8f0d8;color:#1a7a44;border:none;}  .btn-whatsapp-enviado:hover{background:#b3e8c8;}
   .btn-sm{padding:6px 12px;font-size:12px;}
   .modal-overlay{display:none;position:fixed;inset:0;background:rgba(22,22,15,0.4);z-index:200;align-items:center;justify-content:center;}
   .modal-overlay.open{display:flex;}
@@ -2345,7 +2346,7 @@ function cambiarPaginaAsistencia(delta){asistenciaPage+=delta;renderAsistencia(d
 function _alertasCatHtml(lista,cat,cls,tituloCard){
   const expandido=alertasExpandido[cat];
   const mostrar=expandido?lista:lista.slice(0,ALERTAS_PAGE_SIZE);
-  let html=mostrar.map(m=>`<div class="alert-card ${cls}"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${tituloCard(m)} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');
+  let html=mostrar.map(m=>`<div class="alert-card ${cls}"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${tituloCard(m)} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn ${whatsappEnviadoAlerta.has(m.id)?'btn-whatsapp-enviado':'btn-whatsapp'} btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');
   if(lista.length>ALERTAS_PAGE_SIZE){
     html+=expandido
       ?`<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="toggleAlertasCat('${cat}')">Ver menos</button>`
@@ -2418,11 +2419,21 @@ async function guardarMsgWA(){
   }catch(e){toast('Error al guardar: '+e.message,'err');}
 }
 
+// Marca visual de "ya se le dio clic" en los botones de WhatsApp de Alertas/Recordatorios
+// (fondo verde claro en vez del verde sólido) — vive solo en memoria (se reinicia al recargar
+// la página), igual que promoEnviados más abajo: es un recordatorio para el staff dentro de
+// esta sesión de trabajo, no un registro permanente de que el mensaje se envió de verdad (eso
+// GymTrack no lo puede saber, solo que se le dio clic al botón). Alertas y Recordatorios usan
+// mensajes distintos, así que se guardan por separado — mandar uno no marca el otro.
+let whatsappEnviadoAlerta=new Set(),whatsappEnviadoRecordatorio=new Set();
+
 function enviarWhatsApp(mid){
   const m=miembros.find(x=>x.id===mid);if(!m||!m.telefono)return alert('Este miembro no tiene teléfono registrado');
   const msg=_aplicarMsgWA(m);
   const tel=m.telefono.replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+  whatsappEnviadoAlerta.add(mid);
+  renderAlertas();
 }
 
 function enviarWhatsAppTodos(){
@@ -2514,7 +2525,7 @@ function renderRecordatoriosPendientes(){
   if(!pendientes.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div>No hay recordatorios pendientes por ahora</div></div>';return;}
   el.innerHTML=pendientes.map(({miembro:m,patron})=>{
     const info=`Normalmente viene los ${DIAS_SEMANA[patron.diaSemana]} ~${fmtHoraPromedio(patron.horaPromedio)} · ${metaProgresoTexto(m.id)}`;
-    return`<div class="alert-card recordatorio"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${info} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppRecordatorio('${m.id}')" ${m.telefono?'':'disabled'}>📱</button></div></div>`;
+    return`<div class="alert-card recordatorio"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${info} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn ${whatsappEnviadoRecordatorio.has(m.id)?'btn-whatsapp-enviado':'btn-whatsapp'} btn-sm" onclick="enviarWhatsAppRecordatorio('${m.id}')" ${m.telefono?'':'disabled'}>📱</button></div></div>`;
   }).join('');
 }
 
@@ -2583,6 +2594,8 @@ function enviarWhatsAppRecordatorio(mid){
   const msg=_aplicarMsgWARecordatorio(m,patron);
   const tel=m.telefono.replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+  whatsappEnviadoRecordatorio.add(mid);
+  renderRecordatoriosPendientes();
 }
 
 // FINANZAS
