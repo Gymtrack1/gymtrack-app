@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-02 — Corrige XSS almacenado: escapa nombre/teléfono/notas/dirección/puesto/zona antes de insertarlos en `innerHTML`
+
+**Qué se hizo:**
+- Auditoría completa del archivo: varias pantallas (Dashboard, Miembros, Pagos, Asistencia, Alertas, Alerta de Promoción, Recordatorios, Empleados, Inventario —incluye el aviso de stock bajo/sin stock—, Ventas y Promociones) insertaban datos escritos por el staff (nombre, teléfono, notas, dirección/zona, puesto) directo en `innerHTML` sin escaparlos. Si cualquiera de esos campos llegara a contener HTML/script (a mano o vía importación de Excel), se ejecutaría en el navegador de cualquiera que abriera esa pantalla — XSS almacenado.
+- Ya existía `escAttr()` (usado correctamente en el portal QR y en Seguimiento personalizado). Se envolvieron con `escAttr()` los ~20 puntos de inserción encontrados, sin cambiar nada visual ni de comportamiento cuando el dato no trae caracteres especiales. Incluye dos que no estaban en el reporte inicial pero caen en el mismo patrón: la tabla principal de Asistencia (nombre + el `title` de notas, que antes solo escapaba comillas) y los `<option>` de producto en el modal de Venta/Venta rápida.
+- Bug aparte, mismo origen: en varios de estos lugares el patrón era `escAttr(x)||'—'` para mostrar `—` cuando el campo no existe. Pero `escAttr(undefined)` devuelve el string `"undefined"` (verdadero en JS), así que ese `||'—'` nunca se activaba — se veía literalmente la palabra "undefined". Se cambió a `x?escAttr(x):'—'` en todos los casos (teléfono, puesto, zona, notas).
+- Fuera de alcance a propósito: `p.planNombre` y `p.promocionUsada` (vienen de datos internos que el staff arma desde selects/plantillas, no texto libre) y el selector de búsqueda de miembro para pagos (`filtrarMiembrosSearch`), que ya tenía su propio escapado local desde antes.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script>` principal extraído — sintaxis válida.
+- `git diff` revisado línea por línea: cada cambio es un `escAttr(...)` o `x?escAttr(x):'—'` envolviendo un campo existente — cero cambios de HTML/CSS/lógica fuera de eso.
+- Simulación en Node con `escAttr` real: confirma el bug original (`escAttr(undefined)||'—'` da `"undefined"`), confirma que el patrón nuevo sí cae a `'—'` sin telefono/vacío y no cambia nada cuando el dato existe, y confirma que un nombre malicioso (`<script>alert(1)</script>`) queda convertido a entidades HTML y ya no se ejecutaría.
+
 ## 2026-09-01 — Marca visual (color claro) en los botones de WhatsApp ya usados
 
 **Qué se hizo:**

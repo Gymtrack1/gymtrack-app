@@ -1896,9 +1896,9 @@ function renderDashboard(){
   const hoyStr=new Date().toDateString();
   const hoyIds=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).map(a=>a.miembroId);
   const hoyM=miembros.filter(m=>hoyIds.includes(m.id));
-  document.getElementById('dash-hoy').innerHTML=hoyM.length?`<table><thead><tr><th>#</th><th>Nombre</th><th>Estado</th></tr></thead><tbody>${hoyM.map(m=>`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td>${m.nombre} <span class="today-pill">HOY</span></td><td>${estadoBadge(getEstado(m.id))}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-icon">🏃</div><div>Nadie ha asistido hoy</div></div>';
+  document.getElementById('dash-hoy').innerHTML=hoyM.length?`<table><thead><tr><th>#</th><th>Nombre</th><th>Estado</th></tr></thead><tbody>${hoyM.map(m=>`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td>${escAttr(m.nombre)} <span class="today-pill">HOY</span></td><td>${estadoBadge(getEstado(m.id))}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-icon">🏃</div><div>Nadie ha asistido hoy</div></div>';
   const proxList=miembros.filter(m=>getEstado(m.id)==='por-vencer');
-  document.getElementById('dash-proximos').innerHTML=proxList.length?`<table><thead><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Vence</th><th>Días</th></tr></thead><tbody>${proxList.map(m=>`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td>${m.nombre}</td><td>${m.telefono||'—'}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="color:var(--orange);font-weight:700">${diasRestantes(getVencimiento(m.id))}d</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-icon">✅</div><div>Nadie por vencer esta semana</div></div>';
+  document.getElementById('dash-proximos').innerHTML=proxList.length?`<table><thead><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Vence</th><th>Días</th></tr></thead><tbody>${proxList.map(m=>`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td>${escAttr(m.nombre)}</td><td>${m.telefono?escAttr(m.telefono):'—'}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="color:var(--orange);font-weight:700">${diasRestantes(getVencimiento(m.id))}d</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><div class="empty-icon">✅</div><div>Nadie por vencer esta semana</div></div>';
 }
 
 // MIEMBROS
@@ -1915,7 +1915,7 @@ function renderMiembros(filter=''){
   if(miembrosPage<1)miembrosPage=1;
   const start=(miembrosPage-1)*MIEMBROS_PAGE_SIZE;
   const pagina=lista.slice(start,start+MIEMBROS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${m.telefono||'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td>${metaSemanalBadge(m.id)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${escAttr(m.nombre)}</strong></td><td>${m.telefono?escAttr(m.telefono):'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td>${metaSemanalBadge(m.id)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
   renderMiembrosPaginacion(lista.length,totalPaginas);
 }
 function renderMiembrosPaginacion(total,totalPaginas){
@@ -2248,7 +2248,7 @@ function renderPagos(){
   if(pagosPage<1)pagosPage=1;
   const start=(pagosPage-1)*PAGOS_PAGE_SIZE;
   const pagina=sorted.slice(start,start+PAGOS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
   renderPagosPaginacion(sorted.length,totalPaginas);
 }
 function renderPagosPaginacion(total,totalPaginas){
@@ -2278,12 +2278,12 @@ function renderAsistencia(filter=''){
     if(asistenciaPage<1)asistenciaPage=1;
     const start=(asistenciaPage-1)*ASISTENCIA_PAGE_SIZE;
     const pagina=lista.slice(start,start+ASISTENCIA_PAGE_SIZE);
-    tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);const yaFue=hoyIds.includes(m.id);const dis=['vencido','sin-pago'].includes(estado)?'disabled':'';const notas=m.notas||'';const notasCorta=notas.length>30?notas.slice(0,30)+'…':notas;return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${m.nombre}</strong></td><td>${estadoBadge(estado)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px" title="${notas.replace(/"/g,'&quot;')}">${notas?notasCorta:'—'}</td><td>${yaFue?'<span class="today-pill">✓ Registrado</span>':`<button class="attend-btn" ${dis} onclick="registrarAsistencia('${m.id}')">Registrar</button>`}</td></tr>`;}).join('');
+    tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);const yaFue=hoyIds.includes(m.id);const dis=['vencido','sin-pago'].includes(estado)?'disabled':'';const notas=m.notas||'';const notasCorta=notas.length>30?notas.slice(0,30)+'…':notas;return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${escAttr(m.nombre)}</strong></td><td>${estadoBadge(estado)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px" title="${escAttr(notas)}">${notas?escAttr(notasCorta):'—'}</td><td>${yaFue?'<span class="today-pill">✓ Registrado</span>':`<button class="attend-btn" ${dis} onclick="registrarAsistencia('${m.id}')">Registrar</button>`}</td></tr>`;}).join('');
     renderAsistenciaPaginacion(lista.length,totalPaginas);
   }
   const hist=document.getElementById('tabla-historial');
   const sorted=[...asistencias].sort((a,b)=>b.fecha-a.fecha).slice(0,60);
-  hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembrosPorId.get(a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${m.nombre}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
+  hist.innerHTML=sorted.length?sorted.map(a=>{const m=miembrosPorId.get(a.miembroId);const d=new Date(a.fecha);return`<tr><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>${d.toLocaleDateString('es-MX')}</td><td>${d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td></tr>`;}).join(''):'<tr><td colspan="3"><div class="empty"><div class="empty-icon">📅</div><div>Sin historial</div></div></td></tr>';
   renderHorasPico();
 }
 // Formato legible de hora 24h -> "6am","12pm","11pm", etc.
@@ -2346,7 +2346,7 @@ function cambiarPaginaAsistencia(delta){asistenciaPage+=delta;renderAsistencia(d
 function _alertasCatHtml(lista,cat,cls,tituloCard){
   const expandido=alertasExpandido[cat];
   const mostrar=expandido?lista:lista.slice(0,ALERTAS_PAGE_SIZE);
-  let html=mostrar.map(m=>`<div class="alert-card ${cls}"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${tituloCard(m)} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn ${whatsappEnviadoAlerta.has(m.id)?'btn-whatsapp-enviado':'btn-whatsapp'} btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');
+  let html=mostrar.map(m=>`<div class="alert-card ${cls}"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${escAttr(m.nombre)}</div><div class="alert-info">${tituloCard(m)} · ${m.telefono?escAttr(m.telefono):'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn ${whatsappEnviadoAlerta.has(m.id)?'btn-whatsapp-enviado':'btn-whatsapp'} btn-sm" onclick="enviarWhatsApp('${m.id}')">📱</button><button class="btn btn-primary btn-sm" onclick="preRegPago('${m.id}')">Renovar</button></div></div>`).join('');
   if(lista.length>ALERTAS_PAGE_SIZE){
     html+=expandido
       ?`<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="toggleAlertasCat('${cat}')">Ver menos</button>`
@@ -2496,7 +2496,7 @@ function renderPromoLista(){
     const accion=promoEnviados.has(m.id)
       ?'<span style="color:var(--green);font-weight:600;font-size:12px">✅ Enviado</span>'
       :`<button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppPromo('${m.id}')" ${m.telefono?'':'disabled'}>📱</button>`;
-    return`<div class="alert-card"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px;align-items:center">${accion}</div></div>`;
+    return`<div class="alert-card"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${escAttr(m.nombre)}</div><div class="alert-info">${m.telefono?escAttr(m.telefono):'Sin tel'}</div></div><div style="display:flex;gap:6px;align-items:center">${accion}</div></div>`;
   }).join('');
 }
 function enviarWhatsAppPromo(mid){
@@ -2525,7 +2525,7 @@ function renderRecordatoriosPendientes(){
   if(!pendientes.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><div>No hay recordatorios pendientes por ahora</div></div>';return;}
   el.innerHTML=pendientes.map(({miembro:m,patron})=>{
     const info=`Normalmente viene los ${DIAS_SEMANA[patron.diaSemana]} ~${fmtHoraPromedio(patron.horaPromedio)} · ${metaProgresoTexto(m.id)}`;
-    return`<div class="alert-card recordatorio"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${m.nombre}</div><div class="alert-info">${info} · ${m.telefono||'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn ${whatsappEnviadoRecordatorio.has(m.id)?'btn-whatsapp-enviado':'btn-whatsapp'} btn-sm" onclick="enviarWhatsAppRecordatorio('${m.id}')" ${m.telefono?'':'disabled'}>📱</button></div></div>`;
+    return`<div class="alert-card recordatorio"><div><div class="alert-name">#${fmtNum(m.numero||0)} ${escAttr(m.nombre)}</div><div class="alert-info">${info} · ${m.telefono?escAttr(m.telefono):'Sin tel'}</div></div><div style="display:flex;gap:6px"><button class="btn ${whatsappEnviadoRecordatorio.has(m.id)?'btn-whatsapp-enviado':'btn-whatsapp'} btn-sm" onclick="enviarWhatsAppRecordatorio('${m.id}')" ${m.telefono?'':'disabled'}>📱</button></div></div>`;
   }).join('');
 }
 
@@ -2822,7 +2822,7 @@ function renderEmpleados(){
   if(!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','tu plan actual');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
   <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
-  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${e.nombre}</strong></td><td>${e.puesto||'—'}</td><td>${e.telefono||'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
+  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${escAttr(e.nombre)}</strong></td><td>${e.puesto?escAttr(e.puesto):'—'}</td><td>${e.telefono?escAttr(e.telefono):'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
 }
 
 // INVENTARIO
@@ -2837,8 +2837,8 @@ function renderInventario(seccion='equipo'){
   let alertasHtml='';
   if(sinStock.length||stockBajo.length){
     alertasHtml=`<div style="background:rgba(220,59,48,0.08);border:1px solid rgba(220,59,48,0.18);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px">`;
-    if(sinStock.length) alertasHtml+=`<div style="color:var(--red);font-weight:600;margin-bottom:4px">🚨 Sin stock: ${sinStock.map(p=>p.nombre).join(', ')}</div>`;
-    if(stockBajo.length) alertasHtml+=`<div style="color:var(--orange);font-weight:600">⚠️ Stock bajo: ${stockBajo.map(p=>`${p.nombre} (${p.stock} restantes)`).join(', ')}</div>`;
+    if(sinStock.length) alertasHtml+=`<div style="color:var(--red);font-weight:600;margin-bottom:4px">🚨 Sin stock: ${sinStock.map(p=>escAttr(p.nombre)).join(', ')}</div>`;
+    if(stockBajo.length) alertasHtml+=`<div style="color:var(--orange);font-weight:600">⚠️ Stock bajo: ${stockBajo.map(p=>`${escAttr(p.nombre)} (${p.stock} restantes)`).join(', ')}</div>`;
     alertasHtml+='</div>';
   }
 
@@ -2859,7 +2859,7 @@ function renderInventario(seccion='equipo'){
       </div>
     </div>
     <div class="table-wrap"><table><thead><tr><th>Artículo</th><th>Cantidad</th><th>Estado</th><th>Zona</th><th>Notas</th><th>Acciones</th></tr></thead>
-    <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${i.nombre}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.zona||'—'}</td><td style="color:var(--muted);font-size:12px">${i.notas||'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
+    <tbody>${inventario.length?inventario.map(i=>`<tr><td><strong>${escAttr(i.nombre)}</strong></td><td>${i.cantidad}</td><td><span style="color:${estadoColor[i.estado]||'var(--text)'};font-weight:600">${i.estado||'—'}</span></td><td style="color:var(--muted);font-size:12px">${i.zona?escAttr(i.zona):'—'}</td><td style="color:var(--muted);font-size:12px">${i.notas?escAttr(i.notas):'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editInventario('${i.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delInventario('${i.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏋️</div><div>No hay equipo registrado</div></div></td></tr>'}</tbody></table></div>
   </div>
 
   <div class="inv-section ${seccion==='tienda'?'active':''}">
@@ -2877,7 +2877,7 @@ function renderInventario(seccion='equipo'){
       const stockIcon=(p.stock||0)===0?'🚨':(p.stockMinimo&&p.stock<=p.stockMinimo)?'⚠️':'';
       // FIX 11: eliminado el "}" extra que aparecía como texto en la celda del nombre
       return`<tr>
-        <td><strong>${p.nombre}</strong>${p.notas?`<div style="font-size:11px;color:var(--muted)">${p.notas}</div>`:''}</td>
+        <td><strong>${escAttr(p.nombre)}</strong>${p.notas?`<div style="font-size:11px;color:var(--muted)">${escAttr(p.notas)}</div>`:''}</td>
         <td><span style="font-size:12px;color:var(--muted)">${catLabel[p.categoria]||p.categoria||'—'}</span></td>
         <td style="font-weight:700;color:var(--accent)">$${(p.precio||0).toLocaleString()}</td>
         <td><span class="${stockClass}">${stockIcon} ${p.stock||0}</span>${p.stockMinimo?`<span style="font-size:11px;color:var(--muted);margin-left:4px">/ mín ${p.stockMinimo}</span>`:''}</td>
@@ -2888,7 +2888,7 @@ function renderInventario(seccion='equipo'){
         </td>
       </tr>`;}).join('')}</tbody></table></div>
     <div class="section-title" style="margin-top:24px">Últimas Ventas</div>
-    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembrosPorId.get(v.miembroId);return`<tr><td>${prod?prod.nombre:v.productoNombre||'—'}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?m.nombre:'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
+    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembrosPorId.get(v.miembroId);return`<tr><td>${prod?escAttr(prod.nombre):(v.productoNombre?escAttr(v.productoNombre):'—')}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?escAttr(m.nombre):'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
     <div class="section-title" style="margin-top:24px">Horas Pico de Compras</div>
     <div class="ec-card" style="margin-bottom:24px"><h3>🕐 Horas de Mayor Compra</h3><div id="horas-pico-compras-content"></div></div>
     <div class="section-title">Top Compradores</div>
@@ -2943,7 +2943,7 @@ function topCompradoresHtml(){
     .slice(0,10);
   if(!ranking.length)return'<div class="empty"><div class="empty-icon">🏆</div><div>Aún no hay ventas asociadas a un miembro</div></div>';
   return`<div class="table-wrap"><table><thead><tr><th>#</th><th>Miembro</th><th>Compras</th><th>Total gastado</th></tr></thead><tbody>${
-    ranking.map((r,i)=>`<tr><td>${i+1}</td><td><span class="num-badge">#${fmtNum(r.miembro.numero||0)}</span> ${r.miembro.nombre}</td><td>${r.compras}</td><td style="color:var(--accent);font-weight:700">$${r.total.toLocaleString()}</td></tr>`).join('')
+    ranking.map((r,i)=>`<tr><td>${i+1}</td><td><span class="num-badge">#${fmtNum(r.miembro.numero||0)}</span> ${escAttr(r.miembro.nombre)}</td><td>${r.compras}</td><td style="color:var(--accent);font-weight:700">$${r.total.toLocaleString()}</td></tr>`).join('')
   }</tbody></table></div>`;
 }
 
@@ -2990,8 +2990,8 @@ function editProducto(id){
 function openVentaModal(){
   // FIX 12: Verificar que hay productos antes de abrir
   if(!productos.length){alert('No hay productos registrados. Agrega productos primero.');return;}
-  document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}">${p.nombre} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
-  document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');
+  document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}">${escAttr(p.nombre)} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
+  document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${escAttr(m.nombre)}</option>`).join('');
   const firstProd=productos[0];
   if(firstProd) document.getElementById('v-precio').value=firstProd.precio||0;
   document.getElementById('v-cantidad').value=1;
@@ -3001,8 +3001,8 @@ function openVentaModal(){
 }
 
 function ventaRapida(prodId){
-  document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}" ${p.id===prodId?'selected':''}>${p.nombre} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
-  document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${m.nombre}</option>`).join('');
+  document.getElementById('v-producto').innerHTML=productos.map(p=>`<option value="${p.id}" ${p.id===prodId?'selected':''}>${escAttr(p.nombre)} — Stock: ${p.stock||0} — $${p.precio||0}</option>`).join('');
+  document.getElementById('v-miembro').innerHTML='<option value="">— Sin miembro —</option>'+miembros.map(m=>`<option value="${m.id}">#${fmtNum(m.numero||0)} ${escAttr(m.nombre)}</option>`).join('');
   const p=productos.find(x=>x.id===prodId);
   if(p) document.getElementById('v-precio').value=p.precio||0;
   document.getElementById('v-cantidad').value=1;
@@ -3582,13 +3582,13 @@ async function eliminarPromocion(id){
 }
 function renderPromocionesModal(){
   const el=document.getElementById('lista-promociones');
-  el.innerHTML=promociones.length?promociones.map(p=>`<div class="ec-row"><span>${p.nombre}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarPromocion('${p.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarPromocion('${p.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes promociones. Agrega la primera arriba.</div></div>';
+  el.innerHTML=promociones.length?promociones.map(p=>`<div class="ec-row"><span>${escAttr(p.nombre)}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarPromocion('${p.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarPromocion('${p.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes promociones. Agrega la primera arriba.</div></div>';
 }
 function abrirModalPromociones(){renderPromocionesModal();openModal('modal-promociones');}
 function populatePromocionSelect(){
   const sel=document.getElementById('p-promocion');
   if(!sel)return;
-  sel.innerHTML='<option value="">Ninguna</option>'+promociones.map(p=>`<option value="${escAttr(p.nombre)}">${p.nombre}</option>`).join('');
+  sel.innerHTML='<option value="">Ninguna</option>'+promociones.map(p=>`<option value="${escAttr(p.nombre)}">${escAttr(p.nombre)}</option>`).join('');
   sel.value='';
 }
 
