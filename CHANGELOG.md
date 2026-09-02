@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — "Mi progreso" abre en la máquina que se acaba de escanear
+
+**Qué se hizo:**
+- El usuario pidió que "Mi progreso" muestre inicialmente solo el progreso de la máquina cuyo QR se acaba de escanear (con esa máquina ya seleccionada en el selector), y que desde ahí se pueda cambiar a ver el progreso de otras máquinas sin tener que volver a escanear — pero que para REGISTRAR una serie nueva sí siga haciendo falta escanear el QR de esa máquina específica.
+- Lo último ya funcionaba así (la tarjeta "Registrar serie" solo aparece si la URL trae `?maquina=...`, y `portalGuardarSerie()` siempre usa esa máquina — no hay forma de registrar sin escanear). Lo que faltaba era el punto de partida de "Mi progreso": antes elegía la primera máquina que apareciera en el historial del miembro (orden del array, no necesariamente la que acaba de escanear).
+- En `renderPortalProgresoSeccion()`, la primera vez que se decide qué máquina mostrar (`portalMaquinaSel` todavía vacío), ahora prioriza la máquina del QR escaneado (`window._portalMaquina`) si el miembro ya tiene progreso registrado en ella; si no (ej. acceso general sin `?maquina=`, o la máquina escaneada aún no tiene historial), cae al comportamiento de siempre (la primera disponible). Una vez que el cliente cambia la máquina a mano desde el selector, esa elección se respeta en los siguientes render (no se resetea sola).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Simulación en Node de la lógica de selección: con historial en 2 máquinas, escanear el QR de la que NO es la primera del historial igual la selecciona; escanear la que sí es la primera también funciona; escanear una máquina sin historial (o entrar sin `?maquina=`) cae al primero disponible sin romperse; y una selección manual previa del cliente no se sobreescribe con la del QR en re-renders posteriores (ej. al guardar el peso, que también refresca toda la pantalla).
+
 ## 2026-09-01 — Causa real confirmada: reglas de Firestore desactualizadas (se quita el diagnóstico temporal)
 
 **Qué se hizo:**

@@ -4123,7 +4123,14 @@ async function portalGuardarSerie(){
 function renderPortalProgresoSeccion(){
   if(!portalRegistros.length)return''; // nunca ha usado el QR: cero cambio, no se muestra nada
   const maquinaIds=[...new Set(portalRegistros.map(r=>r.maquinaId))];
-  if(!portalMaquinaSel||!maquinaIds.includes(portalMaquinaSel))portalMaquinaSel=maquinaIds[0];
+  if(!portalMaquinaSel||!maquinaIds.includes(portalMaquinaSel)){
+    // La primera vez (portalMaquinaSel todavía vacío), prioriza la máquina del QR que se
+    // acaba de escanear si ya tiene progreso registrado — así el cliente ve directo lo que
+    // vino a revisar, sin tener que elegirla a mano. Después puede cambiarla desde el
+    // selector para ver el progreso de otras máquinas sin volver a escanear ningún QR — solo
+    // para REGISTRAR una serie nueva sí hace falta escanear el QR de esa máquina.
+    portalMaquinaSel=(window._portalMaquina&&maquinaIds.includes(window._portalMaquina))?window._portalMaquina:maquinaIds[0];
+  }
   const nombreMaquina=id=>{const mq=portalMaquinas.find(x=>x.id===id);return mq?mq.nombre:'Máquina';};
   const tipos=[...new Set(portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
