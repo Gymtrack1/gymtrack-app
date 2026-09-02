@@ -4140,17 +4140,6 @@ function dibujarChartPortalProgreso(){
   });
 }
 
-async function portalGuardarPeso(){
-  const peso=parseFloat(document.getElementById('portal-peso-valor').value);
-  if(!peso)return alert('Escribe tu peso');
-  const data={miembroId:portalMiembro.id,peso,fecha:Date.now()};
-  try{
-    const ref=await addDoc(gymCol(window._portalGym,'pesoCorporal'),data);
-    portalPesos.push({id:ref.id,...data});
-    toast('Peso guardado ✓');
-    renderPortalHome();
-  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
-}
 function dibujarChartPortalPeso(){
   const canvas=document.getElementById('chart-portal-peso');
   if(!canvas)return;
@@ -4179,37 +4168,47 @@ function renderPortalPerfilFisicoSeccion(){
       <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
       <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${portalMiembro.estatura||''}"></div>
     </div>
-    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarDatos()">Guardar datos</button>
-    ${(edad||imc!==null)?`<div style="margin-top:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC: ${imc}`:''}</div>`:''}
+    ${(edad||imc!==null)?`<div style="margin-bottom:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC: ${imc}`:''}</div>`:''}
 
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
 
-    <div class="form-row">
-      <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-peso-valor" placeholder="70.5"></div>
-      <div class="form-group" style="align-self:flex-end"><button class="btn btn-primary" style="width:100%" onclick="portalGuardarPeso()">Guardar peso</button></div>
-    </div>
+    <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-peso-valor" placeholder="70.5"></div>
+
+    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarPerfilFisico()">Guardar</button>
+
     ${historial.length?`
-    <div class="chart-wrap" style="height:180px"><canvas id="chart-portal-peso"></canvas></div>
+    <div class="chart-wrap" style="height:180px;margin-top:16px"><canvas id="chart-portal-peso"></canvas></div>
     <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${p.peso}kg</td></tr>`).join('')}</tbody></table></div>`
     :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
   </div>`;
 }
-async function portalGuardarDatos(){
+// Un solo botón para toda la tarjeta "Mi Perfil Físico" (antes eran dos: "Guardar datos" y
+// "Guardar peso") — guarda lo que esté lleno y no toca lo que quede vacío, en vez de exigir
+// que las tres cosas (fecha, estatura, peso) se llenen juntas cada vez.
+async function portalGuardarPerfilFisico(){
   const fechaStr=document.getElementById('portal-fecha-nacimiento').value;
   const estaturaVal=parseFloat(document.getElementById('portal-estatura').value)||null;
   const fechaNacimiento=fechaStr?new Date(fechaStr+'T12:00:00').getTime():null;
-  const cambios={};
-  if(estaturaVal!==null)cambios.estatura=estaturaVal;
-  if(fechaNacimiento!==null)cambios.fechaNacimiento=fechaNacimiento;
-  if(!Object.keys(cambios).length)return alert('Escribe tu estatura o tu fecha de nacimiento');
+  const pesoVal=parseFloat(document.getElementById('portal-peso-valor').value)||null;
+  const cambiosPerfil={};
+  if(estaturaVal!==null)cambiosPerfil.estatura=estaturaVal;
+  if(fechaNacimiento!==null)cambiosPerfil.fechaNacimiento=fechaNacimiento;
+  if(!Object.keys(cambiosPerfil).length&&pesoVal===null)return alert('Escribe al menos un dato para guardar (fecha de nacimiento, estatura o peso).');
   const gymId=window._portalGym;
   try{
-    // Reglas de Firestore: solo se permite tocar estatura/fechaNacimiento desde aquí, nunca
-    // el resto del documento (nombre, teléfono, notas, etc. quedan intactos y protegidos).
-    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),cambios);
-    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),cambios);
-    portalMiembro={...portalMiembro,...cambios};
-    toast('Datos guardados ✓');
+    if(Object.keys(cambiosPerfil).length){
+      // Reglas de Firestore: solo se permite tocar estatura/fechaNacimiento desde aquí, nunca
+      // el resto del documento (nombre, teléfono, notas, etc. quedan intactos y protegidos).
+      await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),cambiosPerfil);
+      await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),cambiosPerfil);
+      portalMiembro={...portalMiembro,...cambiosPerfil};
+    }
+    if(pesoVal!==null){
+      const data={miembroId:portalMiembro.id,peso:pesoVal,fecha:Date.now()};
+      const ref=await addDoc(gymCol(gymId,'pesoCorporal'),data);
+      portalPesos.push({id:ref.id,...data});
+    }
+    toast('Guardado ✓');
     renderPortalHome();
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
 }

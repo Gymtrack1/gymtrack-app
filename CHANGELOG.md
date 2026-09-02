@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Un solo botón "Guardar" en Mi Perfil Físico del portal QR
+
+**Qué se hizo:**
+- El usuario preguntó si convenía un solo botón de guardar al final de toda la página del portal. Se acordó un punto medio: "Registrar serie" se queda con su propio botón (es la acción #1 por la que alguien escanea el QR, y quiere confirmación ahí mismo, no hasta el final de la página) — pero "Mi Perfil Físico" tenía dos botones ("Guardar datos" y "Guardar peso") para una sola tarjeta, lo cual sí era inconsistente y se fusionó en uno.
+- `portalGuardarDatos()` y `portalGuardarPeso()` se reemplazaron por una sola `portalGuardarPerfilFisico()`: guarda lo que esté lleno (fecha de nacimiento/estatura hacia `miembros`+`miembrosPublicos`, peso hacia `pesoCorporal`) y no toca lo que quede vacío — ya no exige llenar los tres campos juntos cada vez. Si los tres campos están vacíos, avisa en vez de no hacer nada silenciosamente.
+- El botón "Guardar" quedó al final de los campos editables de la tarjeta (antes del historial/gráfica de peso, que es solo informativo).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida; confirmado que no quedó ninguna referencia suelta a `portalGuardarDatos`/`portalGuardarPeso`.
+- Simulación en Node de la lógica combinada: los 3 campos vacíos bloquea con aviso y no escribe nada; solo peso lleno escribe únicamente `pesoCorporal` sin tocar `miembros`; solo fecha+estatura escribe únicamente `miembros`/`miembrosPublicos` sin crear un registro de peso vacío; los 3 llenos escribe ambos destinos; y estatura sola (sin fecha de nacimiento) se guarda igual, sin exigir que los tres vengan juntos.
+
 ## 2026-09-01 — Personalización visual en el portal QR + reorganización y simplificación del portal
 
 **Qué se hizo:**
