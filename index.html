@@ -1295,6 +1295,13 @@ async function loadPlan(){
       personalizacion.logoUrl=d.logoUrl||null;
       personalizacion.fondosPorTab=d.fondosPorTab||{};
       aplicarPersonalizacion();
+      // Mantiene al día el espejo público que lee el portal QR (usuarios/{uid}/config/
+      // personalizacion) — se llama en CADA login del staff, no solo al guardar cambios, para
+      // que una cuenta que configuró su personalización ANTES de que existiera el portal (o
+      // en un dispositivo/sesión vieja) también quede sincronizada sin tener que volver a
+      // tocar nada. Es un solo documento chico, así que hacerlo en cada login no pesa nada
+      // (muy distinto al caso de miembrosPublicos, con potencialmente miles de miembros).
+      sincronizarPersonalizacionPublica();
       // Si le falta el email, agregarlo para que admin lo vea
       if(!d.email){
         await updateDoc(docFn(db,'usuarios',uid),{email, uid});

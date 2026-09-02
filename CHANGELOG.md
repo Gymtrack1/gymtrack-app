@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-01 — Fix: portal QR sin colores/logo del gimnasio (mismo problema que miembrosPublicos)
+
+**Qué se hizo:**
+- El usuario reportó que, con el portal QR ya mostrando el formulario correctamente, seguía sin verse con los colores/logo de su gimnasio (colores default, sin logo) aunque ya tiene personalización configurada.
+- Misma causa raíz que el problema anterior de "No encontramos tu registro": el gimnasio configuró su personalización ANTES de que existiera el espejo público `usuarios/{uid}/config/personalizacion`, así que ese documento nunca se creó — `sincronizarPersonalizacionPublica()` solo se disparaba al GUARDAR un cambio de personalización (colores/logo nuevos), no en cuentas que ya la tenían configurada de antes.
+- A diferencia de `miembrosPublicos` (que puede ser cientos/miles de documentos y necesitó un botón manual de sincronización masiva), la personalización es UN SOLO documento chico por gimnasio — así que en vez de pedirle al usuario que sincronice algo a mano, se agregó la llamada a `sincronizarPersonalizacionPublica()` directo en `loadPlan()`, justo después de `aplicarPersonalizacion()`. Se dispara sola en CADA login del staff al panel, sin costo real (un solo `setDoc` chico), así que cualquier cuenta con personalización configurada de antes queda al día la próxima vez que el dueño entre a su panel — no hace falta ningún paso manual ni botón nuevo.
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Flujo esperado: el dueño del gimnasio entra una vez a su panel de staff (aunque sea solo para revisar algo, no hace falta tocar Personalización) → eso ya sincroniza el espejo público → la próxima vez que se escanee el QR, el portal se ve con los colores/logo reales.
+
 ## 2026-09-01 — Fix: portal QR en blanco (solo el encabezado "GYMTRACK", sin el formulario)
 
 **Qué se hizo:**
