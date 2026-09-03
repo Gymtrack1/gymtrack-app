@@ -4494,7 +4494,13 @@ async function portalEnviarSugerencia(){
     portalSugerenciaCategoria='';
     portalSugerenciaMostrarGracias=true;
     renderPortalSugerenciasForm();
-  }catch(e){alert('No se pudo enviar. Intenta de nuevo.');}
+  }catch(e){
+    // Se incluye el código/mensaje real del error (ej. "permission-denied") para poder
+    // diagnosticar sin necesitar acceso a la consola del navegador — en un teléfono no hay
+    // forma fácil de verla (mismo criterio que portalIdentificar).
+    const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
+    alert(`No se pudo enviar. Intenta de nuevo. (${detalle})`);
+  }
 }
 // Cortesía de UI solamente (mostrar/ocultar el avisito "ya enviaste hoy") — NO es un bloqueo:
 // el botón "Enviar sugerencia" sigue funcionando las veces que quiera. No lleva nada que
