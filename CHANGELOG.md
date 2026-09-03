@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-03 — Nueva pestaña "QR" en el panel: mueve ahí los dos botones de descarga de QR
+
+**Qué se hizo:**
+- Nueva pestaña "QR" en el menú principal del panel de staff (junto a Dashboard, Miembros, Pagos... Inventario), con dos tarjetas: "🏋️ QR de Acceso" (el QR normal del portal — identificación, músculo/ejercicio, peso corporal) y "💬 QR de Sugerencias" (el buzón anónimo). Cada una con su botón de descarga.
+- Se movieron ahí los dos botones "Descargar mi QR de acceso" y "Descargar QR de Sugerencias" que antes vivían dentro del modal de 🎨 Personalización — ya no están duplicados, solo cambiaron de lugar. Las funciones `descargarQRAcceso()`/`descargarQRSugerencias()` no cambiaron, solo los botones que las llaman.
+- La pestaña QR es de acceso libre para cualquier gimnasio sin importar su plan (igual que Dashboard, o el botón "🎨 Personalizar") — no se agregó a `TODAS_SECCIONES`/`userFunciones` a propósito, porque eso es el sistema de secciones de pago que el admin activa por plan, y descargar estos QR no es una función premium. `showTab()` ahora deja pasar `'qr'` igual que ya dejaba pasar `'dashboard'`.
+- Actualizado el texto de "Sugerencias de clientes" en Alertas (cuando aún no hay ninguna) para apuntar a la pestaña QR en vez de a Personalización.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script>` principal — sintaxis válida.
+- Simulación en Node de la lógica de `showTab`: la pestaña `qr` es accesible aunque el gimnasio tenga `funciones:[]` (plan mínimo) o cualquier combinación de funciones; `dashboard` sigue igual que antes; una sección de plan real (`inventario`) sigue bloqueada si no está en `funciones` — confirma que no se rompió el gating existente para el resto de pestañas.
+- `git diff` revisado: no quedó ningún botón ni texto duplicado de "Descargar... QR" en Personalización; búsqueda confirma cero referencias colgantes al texto/ubicación anterior.
+
 ## 2026-09-03 — Buzón de sugerencias anónimo, QR aparte (Parte 4)
 
 **Qué se hizo:**
