@@ -125,6 +125,25 @@ await check('Cliente anónimo puede leer el espejo público de personalización 
 await check('Cliente anónimo NO puede escribir/alterar la personalización pública', setDoc(doc(cliente, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#000000' }), false);
 await check('Pero Gym B sigue sin poder leer el documento completo de miembros/ de Gym A', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembros', 'm1')), false);
 
+console.log('\n--- Buzón de sugerencias (?gym=...&sugerencia=1, modo aparte, 100% anónimo) ---');
+await check('Cliente anónimo puede crear una sugerencia válida (categoria de la lista, texto <=500, leida:false)', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 's1'), { categoria: 'Limpieza', texto: 'Los vestidores podrían estar más limpios', fecha: Date.now(), leida: false }), true);
+await check('Cliente anónimo NO puede crear una sugerencia con categoria que no está en la lista fija', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 'sMala1'), { categoria: 'Categoria inventada', texto: 'algo', fecha: Date.now(), leida: false }), false);
+await check('Cliente anónimo NO puede crear una sugerencia con texto vacío', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 'sMala2'), { categoria: 'Otro', texto: '', fecha: Date.now(), leida: false }), false);
+await check('Cliente anónimo NO puede crear una sugerencia con texto de más de 500 caracteres', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 'sMala3'), { categoria: 'Otro', texto: 'x'.repeat(501), fecha: Date.now(), leida: false }), false);
+await check('Cliente anónimo NO puede crear una sugerencia ya marcada como leida:true', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 'sMala4'), { categoria: 'Otro', texto: 'algo', fecha: Date.now(), leida: true }), false);
+await check('Cliente anónimo NO puede colar miembroId (ni ningún otro campo) en una sugerencia — el buzón es 100% anónimo', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 'sMala5'), { categoria: 'Otro', texto: 'algo', fecha: Date.now(), leida: false, miembroId: 'm1' }), false);
+await check('Cliente anónimo NO puede leer la sugerencia que acaba de crear (ni siquiera la propia)', getDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 's1')), false);
+await check('Cliente anónimo NO puede listar sugerencias', (async()=>{ await getDocs(collection(cliente, 'usuarios', 'uidA', 'sugerencias')); })(), false);
+await check('El staff (dueño del gym) sí puede leer sus propias sugerencias', getDoc(doc(gymA, 'usuarios', 'uidA', 'sugerencias', 's1')), true);
+await check('El staff puede marcar una sugerencia como leída', updateDoc(doc(gymA, 'usuarios', 'uidA', 'sugerencias', 's1'), { leida: true }), true);
+await check('El staff puede borrar una sugerencia', deleteDoc(doc(gymA, 'usuarios', 'uidA', 'sugerencias', 's1')), true);
+await check('Gym B NO puede leer las sugerencias de Gym A (a diferencia de miembrosPublicos, esto SÍ es sensible)', (async()=>{
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'usuarios', 'uidA', 'sugerencias', 's2'), { categoria: 'Otro', texto: 'privado de Gym A', fecha: Date.now(), leida: false });
+  });
+  await getDoc(doc(gymB, 'usuarios', 'uidA', 'sugerencias', 's2'));
+})(), false);
+
 console.log('\n--- Límite conocido: auto-elevación de plan ---');
 await check('(esperado que PASE hoy) Gym A puede reescribir su propio plan/funciones', updateDoc(doc(gymA, 'usuarios', 'uidA'), { plan: 'premium', funciones: ['dashboard','finanzas','empleados'] }), true);
 

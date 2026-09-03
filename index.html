@@ -31,6 +31,9 @@
   const _portalGym=_portalParams.get('gym');
   if(_portalGym){
     window._portalGym=_portalGym;
+    // Buzón de sugerencias (?gym=...&sugerencia=1): modo del portal completamente aparte de la
+    // identificación por número+nombre — sin miembro, sin registro de progreso, 100% anónimo.
+    window._portalSugerencia=_portalParams.get('sugerencia')==='1';
     document.getElementById('login-screen').style.display='none';
     document.getElementById('portal-screen').style.display='block';
     signInAnonymously(auth).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
@@ -460,6 +463,12 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
 
     <div id="promo-lista-content"></div>
+
+    <div class="section-title" style="margin-top:32px" id="sugerencias-titulo">💬 Sugerencias de clientes</div>
+    <!-- Buzón anónimo: los documentos de `sugerencias` nunca traen quién las mandó (ver
+    firestore.rules) — solo categoría, texto y fecha. Comparte el QR de Sugerencias (botón en
+    Personalización) para que tus clientes puedan mandar una desde su celular. -->
+    <div id="sugerencias-content"></div>
   </div>
 
   <!-- FINANZAS -->
@@ -857,6 +866,12 @@ contenedor, igual que app-screen/admin-screen. -->
       <button class="btn btn-primary btn-sm" onclick="descargarQRAcceso()">⬇️ Descargar mi QR de acceso</button>
     </div>
 
+    <div class="form-group" style="margin-top:20px">
+      <label>QR de Sugerencias</label>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Un QR distinto y 100% anónimo — nadie necesita identificarse para mandar una sugerencia. Pégalo donde quieras; las sugerencias llegan a "Sugerencias de clientes" en Alertas.</div>
+      <button class="btn btn-primary btn-sm" onclick="descargarQRSugerencias()">⬇️ Descargar QR de Sugerencias</button>
+    </div>
+
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-personalizacion')">Cerrar</button>
     </div>
@@ -884,7 +899,7 @@ let miembros=[],pagos=[],asistencias=[],empleados=[],inventario=[],productos=[],
 // Categorías de membresía y promociones: configurables por cada gimnasio, listas vacías por
 // defecto. NO usan la palabra "plan" (ver userPlan/planNombre) para evitar la colisión de
 // nombres que ya causó bugs antes ("objetos de planes sin usar").
-let categoriasMembresia=[],promociones=[],registrosProgreso=[],pesoCorporal=[];
+let categoriasMembresia=[],promociones=[],registrosProgreso=[],pesoCorporal=[],sugerencias=[];
 // Caches O(1): se recalculan cada vez que se recargan miembros/pagos (ver loadMiembros/loadPagos)
 let miembrosPorId=new Map();
 let pagosPorMiembroFin=new Map();  // miembroId -> pagos ordenados desc por fechaFin (vencimiento)
@@ -1536,7 +1551,7 @@ async function doLogout(){await window._signOut(window._auth);}
 // escribir, evitando releer la colección completa por cada alta/edición/baja (antes era la
 // causa principal de lecturas excesivas: p.ej. registrar UN pago releía los ~5,000 pagos).
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal(),loadSugerencias()]);
   renderDashboard();renderPagos();renderAsistencia();
   renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
   // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
@@ -1596,6 +1611,7 @@ async function loadCategoriasMembresia(){try{const s=await getDocs(userCol('cate
 async function loadPromociones(){try{const s=await getDocs(userCol('promociones'));promociones=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){promociones=[];}}
 async function loadRegistrosProgreso(){try{const s=await getDocs(userCol('registrosProgreso'));registrosProgreso=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){registrosProgreso=[];}}
 async function loadPesoCorporal(){try{const s=await getDocs(userCol('pesoCorporal'));pesoCorporal=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){pesoCorporal=[];}}
+async function loadSugerencias(){try{const s=await getDocs(userCol('sugerencias'));sugerencias=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){sugerencias=[];}}
 
 // Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
 // volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).
@@ -2592,6 +2608,57 @@ function enviarWhatsAppRecordatorio(mid){
   renderRecordatoriosPendientes();
 }
 
+// SUGERENCIAS DE CLIENTES (Parte 4, ver CHANGELOG.md): buzón anónimo del portal QR. Los
+// documentos de `sugerencias` (colección `usuarios/{uid}/sugerencias`) SOLO traen
+// categoria/texto/fecha/leida — nunca miembroId, nombre, ni el uid anónimo de quien la mandó,
+// así que esta vista no puede ni tiene por qué mostrar "quién" la envió. CATEGORIAS_SUGERENCIA
+// se comparte con el portal (más abajo, junto a BIBLIOTECA_EJERCICIOS) — misma lista fija que
+// valida firestore.rules al crear.
+let sugerenciaFiltroCategoria=''; // '' = "Todas"
+function renderSugerencias(){
+  const el=document.getElementById('sugerencias-content');
+  if(!el)return;
+  const totalSinLeer=sugerencias.filter(s=>!s.leida).length;
+  const tituloEl=document.getElementById('sugerencias-titulo');
+  if(tituloEl)tituloEl.textContent=`💬 Sugerencias de clientes${totalSinLeer?` (${totalSinLeer} nuevas)`:''}`;
+  if(!sugerencias.length){el.innerHTML='<div class="empty"><div class="empty-icon">💬</div><div>Aún no hay sugerencias. Comparte el QR de Sugerencias con tus clientes desde 🎨 Personalización.</div></div>';return;}
+  const contarSinLeer=cat=>sugerencias.filter(s=>(!cat||s.categoria===cat)&&!s.leida).length;
+  const tabsHtml=['',...CATEGORIAS_SUGERENCIA].map(cat=>{
+    const activa=cat===sugerenciaFiltroCategoria;
+    const n=contarSinLeer(cat);
+    return`<button class="btn ${activa?'btn-primary':'btn-ghost'} btn-sm" onclick="cambiarFiltroSugerencia('${escAttr(cat)}')">${escAttr(cat||'Todas')}${n?` (${n})`:''}</button>`;
+  }).join('');
+  const lista=sugerencias.filter(s=>!sugerenciaFiltroCategoria||s.categoria===sugerenciaFiltroCategoria).sort((a,b)=>b.fecha-a.fecha);
+  const listaHtml=lista.length?lista.map(s=>`<div class="ec-row" style="align-items:flex-start;flex-direction:column;gap:6px;${s.leida?'opacity:0.55':''}">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:flex-start;gap:8px">
+        <span class="badge badge-blue">${escAttr(s.categoria)}</span>
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap">${fmtDate(s.fecha)}</span>
+      </div>
+      <div style="font-size:13px;white-space:pre-wrap">${escAttr(s.texto)}</div>
+      <div style="display:flex;gap:6px;margin-top:2px">
+        ${s.leida?'':`<button class="btn btn-ghost btn-sm" onclick="marcarSugerenciaLeida('${s.id}')">✓ Marcar como leída</button>`}
+        <button class="btn btn-danger btn-sm" onclick="borrarSugerencia('${s.id}')">✕</button>
+      </div>
+    </div>`).join(''):'<div class="empty"><div class="empty-icon">💬</div><div>Sin sugerencias en esta categoría</div></div>';
+  el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${tabsHtml}</div>${listaHtml}`;
+}
+function cambiarFiltroSugerencia(cat){sugerenciaFiltroCategoria=cat;renderSugerencias();}
+async function marcarSugerenciaLeida(id){
+  try{
+    await updateDoc(userDoc('sugerencias',id),{leida:true});
+    _actualizarLocal(sugerencias,id,{leida:true});
+    renderSugerencias();
+  }catch(e){toast('Error al marcar como leída','err');}
+}
+async function borrarSugerencia(id){
+  if(!confirm('¿Borrar esta sugerencia?'))return;
+  try{
+    await deleteDoc(userDoc('sugerencias',id));
+    _eliminarLocal(sugerencias,id);
+    renderSugerencias();
+  }catch(e){toast('Error al borrar','err');}
+}
+
 // FINANZAS
 function renderEstadoCuenta(){
   const el=document.getElementById('estadocuenta-content');
@@ -3585,19 +3652,14 @@ function populatePromocionSelect(){
   sel.value='';
 }
 
-// QR DE ACCESO AL PORTAL (un solo QR por gimnasio, ver CHANGELOG.md): codifica la URL del
-// portal público del cliente con SOLO el gimnasio identificado (?gym={uid}) — ya no hay
-// parámetro de máquina, el cliente elige músculo y ejercicio desde el propio portal
-// (BIBLIOTECA_EJERCICIOS). El gym imprime esta única imagen y la pega donde quiera (entrada,
-// recepción, varias copias si quiere) — no hay que generar una por máquina. Se genera y se
-// descarga en el propio navegador (librería `qrcode-generator` vía CDN, ver <head>, global
-// `qrcode`); no se sube nada a Storage. `qrcode(typeNumber, nivel)` exige indicar el
-// "typeNumber" (tamaño de la cuadrícula QR) de antemano — no hay modo automático en esta
-// librería — así que se prueba typeNumber creciente hasta que el texto (la URL completa)
-// quepa, en vez de calcular a mano cuántos caracteres caben en cada tamaño.
-function descargarQRAcceso(){
+// Genera y descarga un QR con la URL indicada (librería `qrcode-generator` vía CDN, ver
+// <head>, global `qrcode`); no se sube nada a Storage. `qrcode(typeNumber, nivel)` exige
+// indicar el "typeNumber" (tamaño de la cuadrícula QR) de antemano — no hay modo automático en
+// esta librería — así que se prueba typeNumber creciente hasta que el texto (la URL completa)
+// quepa, en vez de calcular a mano cuántos caracteres caben en cada tamaño. Compartida por los
+// dos QR del portal (acceso normal y buzón de sugerencias) para no duplicar esta lógica.
+function _generarYDescargarQR(url,nombreArchivo){
   if(typeof qrcode==='undefined'){toast('No se pudo cargar el generador de QR. Revisa tu conexión e intenta de nuevo.','err');return;}
-  const url=`${location.origin}${location.pathname}?gym=${uid}`;
   let qr=null;
   for(let typeNumber=4;typeNumber<=40&&!qr;typeNumber++){
     try{
@@ -3610,10 +3672,23 @@ function descargarQRAcceso(){
   if(!qr){toast('No se pudo generar el QR. Intenta de nuevo.','err');return;}
   const a=document.createElement('a');
   a.href=qr.createDataURL(8,4); // 8px por módulo, margen de 4 módulos
-  a.download='QR-acceso-GymTrack.gif';
+  a.download=nombreArchivo;
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+// QR DE ACCESO AL PORTAL (un solo QR por gimnasio, ver CHANGELOG.md): codifica la URL del
+// portal público del cliente con SOLO el gimnasio identificado (?gym={uid}) — ya no hay
+// parámetro de máquina, el cliente elige músculo y ejercicio desde el propio portal
+// (BIBLIOTECA_EJERCICIOS). El gym imprime esta única imagen y la pega donde quiera (entrada,
+// recepción, varias copias si quiere) — no hay que generar una por máquina.
+function descargarQRAcceso(){
+  _generarYDescargarQR(`${location.origin}${location.pathname}?gym=${uid}`,'QR-acceso-GymTrack.gif');
+}
+// QR DEL BUZÓN DE SUGERENCIAS (Parte 4, ver CHANGELOG.md): mismo mecanismo, pero apunta al modo
+// ?sugerencia=1 del portal — un flujo completamente aparte y anónimo (sin identificación).
+function descargarQRSugerencias(){
+  _generarYDescargarQR(`${location.origin}${location.pathname}?gym=${uid}&sugerencia=1`,'QR-sugerencias-GymTrack.gif');
 }
 
 // PERSONALIZACIÓN — subida a Storage y guardado en usuarios/{uid}. Logo y fondos se suben y
@@ -3862,7 +3937,7 @@ function activarTab(name,event){
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
   aplicarFondoActivo();
-  if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();initPromoAlerta();}
+  if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();initPromoAlerta();renderSugerencias();}
   // Detalle fila por fila de Miembros solo se construye al entrar a esta pestaña
   if(name==='miembros')renderMiembros(document.getElementById('search-miembros').value);
 }
@@ -4022,6 +4097,12 @@ function buscarEjercicioInfo(id){
   return null;
 }
 
+// BUZÓN DE SUGERENCIAS (Parte 4, ver CHANGELOG.md): lista fija de categorías — la misma que
+// valida firestore.rules al crear un documento en `sugerencias` (categoria debe ser uno de
+// estos valores exactos). Compartida entre el portal (botones para elegir) y el panel de staff
+// (pestañas de filtro en la tarjeta "Sugerencias de clientes" de Alertas).
+const CATEGORIAS_SUGERENCIA=['Máquinas y equipo','Limpieza','Instalaciones','Atención del personal','Clases y horarios','Precios y membresías','Estacionamiento','Otro'];
+
 let portalMiembro=null;     // {id, numero, nombre, vencimientoTs, estatura, fechaNacimiento} una vez identificado
 let portalRegistros=[];     // registrosProgreso del miembro identificado (solo los suyos)
 let portalPesos=[];         // pesoCorporal del miembro identificado (solo los suyos)
@@ -4044,7 +4125,10 @@ window.addEventListener('portalReady',()=>{
   // colores/logo del gym se aplican en cuanto lleguen, en paralelo (fire-and-forget); si nunca
   // llegan, el portal se queda con los colores por defecto en vez de quedarse en blanco.
   cargarPersonalizacionPortal();
-  renderPortalIdentify();
+  // Buzón de sugerencias (?sugerencia=1): modo completamente aparte, sin identificación de
+  // miembro — nunca entra al flujo de portalIdentificar/renderPortalHome de más abajo.
+  if(window._portalSugerencia)renderPortalSugerenciasForm();
+  else renderPortalIdentify();
 });
 
 // Aplica la personalización visual del gimnasio (colorAcento/colorFondo/colorTarjetas/logoUrl)
@@ -4340,6 +4424,81 @@ async function portalGuardarPerfilFisico(){
     toast('Guardado ✓');
     renderPortalHome();
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUZÓN DE SUGERENCIAS (Parte 4, ver CHANGELOG.md) — modo COMPLETAMENTE APARTE del portal de
+// arriba: entra por ?gym=...&sugerencia=1 (ver portalReady) y nunca toca portalMiembro,
+// portalIdentificar, ni ningún dato de registrosProgreso/pesoCorporal. Sin número de miembro,
+// sin nombre, sin ningún paso de identificación — el documento que se guarda en Firestore NO
+// lleva miembroId, nombre, ni el uid anónimo de Firebase Auth (nunca se lee ni se usa aquí),
+// solo categoria/texto/fecha/leida:false. La categoría es de CATEGORIAS_SUGERENCIA (arriba,
+// junto a BIBLIOTECA_EJERCICIOS) — misma lista fija que valida firestore.rules al crear.
+let portalSugerenciaCategoria='';      // '' = todavía no elige categoría (solo botones, sin textarea)
+let portalSugerenciaMostrarGracias=false; // true justo después de enviar, hasta que elija otra categoría
+
+function renderPortalSugerenciasForm(){
+  const el=document.getElementById('portal-content');
+  if(!el)return;
+  const yaEnvioHoy=sugerenciaEnviadaHoy();
+  el.innerHTML=`<div class="ec-card" style="margin-bottom:16px">
+    <h3>💬 Buzón de Sugerencias</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Tu sugerencia es 100% anónima — no te pedimos tu nombre ni ningún dato que te identifique.</div>
+    ${portalSugerenciaMostrarGracias?'<div style="background:rgba(198,230,0,0.12);border:1px solid rgba(152,174,0,0.35);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px">¡Gracias! Tu sugerencia fue enviada.</div>'
+      :(yaEnvioHoy?'<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Ya enviaste una sugerencia hoy — gracias 🙌. Puedes enviar otra si quieres.</div>':'')}
+    <div class="form-group">
+      <label>Categoría</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${CATEGORIAS_SUGERENCIA.map(c=>`<button type="button" class="btn ${c===portalSugerenciaCategoria?'btn-primary':'btn-ghost'} btn-sm" onclick="portalElegirCategoriaSugerencia('${escAttr(c)}')">${escAttr(c)}</button>`).join('')}
+      </div>
+    </div>
+    ${portalSugerenciaCategoria?`
+    <div class="form-group">
+      <label>Cuéntanos qué podemos mejorar</label>
+      <textarea id="portal-sugerencia-texto" maxlength="500" rows="4" placeholder="Cuéntanos qué podemos mejorar..." oninput="portalActualizarContadorSugerencia()"></textarea>
+      <div id="portal-sugerencia-contador" style="font-size:11px;color:var(--muted);text-align:right;margin-top:4px">0/500</div>
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="portalEnviarSugerencia()">Enviar sugerencia</button>
+    `:''}
+  </div>`;
+  if(portalSugerenciaCategoria){
+    const ta=document.getElementById('portal-sugerencia-texto');
+    if(ta)ta.focus();
+  }
+}
+function portalElegirCategoriaSugerencia(cat){
+  portalSugerenciaCategoria=cat;
+  portalSugerenciaMostrarGracias=false;
+  renderPortalSugerenciasForm();
+}
+function portalActualizarContadorSugerencia(){
+  const ta=document.getElementById('portal-sugerencia-texto');
+  const contador=document.getElementById('portal-sugerencia-contador');
+  if(ta&&contador)contador.textContent=`${ta.value.length}/500`;
+}
+async function portalEnviarSugerencia(){
+  const ta=document.getElementById('portal-sugerencia-texto');
+  const texto=ta?ta.value.trim():'';
+  if(!texto)return alert('Escribe tu sugerencia antes de enviarla');
+  if(texto.length>500)return alert('Tu sugerencia no puede tener más de 500 caracteres');
+  const data={categoria:portalSugerenciaCategoria,texto,fecha:Date.now(),leida:false};
+  try{
+    await addDoc(gymCol(window._portalGym,'sugerencias'),data);
+    guardarSugerenciaEnviadaHoy();
+    portalSugerenciaCategoria='';
+    portalSugerenciaMostrarGracias=true;
+    renderPortalSugerenciasForm();
+  }catch(e){alert('No se pudo enviar. Intenta de nuevo.');}
+}
+// Cortesía de UI solamente (mostrar/ocultar el avisito "ya enviaste hoy") — NO es un bloqueo:
+// el botón "Enviar sugerencia" sigue funcionando las veces que quiera. No lleva nada que
+// identifique a la persona, es puro localStorage del propio navegador.
+function _sugerenciaHoyKey(){return`gymtrackSugerenciaHoy_${window._portalGym}`;}
+function sugerenciaEnviadaHoy(){
+  try{return localStorage.getItem(_sugerenciaHoyKey())===new Date().toDateString();}catch(e){return false;}
+}
+function guardarSugerenciaEnviadaHoy(){
+  try{localStorage.setItem(_sugerenciaHoyKey(),new Date().toDateString());}catch(e){/* localStorage no disponible: es solo cortesía visual, no bloquea nada */}
 }
 </script>
 </body>

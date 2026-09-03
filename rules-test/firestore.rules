@@ -16,6 +16,7 @@ rules_version = '2';
 //   usuarios/{gymId}/registrosProgreso/{id} series registradas desde el QR (ver más abajo)
 //   usuarios/{gymId}/pesoCorporal/{id}      peso corporal (staff + portal QR, ver más abajo)
 //   usuarios/{gymId}/config/personalizacion espejo público de colores/logo (ver más abajo)
+//   usuarios/{gymId}/sugerencias/{id}       buzón anónimo del portal QR (ver más abajo)
 //
 // Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
 // datos de otro gimnasio, sin importar que llame al SDK de Firestore
@@ -93,6 +94,26 @@ rules_version = '2';
 // index.html) — no es una regla de Firestore a prueba de manipulación
 // técnica directa. Mismo nivel de confianza que ya tiene hoy el resto de
 // GymTrack, que no tiene backend propio.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// BUZÓN DE SUGERENCIAS (?gym=...&sugerencia=1, ver CHANGELOG.md) — modo
+// COMPLETAMENTE APARTE del resto del portal de arriba, activado por un QR
+// distinto. Sin identificación de miembro (sin número, sin nombre), así que
+// no hay "su propio id" que filtrar como en registrosProgreso/pesoCorporal.
+//
+//   usuarios/{gymId}/sugerencias — SOLO creación para cualquier autenticado
+//     (incluye anónimos), validando que el documento traiga EXACTAMENTE
+//     categoria/texto/fecha/leida (nunca miembroId, nombre, ni ningún otro
+//     campo que pudiera identificar a quien la mandó — el uid anónimo de
+//     Firebase Auth queda en el registro de auth de Firebase, pero JAMÁS se
+//     guarda dentro del documento), que categoria sea una de la lista fija
+//     (la misma que ofrece el portal como botones), que texto sea texto de
+//     máximo 500 caracteres, y que leida venga en false (el cliente nunca
+//     puede crear una sugerencia ya marcada como leída). Sin lectura,
+//     actualización ni borrado aquí — ni siquiera quien la mandó puede
+//     volver a leerla: eso sigue siendo solo del dueño del gimnasio (o
+//     admin), vía la regla genérica de más abajo, igual que el resto de las
+//     colecciones.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -188,6 +209,23 @@ service cloud.firestore {
       match /miembros/{miembroId} {
         allow update: if isSignedIn() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento']);
+      }
+
+      // Buzón de sugerencias — ver nota extensa arriba. Solo creación, acotada a la forma
+      // exacta del documento; sin lectura/actualización/borrado (eso es solo del dueño del
+      // gimnasio, vía la regla genérica de abajo).
+      match /sugerencias/{docId} {
+        allow create: if isSignedIn() &&
+          request.resource.data.keys().hasOnly(['categoria', 'texto', 'fecha', 'leida']) &&
+          request.resource.data.categoria in [
+            'Máquinas y equipo', 'Limpieza', 'Instalaciones', 'Atención del personal',
+            'Clases y horarios', 'Precios y membresías', 'Estacionamiento', 'Otro'
+          ] &&
+          request.resource.data.texto is string &&
+          request.resource.data.texto.size() > 0 &&
+          request.resource.data.texto.size() <= 500 &&
+          request.resource.data.fecha is number &&
+          request.resource.data.leida == false;
       }
 
       // Datos operativos del gimnasio (miembros, pagos, asistencias, etc).
