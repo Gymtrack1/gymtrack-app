@@ -29,7 +29,7 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembros', 'm1'), { nombre: 'Juan', telefono: '5551234567', direccion: 'Calle Falsa 123', notas: 'nota privada' });
   await setDoc(doc(db, 'usuarios', 'uidB', 'miembros', 'm2'), { nombre: 'Pedro' });
   await setDoc(doc(db, 'usuarios', 'pending_gymC_test_com'), { email: 'gymC@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true });
-  // Datos del portal QR (Parte 1/2, ver CHANGELOG.md)
+  // Datos del portal QR (Parte 1/2/3, ver CHANGELOG.md)
   await setDoc(doc(db, 'usuarios', 'uidA', 'inventario', 'maq1'), { nombre: 'Press de banca', cantidad: 1, estado: 'bueno' });
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { numero: 1, nombre: 'Juan', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
   await setDoc(doc(db, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#FF0000', colorFondo: null, colorTarjetas: null, logoUrl: null });
@@ -91,8 +91,8 @@ await check('Gym A NO puede borrar el pending_ de otro (ya migrado, pero probamo
   await deleteDoc(doc(gymA, 'usuarios', 'pending_gymD_test_com'));
 })(), false);
 
-console.log('\n--- Portal público del cliente (auth anónima, QR de máquina = artículo de Inventario) ---');
-await check('Cliente anónimo puede leer un artículo del Equipo del Gym (la "máquina" del QR)', getDoc(doc(cliente, 'usuarios', 'uidA', 'inventario', 'maq1')), true);
+console.log('\n--- Portal público del cliente (auth anónima, un solo QR por gimnasio -> menú de músculos/ejercicios) ---');
+await check('Cliente anónimo NO puede leer el Equipo del Gym (ya no hace falta, la biblioteca de ejercicios es estática en index.html, no vive en Firestore)', getDoc(doc(cliente, 'usuarios', 'uidA', 'inventario', 'maq1')), false);
 await check('Cliente anónimo puede leer el espejo público de un miembro (solo numero/nombre/vencimiento)', getDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1')), true);
 await check('Cliente anónimo puede buscar en miembrosPublicos filtrando por numero (where)', (async()=>{
   const q = query(collection(cliente, 'usuarios', 'uidA', 'miembrosPublicos'), where('numero','==',1));
@@ -105,18 +105,18 @@ await check('Cliente anónimo NO puede colar el teléfono al "actualizar estatur
 await check('Cliente anónimo NO puede cambiar nombre/notas de un miembro vía miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { notas: 'hackeado' }), false);
 await check('Cliente anónimo SÍ puede actualizar estatura/fechaNacimiento en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { estatura: 175 }), true);
 await check('Cliente anónimo NO puede tocar numero/vencimientoTs en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { vencimientoTs: 0 }), false);
-await check('Cliente anónimo puede crear un registro de progreso', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1'), { miembroId: 'm1', maquinaId: 'maq1', tipo: 'Normal', peso: 60, repeticiones: 10, fecha: Date.now() }), true);
+await check('Cliente anónimo puede crear un registro de progreso (ejercicioId/musculo, ya no maquinaId)', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10, fecha: Date.now() }), true);
 await check('Cliente anónimo puede leer los registros de progreso que acaba de crear', getDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1')), true);
 await check('Cliente anónimo puede crear un registro de peso corporal', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'p1'), { miembroId: 'm1', peso: 70.5, fecha: Date.now() }), true);
 await check('Cliente anónimo NO puede escribir en pagos/ (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'pagos', 'pFalso'), { monto: 999999 }), false);
 await check('Cliente anónimo NO puede escribir en gastos/empleados (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'gastos', 'gFalso'), { concepto: 'hackeo' }), false);
-await check('Cliente anónimo puede LEER inventario (es la "máquina" del QR) pero NO puede crear/editar equipo (solo lectura, alta sigue siendo del staff)', setDoc(doc(cliente, 'usuarios', 'uidA', 'inventario', 'maqFalsa'), { nombre: 'Intrusa' }), false);
+await check('Cliente anónimo NO puede crear/editar equipo de Inventario (colección genérica, sigue cerrada — ya no tiene ningún motivo para tocarla)', setDoc(doc(cliente, 'usuarios', 'uidA', 'inventario', 'maqFalsa'), { nombre: 'Intrusa' }), false);
 await check('El staff (dueño del gym) sigue pudiendo leer y escribir inventario/registrosProgreso/pesoCorporal normalmente', (async()=>{
   await setDoc(doc(gymA, 'usuarios', 'uidA', 'inventario', 'maq2'), { nombre: 'Sentadilla', cantidad: 1, estado: 'bueno' });
   await getDoc(doc(gymA, 'usuarios', 'uidA', 'registrosProgreso', 'r1'));
   await deleteDoc(doc(gymA, 'usuarios', 'uidA', 'pesoCorporal', 'p1'));
 })(), true);
-// miembrosPublicos/inventario son deliberadamente legibles por CUALQUIER autenticado (no solo
+// miembrosPublicos es deliberadamente legible por CUALQUIER autenticado (no solo
 // anónimos) — es el mismo dato que vería cualquiera escaneando el QR físico, así que Gym B
 // leyéndolo no es una fuga: nunca contiene teléfono/dirección/notas. Lo que SÍ debe seguir
 // cerrado es el documento completo de miembros/ (probado arriba) y todo lo demás (pagos, etc).

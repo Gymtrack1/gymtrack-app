@@ -19,18 +19,18 @@
   window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
   const ADMIN_EMAIL='luismolinac06@gmail.com';
 
-  // PORTAL PÚBLICO DEL CLIENTE (QR de máquina / progreso / peso corporal, ver CHANGELOG.md):
-  // si la URL trae ?gym=..., esto es un cliente escaneando un QR físico, NO el staff. Se
-  // desvía por completo del flujo normal de login/admin/app: nunca toca login-screen, nunca
-  // usa signInWithEmailAndPassword, y se autentica de forma ANÓNIMA (signInAnonymously) solo
-  // para tener una sesión válida de Firestore. Esto corta antes de registrar onAuthStateChanged
-  // para que el ciclo de vida del portal (sesión anónima) nunca interfiera con una sesión de
-  // staff que ya esté abierta en el mismo navegador (ej. una tablet compartida en recepción).
+  // PORTAL PÚBLICO DEL CLIENTE (un solo QR por gimnasio -> músculo/ejercicio/progreso/peso
+  // corporal, ver CHANGELOG.md): si la URL trae ?gym=..., esto es un cliente escaneando el QR
+  // físico del gimnasio, NO el staff. Se desvía por completo del flujo normal de
+  // login/admin/app: nunca toca login-screen, nunca usa signInWithEmailAndPassword, y se
+  // autentica de forma ANÓNIMA (signInAnonymously) solo para tener una sesión válida de
+  // Firestore. Esto corta antes de registrar onAuthStateChanged para que el ciclo de vida del
+  // portal (sesión anónima) nunca interfiera con una sesión de staff que ya esté abierta en el
+  // mismo navegador (ej. una tablet compartida en recepción).
   const _portalParams=new URLSearchParams(location.search);
   const _portalGym=_portalParams.get('gym');
   if(_portalGym){
     window._portalGym=_portalGym;
-    window._portalMaquina=_portalParams.get('maquina')||null;
     document.getElementById('login-screen').style.display='none';
     document.getElementById('portal-screen').style.display='block';
     signInAnonymously(auth).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
@@ -242,7 +242,7 @@
 
 <div id="toast"></div>
 
-<!-- PORTAL PÚBLICO DEL CLIENTE (acceso vía QR, ?gym=...&maquina=..., ver CHANGELOG.md).
+<!-- PORTAL PÚBLICO DEL CLIENTE (acceso vía un solo QR por gimnasio, ?gym=..., ver CHANGELOG.md).
 Contenido armado por JS (renderPortalIdentify/renderPortalHome) — este div solo es el
 contenedor, igual que app-screen/admin-screen. -->
 <div id="portal-screen">
@@ -572,7 +572,7 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
 
     <div class="ec-card" id="p-progreso-card" style="display:none;margin-top:16px;padding:16px 18px">
-      <h3>📈 Progreso por Máquina</h3>
+      <h3>📈 Progreso por Ejercicio</h3>
       <div id="p-progreso-contenido"></div>
     </div>
 
@@ -794,19 +794,6 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 </div>
 
-<!-- MODAL MÁQUINAS Y CÓDIGOS QR (usa directamente el Equipo del Gym ya registrado en
-Inventario — nada que dar de alta por separado, ver CHANGELOG.md) -->
-<div class="modal-overlay" id="modal-maquinas">
-  <div class="modal">
-    <h2>Máquinas y Códigos QR</h2>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Cada artículo de tu Equipo del Gym tiene su propio código QR automáticamente. Descárgalo e imprímelo para pegarlo en la máquina — al escanearlo, el cliente entra directo al registro de progreso de esa máquina. Para agregar o renombrar equipo, usa "+ Agregar Equipo" en Inventario.</div>
-    <div id="lista-maquinas"></div>
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-maquinas')">Cerrar</button>
-    </div>
-  </div>
-</div>
-
 <!-- MODAL PERSONALIZACIÓN (color, logo, fondos por pestaña — solo para el propio gym, no admin) -->
 <div class="modal-overlay" id="modal-personalizacion">
   <div class="modal" style="max-width:560px">
@@ -861,6 +848,12 @@ Inventario — nada que dar de alta por separado, ver CHANGELOG.md) -->
       <label>Fondos por pestaña (opcional)</label>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Una imagen de fondo distinta para cada sección. Si no subes nada, la sección se ve como hoy.</div>
       <div id="pz-fondos-lista"></div>
+    </div>
+
+    <div class="form-group" style="margin-top:20px">
+      <label>Portal QR para tus clientes</label>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Un solo código QR para todo el gimnasio. Descárgalo, imprímelo y pégalo donde quieras (entrada, recepción — puedes hacer varias copias). Al escanearlo, tus clientes se identifican y eligen qué músculo van a entrenar para registrar su progreso.</div>
+      <button class="btn btn-primary btn-sm" onclick="descargarQRAcceso()">⬇️ Descargar mi QR de acceso</button>
     </div>
 
     <div class="form-actions">
@@ -2854,7 +2847,6 @@ function renderInventario(seccion='equipo'){
     <div class="header-row" style="margin-bottom:12px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--muted)">Equipo y Maquinaria</div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" onclick="abrirModalMaquinas()">📷 Máquinas y QR</button>
         <button class="btn btn-primary btn-sm" onclick="openModal('modal-inventario')">+ Agregar Equipo</button>
       </div>
     </div>
@@ -3198,25 +3190,25 @@ async function agregarPesoCorporalPerfil(){
   toast('Peso registrado ✓');
 }
 
-// Tarjeta "Progreso por Máquina" (Parte 1f): solo aparece si el miembro tiene AL MENOS un
+// Tarjeta "Progreso por Ejercicio" (Parte 1f/3): solo aparece si el miembro tiene AL MENOS un
 // registro en `registrosProgreso` — si nunca ha usado el QR, cero cambio visual (mismo
 // criterio que Beneficios/Seguimiento/Compras). Muestra lo mismo que ve el propio miembro en
-// el portal: selector de máquina + filtro por tipo de serie + historial + gráfica de peso.
-let perfilProgresoMaquinaSel='',perfilProgresoFiltroTipo='';
+// el portal: selector de ejercicio + filtro por tipo de serie + historial + gráfica de peso.
+let perfilProgresoEjercicioSel='',perfilProgresoFiltroTipo='';
 function renderProgresoPerfil(m){
   const card=document.getElementById('p-progreso-card');
   const registros=registrosProgreso.filter(r=>r.miembroId===m.id);
   if(!registros.length){card.style.display='none';if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}return;}
   card.style.display='block';
-  const maquinaIds=[...new Set(registros.map(r=>r.maquinaId))];
-  if(!perfilProgresoMaquinaSel||!maquinaIds.includes(perfilProgresoMaquinaSel))perfilProgresoMaquinaSel=maquinaIds[0];
-  const nombreMaquina=id=>{const eq=inventario.find(x=>x.id===id);return eq?eq.nombre:'Equipo eliminado';};
-  const tipos=[...new Set(registros.filter(r=>r.maquinaId===perfilProgresoMaquinaSel).map(r=>r.tipo))];
+  const ejercicioIds=[...new Set(registros.map(r=>r.ejercicioId))];
+  if(!perfilProgresoEjercicioSel||!ejercicioIds.includes(perfilProgresoEjercicioSel))perfilProgresoEjercicioSel=ejercicioIds[0];
+  const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
+  const tipos=[...new Set(registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel).map(r=>r.tipo))];
   if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
-  const filtrados=registros.filter(r=>r.maquinaId===perfilProgresoMaquinaSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  const filtrados=registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
   document.getElementById('p-progreso-contenido').innerHTML=`
     <div class="form-row">
-      <div class="form-group"><label>Máquina</label><select onchange="perfilProgresoMaquinaSel=this.value;perfilProgresoFiltroTipo='';renderProgresoPerfil(miembrosPorId.get('${m.id}'))">${maquinaIds.map(id=>`<option value="${id}" ${id===perfilProgresoMaquinaSel?'selected':''}>${escAttr(nombreMaquina(id))}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Ejercicio</label><select onchange="perfilProgresoEjercicioSel=this.value;perfilProgresoFiltroTipo='';renderProgresoPerfil(miembrosPorId.get('${m.id}'))">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       <div class="form-group"><label>Tipo de serie</label><select onchange="perfilProgresoFiltroTipo=this.value;renderProgresoPerfil(miembrosPorId.get('${m.id}'))"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
     </div>
     <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
@@ -3592,29 +3584,19 @@ function populatePromocionSelect(){
   sel.value='';
 }
 
-// MÁQUINAS Y CÓDIGOS QR (Parte 1a) — usa DIRECTAMENTE el array `inventario` (Equipo del
-// Gym, ya cargado) en vez de mantener una lista aparte: así cualquier artículo que ya tengas
-// o que agregues desde "+ Agregar Equipo" aparece aquí automáticamente con su propio QR, sin
-// tener que darlo de alta dos veces. Renombrar/editar/eliminar equipo sigue siendo desde el
-// modal de Inventario (editInventario/delInventario) — aquí solo se genera y descarga el QR.
-function renderMaquinasModal(){
-  const el=document.getElementById('lista-maquinas');
-  el.innerHTML=inventario.length?inventario.map(i=>`<div class="ec-row"><span>${escAttr(i.nombre)}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="descargarQRMaquina('${i.id}')">⬇️ Descargar QR</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">📷</div><div>Aún no tienes equipo registrado. Agrégalo primero con "+ Agregar Equipo" en Inventario.</div></div>';
-}
-function abrirModalMaquinas(){renderMaquinasModal();openModal('modal-maquinas');}
-
-// QR de una máquina: codifica la URL del portal público del cliente ya con el gimnasio Y el
-// artículo de equipo identificados (?gym={uid}&maquina={id-del-artículo-en-inventario}) — el
-// cliente solo escanea, no busca nada a mano (Parte 1a). Se genera y se descarga en el propio
-// navegador (librería `qrcode-generator` vía CDN, ver <head>, global `qrcode`); no se sube
-// nada a Storage. `qrcode(typeNumber, nivel)` exige indicar el "typeNumber" (tamaño de la
-// cuadrícula QR) de antemano — no hay modo automático en esta librería — así que se prueba
-// typeNumber creciente hasta que el texto (la URL completa) quepa, en vez de calcular a mano
-// cuántos caracteres caben en cada tamaño.
-function descargarQRMaquina(id){
-  const eq=inventario.find(x=>x.id===id);if(!eq)return;
+// QR DE ACCESO AL PORTAL (un solo QR por gimnasio, ver CHANGELOG.md): codifica la URL del
+// portal público del cliente con SOLO el gimnasio identificado (?gym={uid}) — ya no hay
+// parámetro de máquina, el cliente elige músculo y ejercicio desde el propio portal
+// (BIBLIOTECA_EJERCICIOS). El gym imprime esta única imagen y la pega donde quiera (entrada,
+// recepción, varias copias si quiere) — no hay que generar una por máquina. Se genera y se
+// descarga en el propio navegador (librería `qrcode-generator` vía CDN, ver <head>, global
+// `qrcode`); no se sube nada a Storage. `qrcode(typeNumber, nivel)` exige indicar el
+// "typeNumber" (tamaño de la cuadrícula QR) de antemano — no hay modo automático en esta
+// librería — así que se prueba typeNumber creciente hasta que el texto (la URL completa)
+// quepa, en vez de calcular a mano cuántos caracteres caben en cada tamaño.
+function descargarQRAcceso(){
   if(typeof qrcode==='undefined'){toast('No se pudo cargar el generador de QR. Revisa tu conexión e intenta de nuevo.','err');return;}
-  const url=`${location.origin}${location.pathname}?gym=${uid}&maquina=${id}`;
+  const url=`${location.origin}${location.pathname}?gym=${uid}`;
   let qr=null;
   for(let typeNumber=4;typeNumber<=40&&!qr;typeNumber++){
     try{
@@ -3627,7 +3609,7 @@ function descargarQRMaquina(id){
   if(!qr){toast('No se pudo generar el QR. Intenta de nuevo.','err');return;}
   const a=document.createElement('a');
   a.href=qr.createDataURL(8,4); // 8px por módulo, margen de 4 módulos
-  a.download=`QR-${eq.nombre.replace(/[^a-z0-9]+/gi,'-')}.gif`;
+  a.download='QR-acceso-GymTrack.gif';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -3958,16 +3940,94 @@ const TIPOS_SERIE=['Calentamiento','Normal','PR','Dropset','Al fallo'];
 // se muestra la del tipo que esté seleccionado en ese momento (ver portalElegirTipo).
 const DESCRIPCION_TIPO_SERIE={
   'Calentamiento':'Peso ligero para preparar el músculo antes de tu carga normal.',
-  'PR':'Tu mejor marca personal — el peso más alto que has levantado en esta máquina.',
+  'PR':'Tu mejor marca personal — el peso más alto que has levantado en este ejercicio.',
   'Dropset':'Bajas el peso a media serie sin descansar, para seguir hasta el fallo.',
   'Al fallo':'Repites hasta que ya no puedas completar otra repetición con buena forma.'
 };
+
+// BIBLIOTECA DE EJERCICIOS (Parte 3, ver CHANGELOG.md): contenido estático embebido aquí, NO
+// vive en Firestore — es genérico, no varía por gimnasio, así que no tiene sentido guardarlo ni
+// sincronizarlo por cuenta. Reemplaza el modelo anterior de "un QR por máquina": ahora el
+// cliente elige músculo -> ejercicio desde este catálogo fijo, con un solo QR por gimnasio.
+const BIBLIOTECA_EJERCICIOS={
+  'Pecho':[
+    {id:'press-banca-plano',nombre:'Press de banca plano',parte:'Pecho medio'},
+    {id:'press-banca-inclinado',nombre:'Press inclinado',parte:'Pecho superior'},
+    {id:'press-banca-declinado',nombre:'Press declinado',parte:'Pecho inferior'},
+    {id:'aperturas-mancuerna',nombre:'Aperturas con mancuerna',parte:'Pecho medio (aislamiento)'},
+    {id:'cruces-polea',nombre:'Cruces en polea',parte:'Pecho interno'},
+    {id:'fondos-paralelas',nombre:'Fondos en paralelas',parte:'Pecho inferior'},
+  ],
+  'Espalda':[
+    {id:'dominadas',nombre:'Dominadas',parte:'Dorsal ancho'},
+    {id:'remo-barra',nombre:'Remo con barra',parte:'Espalda media'},
+    {id:'jalon-pecho',nombre:'Jalón al pecho',parte:'Dorsal ancho'},
+    {id:'remo-mancuerna',nombre:'Remo con mancuerna a una mano',parte:'Espalda media'},
+    {id:'remo-polea-baja',nombre:'Remo en polea baja',parte:'Espalda media/baja'},
+    {id:'peso-muerto',nombre:'Peso muerto',parte:'Espalda baja / cadena posterior'},
+  ],
+  'Hombro':[
+    {id:'press-militar',nombre:'Press militar',parte:'Hombro frontal'},
+    {id:'elevaciones-laterales',nombre:'Elevaciones laterales',parte:'Hombro lateral (medio)'},
+    {id:'elevaciones-frontales',nombre:'Elevaciones frontales',parte:'Hombro frontal'},
+    {id:'pajaros',nombre:'Pájaros / vuelos posteriores',parte:'Hombro posterior'},
+    {id:'press-arnold',nombre:'Press Arnold',parte:'Hombro completo'},
+  ],
+  'Bíceps':[
+    {id:'curl-barra',nombre:'Curl con barra',parte:'Bíceps (cabeza corta y larga)'},
+    {id:'curl-mancuerna',nombre:'Curl con mancuerna',parte:'Bíceps'},
+    {id:'curl-martillo',nombre:'Curl martillo',parte:'Bíceps + antebrazo'},
+    {id:'curl-predicador',nombre:'Curl en banco predicador',parte:'Bíceps (cabeza corta)'},
+    {id:'curl-polea',nombre:'Curl en polea baja',parte:'Bíceps'},
+  ],
+  'Tríceps':[
+    {id:'press-frances',nombre:'Press francés',parte:'Tríceps (cabeza larga)'},
+    {id:'extension-polea',nombre:'Extensión en polea (cuerda)',parte:'Tríceps'},
+    {id:'fondos-banco',nombre:'Fondos en banco',parte:'Tríceps'},
+    {id:'press-cerrado',nombre:'Press de banca con agarre cerrado',parte:'Tríceps'},
+    {id:'patada-triceps',nombre:'Patada de tríceps',parte:'Tríceps (aislamiento)'},
+  ],
+  'Pierna':[
+    {id:'sentadilla',nombre:'Sentadilla',parte:'Cuádriceps y glúteo'},
+    {id:'prensa',nombre:'Prensa de pierna',parte:'Cuádriceps'},
+    {id:'extension-cuadriceps',nombre:'Extensión de cuádriceps',parte:'Cuádriceps'},
+    {id:'curl-femoral',nombre:'Curl femoral',parte:'Isquiotibiales'},
+    {id:'zancadas',nombre:'Zancadas',parte:'Cuádriceps y glúteo'},
+    {id:'peso-muerto-rumano',nombre:'Peso muerto rumano',parte:'Isquiotibiales y glúteo'},
+  ],
+  'Glúteo':[
+    {id:'hip-thrust',nombre:'Hip thrust',parte:'Glúteo mayor'},
+    {id:'patada-gluteo',nombre:'Patada de glúteo en polea',parte:'Glúteo (aislamiento)'},
+    {id:'sentadilla-sumo',nombre:'Sentadilla sumo',parte:'Glúteo e interno de pierna'},
+    {id:'abduccion-cadera',nombre:'Abducción de cadera en máquina',parte:'Glúteo medio'},
+  ],
+  'Abdomen':[
+    {id:'crunch',nombre:'Crunch',parte:'Abdomen superior'},
+    {id:'elevacion-piernas',nombre:'Elevación de piernas colgado',parte:'Abdomen inferior'},
+    {id:'plancha',nombre:'Plancha',parte:'Abdomen completo (core)'},
+    {id:'giro-ruso',nombre:'Giro ruso',parte:'Oblicuos'},
+    {id:'rueda-abdominal',nombre:'Rueda abdominal',parte:'Abdomen completo (core)'},
+  ],
+};
+// Busca un ejercicio por id en toda la biblioteca (sin importar el músculo) — lo usan tanto
+// el portal como el perfil del miembro en el panel de staff para mostrar nombre/parte a partir
+// de lo guardado en registrosProgreso (ejercicioId). Devuelve null si ya no existe (ej. se
+// quitó de la biblioteca en una actualización futura) para que quien llama muestre un fallback.
+function buscarEjercicioInfo(id){
+  for(const musculo in BIBLIOTECA_EJERCICIOS){
+    const ex=BIBLIOTECA_EJERCICIOS[musculo].find(e=>e.id===id);
+    if(ex)return{...ex,musculo};
+  }
+  return null;
+}
+
 let portalMiembro=null;     // {id, numero, nombre, vencimientoTs, estatura, fechaNacimiento} una vez identificado
-let portalMaquinas=[];      // catálogo de máquinas del gimnasio
 let portalRegistros=[];     // registrosProgreso del miembro identificado (solo los suyos)
 let portalPesos=[];         // pesoCorporal del miembro identificado (solo los suyos)
-let portalMaquinaSel='',portalFiltroTipo=''; // filtros activos en "Mi progreso"
+let portalMusculoSel='';    // navegación "Registrar serie": músculo elegido en el menú (Parte 3)
+let portalEjercicioSel='';  // navegación "Registrar serie": ejercicio elegido dentro del músculo
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
+let portalProgresoEjercicioSel='',portalFiltroTipo=''; // filtros activos en "Mi progreso"
 let chartPortalProgreso=null,chartPortalPeso=null;
 
 function normalizarNombreComparacion(s){
@@ -4051,7 +4111,6 @@ async function portalIdentificar(){
 
 async function portalCargarDatos(){
   const gymId=window._portalGym;
-  try{const s=await getDocs(gymCol(gymId,'inventario'));portalMaquinas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalMaquinas=[];}
   try{const s=await getDocs(queryFn(gymCol(gymId,'registrosProgreso'),whereFn('miembroId','==',portalMiembro.id)));portalRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalRegistros=[];}
   try{const s=await getDocs(queryFn(gymCol(gymId,'pesoCorporal'),whereFn('miembroId','==',portalMiembro.id)));portalPesos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalPesos=[];}
 }
@@ -4061,16 +4120,14 @@ function portalUltimoPeso(){
   return ps.length?ps[0].peso:null;
 }
 
-// Orden de las secciones = qué tan seguido se usan: 1) Registrar serie, lo que motivó el
-// escaneo del QR; 2) Mi progreso, para revisar la bitácora de esa misma máquina justo después
-// de registrar; 3) Mi Perfil Físico al final, porque se edita con mucha menos frecuencia.
+// Orden de las secciones = qué tan seguido se usan: 1) Registrar serie (elegir músculo ->
+// ejercicio -> guardar), lo que motiva la visita al portal; 2) Mi progreso, para revisar la
+// bitácora justo después de registrar; 3) Mi Perfil Físico al final, porque se edita con mucha
+// menos frecuencia.
 function renderPortalHome(){
   const el=document.getElementById('portal-content');
   let html=`<div class="portal-hello">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
-  if(window._portalMaquina){
-    const maquina=portalMaquinas.find(x=>x.id===window._portalMaquina);
-    html+=renderPortalRegistrarSerieSeccion(maquina);
-  }
+  html+=renderPortalNavegacionSeccion();
   html+=renderPortalProgresoSeccion();
   html+=renderPortalPerfilFisicoSeccion();
   el.innerHTML=html;
@@ -4082,11 +4139,48 @@ function renderPortalHome(){
   dibujarChartPortalProgreso();
 }
 
-// REGISTRAR SERIE (Parte 1d)
-function renderPortalRegistrarSerieSeccion(maquina){
-  const nombreMaquina=maquina?maquina.nombre:'esta máquina';
+// NAVEGACIÓN "Registrar serie" (Parte 3): reemplaza el modelo anterior de un QR por máquina.
+// Con un solo QR por gimnasio, el cliente elige músculo -> ejercicio desde BIBLIOTECA_EJERCICIOS
+// (contenido estático, no vive en Firestore) y ahí llega al mismo formulario de siempre. Tres
+// pasos controlados por portalMusculoSel/portalEjercicioSel (ambos '' = menú de músculos).
+function renderPortalNavegacionSeccion(){
+  if(!portalMusculoSel)return renderPortalMusculosMenu();
+  const ejercicio=portalEjercicioSel?buscarEjercicioInfo(portalEjercicioSel):null;
+  if(!ejercicio)return renderPortalEjerciciosLista(portalMusculoSel);
+  return renderPortalRegistrarSerieSeccion(ejercicio);
+}
+function renderPortalMusculosMenu(){
+  const musculos=Object.keys(BIBLIOTECA_EJERCICIOS);
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>🏋️ Registrar serie — ${escAttr(nombreMaquina)}</h3>
+    <h3>🏋️ Registrar serie</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">¿Qué vas a entrenar hoy?</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">${musculos.map(m=>`<button type="button" class="btn btn-ghost" style="flex:1 1 calc(50% - 8px);min-width:120px" onclick="portalElegirMusculo('${m}')">${m}</button>`).join('')}</div>
+  </div>`;
+}
+function renderPortalEjerciciosLista(musculo){
+  const ejercicios=BIBLIOTECA_EJERCICIOS[musculo]||[];
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverMusculos()">‹ Músculos</button>
+      <h3 style="margin:0">🏋️ ${escAttr(musculo)}</h3>
+    </div>
+    <div>${ejercicios.map(ex=>`<div class="ec-row" style="cursor:pointer" onclick="portalElegirEjercicio('${ex.id}')"><span><strong>${escAttr(ex.nombre)}</strong><div style="font-size:11px;color:var(--muted)">${escAttr(ex.parte)}</div></span><span>›</span></div>`).join('')}</div>
+  </div>`;
+}
+function portalElegirMusculo(musculo){portalMusculoSel=musculo;portalEjercicioSel='';renderPortalHome();}
+function portalElegirEjercicio(id){portalEjercicioSel=id;renderPortalHome();}
+function portalVolverMusculos(){portalMusculoSel='';portalEjercicioSel='';renderPortalHome();}
+function portalVolverEjercicios(){portalEjercicioSel='';renderPortalHome();}
+
+// REGISTRAR SERIE (Parte 1d/3): mismo formulario de siempre, ahora encabezado por el ejercicio
+// elegido en la navegación de arriba en vez de por el nombre de una máquina escaneada.
+function renderPortalRegistrarSerieSeccion(ejercicio){
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverEjercicios()">‹ ${escAttr(portalMusculoSel)}</button>
+    </div>
+    <h3 style="margin-top:8px">🏋️ ${escAttr(ejercicio.nombre)}</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${escAttr(ejercicio.parte)}</div>
     <div class="form-group">
       <label>Tipo de serie</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap" id="portal-tipo-botones">
@@ -4122,7 +4216,7 @@ async function portalGuardarSerie(){
   const peso=parseFloat(document.getElementById('portal-serie-peso').value);
   const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
   if(!peso||!repeticiones)return alert('Escribe el peso y las repeticiones');
-  const data={miembroId:portalMiembro.id,maquinaId:window._portalMaquina,tipo,peso,repeticiones,fecha:Date.now()};
+  const data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tipo,peso,repeticiones,fecha:Date.now()};
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
     portalRegistros.push({id:ref.id,...data});
@@ -4132,26 +4226,25 @@ async function portalGuardarSerie(){
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
 }
 
-// MI PROGRESO POR MÁQUINA (Parte 1e)
+// MI PROGRESO POR EJERCICIO (Parte 1e/3)
 function renderPortalProgresoSeccion(){
-  if(!portalRegistros.length)return''; // nunca ha usado el QR: cero cambio, no se muestra nada
-  const maquinaIds=[...new Set(portalRegistros.map(r=>r.maquinaId))];
-  if(!portalMaquinaSel||!maquinaIds.includes(portalMaquinaSel)){
-    // La primera vez (portalMaquinaSel todavía vacío), prioriza la máquina del QR que se
-    // acaba de escanear si ya tiene progreso registrado — así el cliente ve directo lo que
-    // vino a revisar, sin tener que elegirla a mano. Después puede cambiarla desde el
-    // selector para ver el progreso de otras máquinas sin volver a escanear ningún QR — solo
-    // para REGISTRAR una serie nueva sí hace falta escanear el QR de esa máquina.
-    portalMaquinaSel=(window._portalMaquina&&maquinaIds.includes(window._portalMaquina))?window._portalMaquina:maquinaIds[0];
+  if(!portalRegistros.length)return''; // nunca ha registrado nada: cero cambio, no se muestra nada
+  const ejercicioIds=[...new Set(portalRegistros.map(r=>r.ejercicioId))];
+  if(!portalProgresoEjercicioSel||!ejercicioIds.includes(portalProgresoEjercicioSel)){
+    // La primera vez (portalProgresoEjercicioSel todavía vacío), prioriza el ejercicio que el
+    // cliente está viendo/registrando en este momento (portalEjercicioSel) si ya tiene progreso
+    // registrado — así ve directo lo que vino a revisar, sin tener que elegirlo a mano. Después
+    // puede cambiarlo desde el selector para ver el progreso de otros ejercicios libremente.
+    portalProgresoEjercicioSel=(portalEjercicioSel&&ejercicioIds.includes(portalEjercicioSel))?portalEjercicioSel:ejercicioIds[0];
   }
-  const nombreMaquina=id=>{const mq=portalMaquinas.find(x=>x.id===id);return mq?mq.nombre:'Máquina';};
-  const tipos=[...new Set(portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel).map(r=>r.tipo))];
+  const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
+  const tipos=[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
-  const filtrados=portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  const filtrados=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
   return`<div class="ec-card" style="margin-bottom:16px">
     <h3>📈 Mi progreso</h3>
     <div class="form-row">
-      <div class="form-group"><label>Máquina</label><select id="portal-progreso-maquina" onchange="portalCambiarMaquinaSel(this.value)">${maquinaIds.map(id=>`<option value="${id}" ${id===portalMaquinaSel?'selected':''}>${escAttr(nombreMaquina(id))}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       <div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
@@ -4160,14 +4253,14 @@ function renderPortalProgresoSeccion(){
     }</tbody></table></div>
   </div>`;
 }
-function portalCambiarMaquinaSel(id){portalMaquinaSel=id;portalFiltroTipo='';renderPortalHome();}
+function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';renderPortalHome();}
 function portalCambiarFiltroTipo(t){portalFiltroTipo=t;renderPortalHome();}
 function dibujarChartPortalProgreso(){
   const canvas=document.getElementById('chart-portal-progreso');
   if(!canvas)return;
   if(typeof Chart==='undefined')return;
   if(chartPortalProgreso){chartPortalProgreso.destroy();chartPortalProgreso=null;}
-  const datos=portalRegistros.filter(r=>r.maquinaId===portalMaquinaSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
+  const datos=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
   chartPortalProgreso=new Chart(canvas,{
     type:'line',
     data:{labels:datos.map(r=>fmtDate(r.fecha)),datasets:[{label:'Peso (kg)',data:datos.map(r=>r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},

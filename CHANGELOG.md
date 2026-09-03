@@ -4,6 +4,24 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-03 — Portal QR: de "un QR por máquina" a "un solo QR por gimnasio" con menú de músculos y ejercicios (Parte 3)
+
+**Qué se hizo:**
+- Cambio de modelo del portal público del cliente: en vez de imprimir y pegar un código QR distinto en cada artículo de Equipo del Gym, ahora hay UN SOLO QR por gimnasio. El staff lo descarga desde "🎨 Personalización" ("⬇️ Descargar mi QR de acceso") y lo puede pegar donde quiera (entrada, recepción, varias copias) — ya no hay que generar ni reimprimir nada por cada máquina nueva.
+- Se quitó por completo el modelo anterior: el botón "📷 Máquinas y QR" y su modal en Inventario, `renderMaquinasModal`/`abrirModalMaquinas`/`descargarQRMaquina`, y el parámetro `?maquina=` de la URL del portal (`window._portalMaquina`). `descargarQRAcceso()` genera un único QR codificando `?gym={uid}` (misma librería `qrcode-generator`, mismo mecanismo de antes).
+- Nueva biblioteca de ejercicios `BIBLIOTECA_EJERCICIOS`: contenido estático embebido en `index.html` (8 músculos — Pecho, Espalda, Hombro, Bíceps, Tríceps, Pierna, Glúteo, Abdomen — con 42 ejercicios en total, cada uno con `id`, `nombre` y `parte` del músculo que ataca). NO vive en Firestore ni varía por gimnasio, así que no hay que darlo de alta ni sincronizarlo.
+- Nueva navegación del portal tras identificarse: menú de músculos → lista de ejercicios de ese músculo (nombre + la `parte` en texto chico/gris) → mismo formulario de siempre (tipo de serie, peso, repeticiones) al elegir un ejercicio específico. Cada paso tiene un botón "‹ volver" al anterior. `registrosProgreso` ahora guarda `ejercicioId` y `musculo` en vez de `maquinaId`.
+- "Mi progreso" (portal) y "Progreso por Ejercicio" (perfil del miembro en el panel de staff, antes "Progreso por Máquina") ahora agrupan y filtran por ejercicio en vez de por máquina, usando una nueva función `buscarEjercicioInfo(id)` que busca el ejercicio en toda la biblioteca (sin importar el músculo) para mostrar su nombre. Mismo comportamiento de antes: selector de ejercicio + filtro por tipo de serie + historial + gráfica; la primera vez que se abre "Mi progreso" prioriza el ejercicio que el cliente está viendo/registrando en ese momento, si ya tiene historial.
+- `firestore.rules` simplificado: se quitó la regla de lectura pública de `inventario` (existía solo para que el portal mostrara el nombre de la "máquina" escaneada) — ya no hace falta, la biblioteca de ejercicios es estática y no vive en Firestore. `registrosProgreso` y `pesoCorporal` quedaron exactamente iguales, sin tocar. Actualizado también `rules-test/firestore.rules` y `rules-test/test.mjs` (registro de progreso de prueba ahora con `ejercicioId`/`musculo`, y nuevo caso: el cliente anónimo YA NO puede leer `inventario`).
+- Sin cambios en: peso corporal, estatura, IMC, fecha de nacimiento (Parte 2 completa); la aplicación de personalización visual (colores/logo) en el portal; el resto del panel de staff (Finanzas, Empleados, etc.).
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` del archivo (el módulo de Firebase en `<head>` y el bloque principal) — sintaxis válida en los dos.
+- `npm test` en `rules-test/` contra el emulador real de Firestore: 39/39 casos OK, incluyendo el nuevo ("cliente anónimo NO puede leer inventario") y el actualizado (registro de progreso con `ejercicioId`/`musculo`) — confirma que la regla se quitó de verdad y que el resto de permisos (aislamiento entre gimnasios, admin, miembrosPublicos, etc.) sigue intacto.
+- `BIBLIOTECA_EJERCICIOS` extraída del archivo real y evaluada en Node: 8 músculos, 42 ejercicios, IDs únicos en toda la biblioteca (sin duplicados entre músculos distintos) y cada uno con `nombre`+`parte` presentes.
+- Simulación en Node de la lógica pura de navegación y agrupación: `buscarEjercicioInfo` encuentra el ejercicio correcto en cualquier músculo y devuelve `null` sin reventar si el id no existe; la navegación cae correctamente de "formulario" a "lista de ejercicios" si el `ejercicioId` ya no es válido; el documento que arma `portalGuardarSerie` trae `ejercicioId`+`musculo` y ya NO `maquinaId`; la selección por defecto de "Mi progreso" prioriza el ejercicio que se está navegando/registrando cuando tiene historial, respeta una selección manual previa válida, y se recalcula sola si esa selección ya no existe en el historial actual.
+- `git diff` revisado: confirma que no quedó ninguna referencia a `maquinaId`, `portalMaquina`, `abrirModalMaquinas`, `modal-maquinas` ni `descargarQRMaquina` en todo el archivo, y que las secciones de peso corporal/estatura/IMC/fecha de nacimiento y personalización visual del portal no se tocaron.
+
 ## 2026-09-02 — Corrige XSS almacenado: escapa nombre/teléfono/notas/dirección/puesto/zona antes de insertarlos en `innerHTML`
 
 **Qué se hizo:**

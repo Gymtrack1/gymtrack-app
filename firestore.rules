@@ -29,18 +29,16 @@ rules_version = '2';
 // Lo que sí garantizan es el aislamiento entre gimnasios.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// PORTAL PÚBLICO DEL CLIENTE (QR físico en cada máquina → registro de
-// progreso, peso corporal, estatura, fecha de nacimiento — ver CHANGELOG.md)
+// PORTAL PÚBLICO DEL CLIENTE (un solo QR por gimnasio → menú de músculos y
+// ejercicios, registro de progreso, peso corporal, estatura, fecha de
+// nacimiento — ver CHANGELOG.md). La biblioteca de ejercicios (BIBLIOTECA_
+// EJERCICIOS) es contenido estático embebido en index.html, no vive en
+// Firestore — por eso no hay colección/regla para ella.
 // ─────────────────────────────────────────────────────────────────────────
 // Un cliente que escanea el QR se autentica de forma ANÓNIMA (signInAnonymously,
 // sin cuenta ni contraseña) solo para tener una sesión válida de Firestore. Su
 // uid NUNCA coincide con el uid del gimnasio (isOwnerDoc siempre da false para
 // él), así que necesita reglas propias, acotadas a lo mínimo:
-//
-//   usuarios/{gymId}/inventario        — lectura pública (mostrar el nombre del
-//     artículo de equipo al escanear su QR — cada artículo de "Equipo del Gym"
-//     ES la máquina, no hay una colección aparte). Alta/edición/borrado sigue
-//     siendo solo del staff, vía la regla genérica de más abajo.
 //
 //   usuarios/{gymId}/miembrosPublicos  — espejo de SOLO numero, nombre,
 //     vencimientoTs, estatura y fechaNacimiento de cada miembro (mismo id de
@@ -58,7 +56,9 @@ rules_version = '2';
 //     y vencimientoTs quedan protegidos, solo el staff los cambia.
 //
 //   usuarios/{gymId}/registrosProgreso — lectura + creación para cualquier
-//     autenticado (incluye anónimos). El cliente arma su propia consulta
+//     autenticado (incluye anónimos). Cada registro trae ejercicioId y
+//     musculo (referencia a BIBLIOTECA_EJERCICIOS en index.html, no a un
+//     documento de Firestore). El cliente arma su propia consulta
 //     filtrada por where('miembroId','==', su propio id) para ver solo su
 //     historial — la regla en sí NO puede garantizar ese filtro (Firestore no
 //     puede ligar un uid anónimo a un miembroId), así que el límite real es
@@ -149,14 +149,6 @@ service cloud.firestore {
 
       // ── PORTAL PÚBLICO DEL CLIENTE — ver nota extensa arriba ──
 
-      // Equipo del Gym: lectura pública (incluye anónimos) — cada artículo ES
-      // la "máquina" que identifica el QR, no hay una colección aparte. Alta/
-      // edición/borrado siguen cubiertos por la regla genérica de más abajo
-      // (isOwnerDoc/isAdmin), que también le sigue dando lectura al staff.
-      match /inventario/{docId} {
-        allow read: if isSignedIn();
-      }
-
       // Espejo público mínimo de miembros (numero, nombre, vencimientoTs,
       // estatura, fechaNacimiento — NUNCA teléfono/dirección/notas/etc).
       // Lectura pública; escritura pública acotada solo a estatura/
@@ -169,7 +161,7 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento']);
       }
 
-      // Series de progreso por máquina y peso corporal: cualquier
+      // Series de progreso por ejercicio y peso corporal: cualquier
       // autenticado (incluye anónimos) puede leer y crear. No hay edición
       // ni borrado desde el portal. Ver nota de confianza arriba sobre el
       // alcance real de "leer" aquí (no hay aislamiento por miembro a
