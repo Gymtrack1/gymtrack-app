@@ -4292,10 +4292,8 @@ function renderPortalPerfilFisicoSeccion(){
   const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
   return`<div class="ec-card" style="margin-bottom:16px">
     <h3>🧍 Mi Perfil Físico</h3>
-    <div class="form-row" style="display:flex;flex-wrap:wrap">
-      <div class="form-group" style="flex:1 1 150px;min-width:150px"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
-      <div class="form-group" style="flex:1 1 150px;min-width:150px"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${portalMiembro.estatura||''}"></div>
-    </div>
+    <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
+    <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${portalMiembro.estatura||''}"></div>
     ${(edad||imc!==null)?`<div style="margin-bottom:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC: ${imc}`:''}</div>`:''}
 
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
