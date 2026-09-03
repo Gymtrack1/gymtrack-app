@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-03 — Renombra la pestaña a "QR y Sugerencias" y mueve ahí la tarjeta de sugerencias
+
+**Qué se hizo:**
+- La pestaña nueva del panel ya no se llama solo "QR" — ahora es "QR y Sugerencias" (mismo id interno `qr`, solo cambió el texto del botón de nav y el título de la página).
+- Se movió la tarjeta "💬 Sugerencias de clientes" (filtro por categoría, lista, marcar como leída, borrar) desde Alertas hacia esta misma pestaña, justo debajo de las dos tarjetas de QR — así todo lo relacionado con sugerencias (generar el QR y leer lo que llega) queda junto en un solo lugar. Ya no vive nada de sugerencias en Alertas.
+- `activarTab()` ahora llama `renderSugerencias()` al entrar a la pestaña `qr` en vez de a `alertas`.
+- Textos ajustados para reflejar la nueva ubicación (ya no dicen "en Alertas" ni "pestaña QR" a secas).
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script>` principal — sintaxis válida.
+- `git diff` revisado: el HTML de la tarjeta de sugerencias se movió tal cual (mismos ids `sugerencias-titulo`/`sugerencias-content`, misma lógica de `renderSugerencias()`), no se duplicó ni se dejó nada huérfano en Alertas.
+- Búsqueda confirma cero referencias colgantes a "de Alertas" o "en Alertas" relacionadas con sugerencias en todo el archivo.
+
 ## 2026-09-03 — Nueva pestaña "QR" en el panel: mueve ahí los dos botones de descarga de QR
 
 **Qué se hizo:**

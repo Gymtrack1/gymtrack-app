@@ -310,7 +310,7 @@ contenedor, igual que app-screen/admin-screen. -->
   <button class="nav-btn" id="nav-reportes" onclick="showTab('reportes',event)">Reportes</button>
   <button class="nav-btn" id="nav-empleados" onclick="showTab('empleados',event)">Empleados</button>
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
-  <button class="nav-btn" id="nav-qr" onclick="showTab('qr',event)">QR</button>
+  <button class="nav-btn" id="nav-qr" onclick="showTab('qr',event)">QR y Sugerencias</button>
   <div class="user-info">
     <span class="plan-badge" id="plan-badge"></span>
     <button onclick="abrirModalPersonalizacion()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-surface);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Personaliza el color, logo y fondos de tu gimnasio">🎨 Personalizar</button>
@@ -464,12 +464,6 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
 
     <div id="promo-lista-content"></div>
-
-    <div class="section-title" style="margin-top:32px" id="sugerencias-titulo">💬 Sugerencias de clientes</div>
-    <!-- Buzón anónimo: los documentos de `sugerencias` nunca traen quién las mandó (ver
-    firestore.rules) — solo categoría, texto y fecha. Comparte el QR de Sugerencias (pestaña
-    QR) para que tus clientes puedan mandar una desde su celular. -->
-    <div id="sugerencias-content"></div>
   </div>
 
   <!-- FINANZAS -->
@@ -491,17 +485,22 @@ contenedor, igual que app-screen/admin-screen. -->
 
   <!-- QR -->
   <div class="tab" id="tab-qr">
-    <div class="header-row"><div class="page-title">QR</div></div>
+    <div class="header-row"><div class="page-title">QR y Sugerencias</div></div>
     <div class="ec-card" style="margin-bottom:16px">
       <h3>🏋️ QR de Acceso</h3>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Un solo código QR para todo el gimnasio. Descárgalo, imprímelo y pégalo donde quieras (entrada, recepción — puedes hacer varias copias). Al escanearlo, tus clientes se identifican, eligen qué músculo van a entrenar y registran su peso/series. También pueden registrar ahí su peso corporal, estatura y fecha de nacimiento.</div>
       <button class="btn btn-primary btn-sm" onclick="descargarQRAcceso()">⬇️ Descargar QR de Acceso</button>
     </div>
-    <div class="ec-card">
+    <div class="ec-card" style="margin-bottom:16px">
       <h3>💬 QR de Sugerencias</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Un QR distinto y 100% anónimo — nadie necesita identificarse para mandar una sugerencia. Pégalo donde quieras; las sugerencias llegan a "Sugerencias de clientes" en Alertas.</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Un QR distinto y 100% anónimo — nadie necesita identificarse para mandar una sugerencia. Pégalo donde quieras; las sugerencias que manden tus clientes aparecen aquí abajo.</div>
       <button class="btn btn-primary btn-sm" onclick="descargarQRSugerencias()">⬇️ Descargar QR de Sugerencias</button>
     </div>
+
+    <div class="section-title" style="margin-top:32px" id="sugerencias-titulo">💬 Sugerencias de clientes</div>
+    <!-- Buzón anónimo: los documentos de `sugerencias` nunca traen quién las mandó (ver
+    firestore.rules) — solo categoría, texto y fecha. -->
+    <div id="sugerencias-content"></div>
   </div>
 
 </main>
@@ -2625,7 +2624,7 @@ function renderSugerencias(){
   const totalSinLeer=sugerencias.filter(s=>!s.leida).length;
   const tituloEl=document.getElementById('sugerencias-titulo');
   if(tituloEl)tituloEl.textContent=`💬 Sugerencias de clientes${totalSinLeer?` (${totalSinLeer} nuevas)`:''}`;
-  if(!sugerencias.length){el.innerHTML='<div class="empty"><div class="empty-icon">💬</div><div>Aún no hay sugerencias. Comparte el QR de Sugerencias con tus clientes desde la pestaña QR.</div></div>';return;}
+  if(!sugerencias.length){el.innerHTML='<div class="empty"><div class="empty-icon">💬</div><div>Aún no hay sugerencias. Comparte el QR de Sugerencias de aquí arriba con tus clientes.</div></div>';return;}
   const contarSinLeer=cat=>sugerencias.filter(s=>(!cat||s.categoria===cat)&&!s.leida).length;
   const tabsHtml=['',...CATEGORIAS_SUGERENCIA].map(cat=>{
     const activa=cat===sugerenciaFiltroCategoria;
@@ -3943,7 +3942,8 @@ function activarTab(name,event){
   if(navBtn)navBtn.classList.add('active');
   else if(event)event.target.classList.add('active');
   aplicarFondoActivo();
-  if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();initPromoAlerta();renderSugerencias();}
+  if(name==='alertas'){initMsgWAEditor();initMsgWARecordatorioEditor();renderRecordatoriosPendientes();initPromoAlerta();}
+  if(name==='qr')renderSugerencias();
   // Detalle fila por fila de Miembros solo se construye al entrar a esta pestaña
   if(name==='miembros')renderMiembros(document.getElementById('search-miembros').value);
 }
@@ -4106,7 +4106,7 @@ function buscarEjercicioInfo(id){
 // BUZÓN DE SUGERENCIAS (Parte 4, ver CHANGELOG.md): lista fija de categorías — la misma que
 // valida firestore.rules al crear un documento en `sugerencias` (categoria debe ser uno de
 // estos valores exactos). Compartida entre el portal (botones para elegir) y el panel de staff
-// (pestañas de filtro en la tarjeta "Sugerencias de clientes" de Alertas).
+// (pestañas de filtro en la tarjeta "Sugerencias de clientes" de la pestaña QR y Sugerencias).
 const CATEGORIAS_SUGERENCIA=['Máquinas y equipo','Limpieza','Instalaciones','Atención del personal','Clases y horarios','Precios y membresías','Estacionamiento','Otro'];
 
 let portalMiembro=null;     // {id, numero, nombre, vencimientoTs, estatura, fechaNacimiento} una vez identificado
