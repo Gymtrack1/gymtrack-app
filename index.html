@@ -3265,31 +3265,55 @@ async function agregarPesoCorporalPerfil(){
 // registro en `registrosProgreso` — si nunca ha usado el QR, cero cambio visual (mismo
 // criterio que Beneficios/Seguimiento/Compras). Muestra lo mismo que ve el propio miembro en
 // el portal: selector de ejercicio + filtro por tipo de serie + historial + gráfica de peso.
-let perfilProgresoEjercicioSel='',perfilProgresoFiltroTipo='';
+let perfilProgresoEjercicioSel='',perfilProgresoFiltroTipo='',perfilProgresoBusqueda='';
+// El buscador vive FUERA de #p-progreso-resultados (que sí se reemplaza en cada cambio de
+// selector/búsqueda) para no perder el foco/cursor del input cada vez que se escribe una letra
+// — si todo el bloque se reconstruyera junto con el <input>, el teclado se cerraría en cada tecla.
 function renderProgresoPerfil(m){
   const card=document.getElementById('p-progreso-card');
   const registros=registrosProgreso.filter(r=>r.miembroId===m.id);
   if(!registros.length){card.style.display='none';if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}return;}
   card.style.display='block';
-  const ejercicioIds=[...new Set(registros.map(r=>r.ejercicioId))];
-  if(!perfilProgresoEjercicioSel||!ejercicioIds.includes(perfilProgresoEjercicioSel))perfilProgresoEjercicioSel=ejercicioIds[0];
+  document.getElementById('p-progreso-contenido').innerHTML=`
+    <div class="form-group"><input type="text" placeholder="Buscar ejercicio o máquina..." value="${escAttr(perfilProgresoBusqueda)}" oninput="perfilBuscarProgreso(this.value)"></div>
+    <div id="p-progreso-resultados">${_perfilProgresoResultadosHtml(m.id)}</div>`;
+  dibujarChartProgresoPerfil(m.id);
+}
+function _perfilProgresoResultadosHtml(miembroId){
+  const registros=registrosProgreso.filter(r=>r.miembroId===miembroId);
   const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
+  const todos=[...new Set(registros.map(r=>r.ejercicioId))];
+  const ejercicioIds=todos.filter(id=>coincideBusquedaEjercicio(nombreEjercicio(id),perfilProgresoBusqueda));
+  if(!ejercicioIds.length)return'<div class="empty"><div class="empty-icon">🔍</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>';
+  if(!perfilProgresoEjercicioSel||!ejercicioIds.includes(perfilProgresoEjercicioSel))perfilProgresoEjercicioSel=ejercicioIds[0];
   const tipos=[...new Set(registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel).map(r=>r.tipo))];
   if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
   const filtrados=registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
-  document.getElementById('p-progreso-contenido').innerHTML=`
+  return`
     <div class="form-row">
-      <div class="form-group"><label>Ejercicio</label><select onchange="perfilProgresoEjercicioSel=this.value;perfilProgresoFiltroTipo='';renderProgresoPerfil(miembrosPorId.get('${m.id}'))">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Tipo de serie</label><select onchange="perfilProgresoFiltroTipo=this.value;renderProgresoPerfil(miembrosPorId.get('${m.id}'))"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Ejercicio</label><select onchange="perfilCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Tipo de serie</label><select onchange="perfilCambiarProgresoFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
     </div>
     <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
     <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
       filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${r.peso}kg</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
     }</tbody></table></div>`;
-  if(typeof Chart==='undefined')return;
+}
+function _refrescarPerfilProgresoResultados(miembroId){
+  const cont=document.getElementById('p-progreso-resultados');
+  if(cont)cont.innerHTML=_perfilProgresoResultadosHtml(miembroId);
+  dibujarChartProgresoPerfil(miembroId);
+}
+function perfilBuscarProgreso(texto){perfilProgresoBusqueda=texto;_refrescarPerfilProgresoResultados(perfilActualId);}
+function perfilCambiarProgresoEjercicioSel(id){perfilProgresoEjercicioSel=id;perfilProgresoFiltroTipo='';_refrescarPerfilProgresoResultados(perfilActualId);}
+function perfilCambiarProgresoFiltroTipo(t){perfilProgresoFiltroTipo=t;_refrescarPerfilProgresoResultados(perfilActualId);}
+function dibujarChartProgresoPerfil(miembroId){
+  const canvas=document.getElementById('chart-progreso-perfil');
+  if(!canvas||typeof Chart==='undefined')return;
   if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}
+  const filtrados=registrosProgreso.filter(r=>r.miembroId===miembroId&&r.ejercicioId===perfilProgresoEjercicioSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo));
   const asc=[...filtrados].sort((a,b)=>a.fecha-b.fecha);
-  chartProgresoPerfil=new Chart(document.getElementById('chart-progreso-perfil'),{
+  chartProgresoPerfil=new Chart(canvas,{
     type:'line',
     data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Peso (kg)',data:asc.map(r=>r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
@@ -4017,14 +4041,18 @@ async function submitPin(){
 // verificación del LADO DE LA APP, igual que el resto de GymTrack (que no tiene backend
 // propio) — no es una regla de Firestore a prueba de manipulación técnica directa. Mismo nivel
 // de confianza que ya tiene hoy el resto del sistema.
-const TIPOS_SERIE=['Calentamiento','Normal','PR','Dropset','Al fallo'];
+const TIPOS_SERIE=['Calentamiento','Normal','PR','Dropset','Al fallo','Súper serie'];
 // Ayuda chica debajo de los botones de tipo de serie, solo para los términos menos obvios —
 // se muestra la del tipo que esté seleccionado en ese momento (ver portalElegirTipo).
 const DESCRIPCION_TIPO_SERIE={
   'Calentamiento':'Peso ligero para preparar el músculo antes de tu carga normal.',
   'PR':'Tu mejor marca personal — el peso más alto que has levantado en este ejercicio.',
   'Dropset':'Bajas el peso a media serie sin descansar, para seguir hasta el fallo.',
-  'Al fallo':'Repites hasta que ya no puedas completar otra repetición con buena forma.'
+  'Al fallo':'Repites hasta que ya no puedas completar otra repetición con buena forma.',
+  // No se modela como vínculo entre dos ejercicios distintos: cada registro sigue siendo una
+  // serie de un solo ejercicio, esta etiqueta solo identifica que la hiciste enseguida de otra
+  // sin descansar (el "otro ejercicio" de la súper serie queda en SU PROPIO registro aparte).
+  'Súper serie':'La hiciste justo después de otro ejercicio, sin descansar entre los dos.'
 };
 
 // BIBLIOTECA DE EJERCICIOS (Parte 3, ver CHANGELOG.md): contenido estático embebido aquí, NO
@@ -4115,11 +4143,22 @@ let portalPesos=[];         // pesoCorporal del miembro identificado (solo los s
 let portalMusculoSel='';    // navegación "Registrar serie": músculo elegido en el menú (Parte 3)
 let portalEjercicioSel='';  // navegación "Registrar serie": ejercicio elegido dentro del músculo
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
-let portalProgresoEjercicioSel='',portalFiltroTipo=''; // filtros activos en "Mi progreso"
+let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
 let chartPortalProgreso=null,chartPortalPeso=null;
 
 function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+}
+// Búsqueda simple (sin backend ni librerías) para el historial de progreso: cada PALABRA de lo
+// que se escribió debe aparecer en algún lado del nombre, sin importar el orden ni que estén
+// separadas por otras palabras — así "press banca" sí encuentra "Press de banca plano" (nombres
+// reales del catálogo casi siempre llevan una preposición en medio). Insensible a mayúsculas y
+// acentos porque usa normalizarNombreComparacion en ambos lados.
+function coincideBusquedaEjercicio(nombre,busqueda){
+  const palabras=normalizarNombreComparacion(busqueda).split(' ').filter(Boolean);
+  if(!palabras.length)return true;
+  const nombreNorm=normalizarNombreComparacion(nombre);
+  return palabras.every(p=>nombreNorm.includes(p));
 }
 
 window.addEventListener('portalReady',()=>{
@@ -4318,22 +4357,32 @@ async function portalGuardarSerie(){
 }
 
 // MI PROGRESO POR EJERCICIO (Parte 1e/3)
+// El buscador vive FUERA de #portal-progreso-resultados (que sí se reemplaza en cada cambio de
+// selector/búsqueda) para no perder el foco/cursor del input cada vez que se escribe una letra.
 function renderPortalProgresoSeccion(){
   if(!portalRegistros.length)return''; // nunca ha registrado nada: cero cambio, no se muestra nada
-  const ejercicioIds=[...new Set(portalRegistros.map(r=>r.ejercicioId))];
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>📈 Mi progreso</h3>
+    <div class="form-group"><input type="text" placeholder="Buscar ejercicio o máquina..." value="${escAttr(portalProgresoBusqueda)}" oninput="portalBuscarProgreso(this.value)"></div>
+    <div id="portal-progreso-resultados">${_portalProgresoResultadosHtml()}</div>
+  </div>`;
+}
+function _portalProgresoResultadosHtml(){
+  const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
+  const todos=[...new Set(portalRegistros.map(r=>r.ejercicioId))];
+  const ejercicioIds=todos.filter(id=>coincideBusquedaEjercicio(nombreEjercicio(id),portalProgresoBusqueda));
+  if(!ejercicioIds.length)return'<div class="empty"><div class="empty-icon">🔍</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>';
   if(!portalProgresoEjercicioSel||!ejercicioIds.includes(portalProgresoEjercicioSel)){
     // La primera vez (portalProgresoEjercicioSel todavía vacío), prioriza el ejercicio que el
     // cliente está viendo/registrando en este momento (portalEjercicioSel) si ya tiene progreso
     // registrado — así ve directo lo que vino a revisar, sin tener que elegirlo a mano. Después
-    // puede cambiarlo desde el selector para ver el progreso de otros ejercicios libremente.
+    // puede cambiarlo desde el selector (o la búsqueda) para ver el progreso de otros ejercicios.
     portalProgresoEjercicioSel=(portalEjercicioSel&&ejercicioIds.includes(portalEjercicioSel))?portalEjercicioSel:ejercicioIds[0];
   }
-  const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
   const tipos=[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
   const filtrados=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>📈 Mi progreso</h3>
+  return`
     <div class="form-row">
       <div class="form-group"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       <div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
@@ -4341,11 +4390,16 @@ function renderPortalProgresoSeccion(){
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
     <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
       filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${r.peso}kg</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
-    }</tbody></table></div>
-  </div>`;
+    }</tbody></table></div>`;
 }
-function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';renderPortalHome();}
-function portalCambiarFiltroTipo(t){portalFiltroTipo=t;renderPortalHome();}
+function _refrescarPortalProgresoResultados(){
+  const cont=document.getElementById('portal-progreso-resultados');
+  if(cont)cont.innerHTML=_portalProgresoResultadosHtml();
+  dibujarChartPortalProgreso();
+}
+function portalBuscarProgreso(texto){portalProgresoBusqueda=texto;_refrescarPortalProgresoResultados();}
+function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';_refrescarPortalProgresoResultados();}
+function portalCambiarFiltroTipo(t){portalFiltroTipo=t;_refrescarPortalProgresoResultados();}
 function dibujarChartPortalProgreso(){
   const canvas=document.getElementById('chart-portal-progreso');
   if(!canvas)return;

@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-04 — "Súper serie" como tipo, y buscador de ejercicio en el historial de progreso
+
+**Qué se hizo:**
+- Nuevo tipo de serie "Súper serie", agregado a `TIPOS_SERIE` (ahora: Calentamiento, Normal, PR, Dropset, Al fallo, Súper serie, Otro) con su propia ayuda chica. Se guarda exactamente igual que cualquier otro tipo — un registro de Súper serie sigue siendo la serie de UN SOLO ejercicio (`{miembroId, ejercicioId, musculo, tipo:'Súper serie', peso, repeticiones, fecha}`), no se modela ningún vínculo entre dos ejercicios distintos.
+- Buscador de texto en "Mi progreso" (portal del cliente) y en "Progreso por Ejercicio" (perfil del miembro, panel de staff): filtra qué ejercicios aparecen en el selector por coincidencia de nombre, combinable con el filtro de tipo de serie que ya existía. Búsqueda simple, sin backend ni librerías nuevas — reutiliza `normalizarNombreComparacion` (ya existente) y agrega `coincideBusquedaEjercicio(nombre, busqueda)`: cada PALABRA de lo escrito debe aparecer en algún lado del nombre (sin importar el orden), insensible a mayúsculas/acentos. Así "press banca" encuentra "Press de banca plano" aunque el nombre real lleve una preposición en medio.
+- Ambos buscadores están separados del contenido que se vuelve a pintar en cada tecla/cambio de filtro (nuevos contenedores `#portal-progreso-resultados` y `#p-progreso-resultados`) — el `<input>` de búsqueda nunca se recrea mientras se escribe, así que no pierde el foco/cursor ni cierra el teclado en cada letra.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script>` principal — sintaxis válida.
+- Simulación en Node de `coincideBusquedaEjercicio` con nombres reales del catálogo: "press banca" encuentra "Press de banca plano" pero NO "Press inclinado"/"Press declinado" (su nombre visible no dice "banca", aunque su id sí); orden de las palabras no importa; falta una sola palabra de la búsqueda -> no hay match; insensible a mayúsculas y acentos ("biceps" encuentra "bíceps"); búsqueda vacía muestra todo.
+- Simulación de la selección por defecto tras buscar: prioriza el ejercicio que se está navegando/registrando si sigue en los resultados filtrados; si la selección previa queda excluida por la búsqueda, cae al primer resultado nuevo; si sigue siendo válida, se respeta; sin resultados, se muestra el estado vacío en vez de romper el selector.
+- Confirmado que un registro de "Súper serie" tiene exactamente los mismos 7 campos que cualquier otro tipo (sin campos extra de vínculo entre ejercicios).
+
 ## 2026-09-03 — Renombra la pestaña a "QR y Sugerencias" y mueve ahí la tarjeta de sugerencias
 
 **Qué se hizo:**
