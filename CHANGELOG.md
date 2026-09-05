@@ -4,6 +4,19 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-04 — Biblioteca de ejercicios mucho más amplia + buscador de ejercicio para registrar
+
+**Qué se hizo:**
+- El usuario aclaró que el pedido de "catálogo con buscador" era sobre EJERCICIOS, no sobre "máquinas" (ese modelo de dar de alta máquinas con QR por máquina ya no existe, se reemplazó por el menú fijo músculo→ejercicio). Se descartó la idea de un buscador para Inventario/Equipo del Gym.
+- `BIBLIOTECA_EJERCICIOS` creció de 42 a 94 ejercicios y de 8 a 10 categorías: se agregaron varios ejercicios más a cada grupo muscular existente (Pecho, Espalda, Hombro, Bíceps, Tríceps, Pierna, Glúteo, Abdomen — incluye ahora pantorrilla y aductor dentro de Pierna) y dos categorías nuevas, Cardio (caminadora, elíptica, bicicleta, escaladora...) y Funcional (kettlebell swing, TRX, burpees, battle ropes...), para cubrir la gran mayoría de equipo/ejercicios de un gym comercial típico.
+- Nuevo buscador de texto en el menú "Registrar serie" del portal (antes de elegir músculo): al escribir, busca por nombre en TODA la biblioteca (cruza categorías) y muestra una lista plana de coincidencias con su músculo y parte; tocar una va directo al formulario de registrar serie, sin pasar por la lista intermedia de ejercicios de ese músculo. Si el campo está vacío, se ve el menú de músculos de siempre (sin cambio). Reutiliza `coincideBusquedaEjercicio` (agregado ayer para el buscador del historial de progreso) — misma búsqueda simple por palabras, insensible a mayúsculas/acentos, sin backend ni librerías nuevas.
+- El buscador vive en un contenedor separado del que se reemplaza en cada tecla (mismo patrón ya usado en "Mi progreso"), así el `<input>` nunca se recrea mientras se escribe y no pierde el foco ni cierra el teclado.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script>` principal — sintaxis válida.
+- `BIBLIOTECA_EJERCICIOS` extraída del archivo real y evaluada en Node: 10 categorías (incluye Cardio y Funcional), 94 ejercicios, ids únicos en toda la biblioteca, cada uno con nombre/parte/músculo presentes.
+- Simulación en Node del buscador del menú: "sentadilla" encuentra varias coincidencias cruzando categorías (Pierna y Glúteo); "curl" encuentra tanto los de Bíceps como "Curl femoral" (Pierna) — coincidencia correcta por nombre, no por músculo; "martillo" encuentra únicamente "Curl martillo" sin falsos positivos; el buscador también encuentra ejercicios de Cardio y Funcional; sin resultados no revienta; elegir un resultado de búsqueda decide músculo+ejercicio de una sola vez y lleva directo al formulario de registrar serie.
+
 ## 2026-09-04 — "Súper serie" como tipo, y buscador de ejercicio en el historial de progreso
 
 **Qué se hizo:**
