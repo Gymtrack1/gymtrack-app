@@ -4,6 +4,22 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-04 — Selector kg/lb al registrar una serie (repeticiones ya existía)
+
+**Qué se hizo:**
+- Nuevo toggle kg/lb junto al campo de peso en "Registrar serie" (portal del cliente): dos botones chicos, "kg" seleccionado por defecto. Al cambiar de unidad, si ya había un número escrito, se convierte en el propio input (no se pierde lo tecleado) sin volver a pintar el resto del formulario (no se pierde el foco de reps ni del campo "Otro" de tipo de serie).
+- `registrosProgreso` SIEMPRE guarda `peso` en kg (no cambia ningún cálculo ni comparación histórica existente) más un campo nuevo `unidadOriginal` ('kg' o 'lb') con la unidad en la que el cliente lo capturó. Conversión con la fórmula pedida, `kgALb(kg)=kg*2.20462` y `lbAKg(lb)=lb/2.20462`, redondeada a 1 decimal.
+- En la bitácora/tabla de "Mi progreso" (portal) y "Progreso por Ejercicio" (perfil del miembro, staff), cada fila muestra el peso en SU PROPIA `unidadOriginal` (`formatearPeso`) — un registro capturado en lb se ve en lb, uno en kg se ve en kg, tal cual como el cliente lo pensó al capturarlo. Registros de antes de este cambio (sin `unidadOriginal`) se tratan como kg, sin cambio de comportamiento.
+- En la gráfica de línea (Chart.js) no se pueden mezclar kg y lb en el mismo eje, así que usa una sola unidad para toda la línea: la del registro más reciente de ese ejercicio (convirtiendo los demás puntos a esa unidad, sin pérdida porque `peso` siempre es kg canónico). La etiqueta del eje ("Peso (kg)" o "Peso (lb)") cambia según corresponda.
+- El campo de repeticiones YA estaba implementado de antes (input, guardado como `repeticiones`, columna "Reps" en ambas tablas de historial) — no hizo falta agregarlo, solo se confirmó que sigue funcionando junto a los cambios de esta entrada.
+- Sin cambios en el peso corporal del miembro (card "Peso Corporal"/IMC): sigue solo en kg, sin selector, tal como se pidió explícitamente.
+- `firestore.rules` no necesitó cambios: la regla de `registrosProgreso` ya permitía cualquier campo (sin `hasOnly`), así que agregar `unidadOriginal` no requiere republicar reglas.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script>` principal — sintaxis válida.
+- Simulación en Node de `kgALb`/`lbAKg`/`formatearPeso` extraídas tal cual del archivo real: fórmula exacta y redondeo a 1 decimal (100kg→220.5lb, 60lb→27.2kg); `portalGuardarSerie` guarda siempre en kg con `unidadOriginal` correcto según lo capturado; el toggle convierte el valor ya escrito al cambiar de unidad; la tabla muestra cada fila en su propia unidad (incluye compatibilidad con registros viejos sin `unidadOriginal`); la gráfica elige la unidad del registro más reciente y convierte TODOS los puntos a esa unidad de forma consistente, con kg por defecto si no hay ningún registro.
+- `git diff` revisado: cero referencias a `pesoCorporal`/`agregarPesoCorporalPerfil`/`renderPesoCorporalPerfil` en el cambio — confirmado que el peso corporal del miembro no se tocó.
+
 ## 2026-09-04 — Biblioteca de ejercicios mucho más amplia + buscador de ejercicio para registrar
 
 **Qué se hizo:**

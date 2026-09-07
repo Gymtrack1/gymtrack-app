@@ -3296,7 +3296,7 @@ function _perfilProgresoResultadosHtml(miembroId){
     </div>
     <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
     <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
-      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${r.peso}kg</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
+      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
     }</tbody></table></div>`;
 }
 function _refrescarPerfilProgresoResultados(miembroId){
@@ -3313,9 +3313,12 @@ function dibujarChartProgresoPerfil(miembroId){
   if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}
   const filtrados=registrosProgreso.filter(r=>r.miembroId===miembroId&&r.ejercicioId===perfilProgresoEjercicioSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo));
   const asc=[...filtrados].sort((a,b)=>a.fecha-b.fecha);
+  // Misma lógica que dibujarChartPortalProgreso: una sola unidad para toda la línea, la del
+  // registro más reciente (siempre convertible sin pérdida porque `peso` es kg canónico).
+  const unidadChart=asc.length?(asc[asc.length-1].unidadOriginal||'kg'):'kg';
   chartProgresoPerfil=new Chart(canvas,{
     type:'line',
-    data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Peso (kg)',data:asc.map(r=>r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
+    data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:asc.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
   });
 }
@@ -4200,6 +4203,7 @@ let portalMusculoSel='';    // navegación "Registrar serie": músculo elegido e
 let portalEjercicioSel='';  // navegación "Registrar serie": ejercicio elegido dentro del músculo
 let portalBuscarEjercicioTexto=''; // búsqueda de ejercicio en el menú "Registrar serie" (Parte 3)
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
+let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
 let chartPortalProgreso=null,chartPortalPeso=null;
 
@@ -4217,6 +4221,16 @@ function coincideBusquedaEjercicio(nombre,busqueda){
   const nombreNorm=normalizarNombreComparacion(nombre);
   return palabras.every(p=>nombreNorm.includes(p));
 }
+
+// UNIDAD kg/lb EN EL PESO CARGADO DE UNA SERIE (Parte 5, ver CHANGELOG.md): `registrosProgreso`
+// SIEMPRE guarda `peso` en kg (no rompe cálculos ni comparaciones históricas) más un campo
+// extra `unidadOriginal` ('kg' o 'lb') con la unidad en la que el cliente lo capturó — la
+// conversión pasa solo al momento de capturar (kgALb/lbAKg) y al momento de mostrar
+// (formatearPeso). Registros viejos sin `unidadOriginal` se tratan como 'kg' (con `||'kg'` en
+// cada lugar que lo lee), su comportamiento actual no cambia.
+function kgALb(kg){return Math.round(kg*2.20462*10)/10;}
+function lbAKg(lb){return Math.round((lb/2.20462)*10)/10;}
+function formatearPeso(pesoKg,unidad){return unidad==='lb'?`${kgALb(pesoKg)}lb`:`${pesoKg}kg`;}
 
 window.addEventListener('portalReady',()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
@@ -4403,11 +4417,31 @@ function renderPortalRegistrarSerieSeccion(ejercicio){
       <input type="text" id="portal-tipo-otro" placeholder="Escribe el tipo" style="display:none;margin-top:8px;width:100%">
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-serie-peso" placeholder="60"></div>
+      <div class="form-group">
+        <label>Peso <span id="portal-unidad-peso-toggle" style="display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle"><button type="button" class="btn ${portalUnidadPeso==='kg'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('kg')">kg</button><button type="button" class="btn ${portalUnidadPeso==='lb'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('lb')">lb</button></span></label>
+        <input type="number" id="portal-serie-peso" placeholder="${portalUnidadPeso==='lb'?'132':'60'}">
+      </div>
       <div class="form-group"><label>Repeticiones</label><input type="number" id="portal-serie-reps" placeholder="10"></div>
     </div>
     <button class="btn btn-primary" style="width:100%" onclick="portalGuardarSerie()">Guardar serie</button>
   </div>`;
+}
+// Convierte el número YA ESCRITO en el input al cambiar de unidad (para no perder lo que el
+// cliente ya tecleó) y actualiza solo el toggle/placeholder por DOM directo — NO vuelve a
+// pintar todo el formulario, para no perder el foco de otros campos (reps, tipo "Otro").
+function portalCambiarUnidadPeso(unidad){
+  if(unidad===portalUnidadPeso)return;
+  const input=document.getElementById('portal-serie-peso');
+  const actual=input?parseFloat(input.value):NaN;
+  if(input&&!isNaN(actual)&&actual>0)input.value=unidad==='lb'?kgALb(actual):lbAKg(actual);
+  portalUnidadPeso=unidad;
+  const toggle=document.getElementById('portal-unidad-peso-toggle');
+  if(toggle)toggle.querySelectorAll('button').forEach(b=>{
+    const sel=b.textContent.trim()===unidad;
+    b.classList.toggle('btn-primary',sel);
+    b.classList.toggle('btn-ghost',!sel);
+  });
+  if(input)input.placeholder=unidad==='lb'?'132':'60';
 }
 function portalElegirTipo(t){
   portalTipoSel=t;
@@ -4425,10 +4459,13 @@ async function portalGuardarSerie(){
   if(!portalTipoSel)return alert('Elige el tipo de serie');
   const tipo=portalTipoSel==='__otro__'?document.getElementById('portal-tipo-otro').value.trim():portalTipoSel;
   if(!tipo)return alert('Escribe el tipo de serie');
-  const peso=parseFloat(document.getElementById('portal-serie-peso').value);
+  const pesoCapturado=parseFloat(document.getElementById('portal-serie-peso').value);
   const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
-  if(!peso||!repeticiones)return alert('Escribe el peso y las repeticiones');
-  const data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tipo,peso,repeticiones,fecha:Date.now()};
+  if(!pesoCapturado||!repeticiones)return alert('Escribe el peso y las repeticiones');
+  // Siempre se guarda en kg (no rompe cálculos ni comparaciones históricas) — unidadOriginal
+  // guarda con qué unidad lo capturó el cliente, para poder mostrárselo tal cual después.
+  const peso=portalUnidadPeso==='lb'?lbAKg(pesoCapturado):pesoCapturado;
+  const data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tipo,peso,unidadOriginal:portalUnidadPeso,repeticiones,fecha:Date.now()};
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
     portalRegistros.push({id:ref.id,...data});
@@ -4471,7 +4508,7 @@ function _portalProgresoResultadosHtml(){
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
     <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
-      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${r.peso}kg</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
+      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
     }</tbody></table></div>`;
 }
 function _refrescarPortalProgresoResultados(){
@@ -4488,9 +4525,13 @@ function dibujarChartPortalProgreso(){
   if(typeof Chart==='undefined')return;
   if(chartPortalProgreso){chartPortalProgreso.destroy();chartPortalProgreso=null;}
   const datos=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
+  // La gráfica necesita UNA sola unidad consistente para toda la línea (no puede mezclar kg y
+  // lb en el mismo eje) — usa la unidad del registro MÁS RECIENTE, ya guardado siempre en kg,
+  // así que convertir a cualquier unidad para mostrarlo es directo y sin pérdida.
+  const unidadChart=datos.length?(datos[datos.length-1].unidadOriginal||'kg'):'kg';
   chartPortalProgreso=new Chart(canvas,{
     type:'line',
-    data:{labels:datos.map(r=>fmtDate(r.fecha)),datasets:[{label:'Peso (kg)',data:datos.map(r=>r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
+    data:{labels:datos.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:datos.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
   });
 }
