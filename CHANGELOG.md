@@ -4,6 +4,30 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Confirmado: gemini-3.5-flash-lite funciona en esta cuenta con 500 peticiones/día
+
+**Qué se hizo:**
+- Revisando la tabla completa de "Rate Limit" en aistudio.google.com/apikey (con "All models"
+  activado), se encontró que `gemini-3.1-flash-lite` y `gemini-3.5-flash-lite` muestran 500
+  peticiones/día y 15/minuto en esta cuenta — 25x más que las 20/día de `gemini-3.6-flash` — sin
+  ser modelos de una generación ya cerrada para cuentas nuevas (a diferencia de `gemini-2.5-flash`,
+  que mostraba cuota en el dashboard pero daba 404 al llamarlo de verdad).
+- En vez de cambiar el default en `worker.js` (arriesgando otro 404 como con 2.5-flash), se probó
+  con la variable de entorno `GEMINI_MODEL=gemini-3.5-flash-lite` en Cloudflare — así, si fallaba,
+  bastaba con borrar la variable para volver al default seguro (`gemini-3.6-flash`) sin tocar
+  código ni redesplegar. **Confirmado por el usuario: funciona.**
+- `worker.js` NO se modificó — el default en código sigue siendo `gemini-3.6-flash` (el más
+  universalmente disponible), y `gemini-3.5-flash-lite` queda activo vía la variable de entorno
+  específica de esta cuenta. Este es justo el propósito de que `GEMINI_MODEL` sea configurable:
+  cada cuenta de Google puede tener acceso/cuota distinta, así que el ajuste fino vive en la
+  variable de entorno, no en el código del repo.
+
+**Qué se verificó:**
+- El usuario confirmó que "Actualizar recomendación" ya funciona con esta configuración.
+- Pendiente de que el usuario confirme también el flujo completo del roadmap (Parte 7): que
+  aparezcan las tarjetas de hitos con checkboxes, que marcar un hábito lo guarde, y que al
+  regenerar el plan el progreso ya marcado se conserve.
+
 ## 2026-09-08 — Revierte a gemini-3.6-flash: gemini-2.5-flash está cerrado a cuentas nuevas
 
 **Qué se hizo:**
