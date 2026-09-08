@@ -4390,7 +4390,15 @@ const IA_WORKER_URL='https://gymtrack-ia.luismolinac06.workers.dev';
 async function _solicitarRecomendacionIA(payload){
   if(IA_WORKER_URL.includes('REEMPLAZA-CON-TU-WORKER'))throw new Error('El gym todavía no configuró el Worker de recomendaciones (ver cloudflare-worker-ia/README.md)');
   const resp=await fetch(IA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!resp.ok)throw new Error(`El servicio de IA respondió con error (${resp.status})`);
+  if(!resp.ok){
+    // El Worker manda { error, detalle } en el cuerpo incluso cuando falla — se incluye aquí
+    // para poder diagnosticar sin tener que revisar los logs de Cloudflare (mismo criterio que
+    // portalIdentificar/portalEnviarSugerencia: mostrar el motivo real, no solo el código HTTP).
+    let cuerpo=null;
+    try{cuerpo=await resp.json();}catch(e){/* el cuerpo no era JSON, se ignora */}
+    const detalle=cuerpo&&(cuerpo.detalle||cuerpo.error)?`: ${cuerpo.detalle||cuerpo.error}`:'';
+    throw new Error(`El servicio de IA respondió con error (${resp.status})${detalle}`);
+  }
   const data=await resp.json();
   if(!data||typeof data.texto!=='string'||!data.texto.trim())throw new Error('Respuesta inválida del servicio de IA');
   return data.texto;
