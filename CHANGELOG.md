@@ -4,6 +4,17 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Corrige: la meta se guardaba pero el perfil la mostraba borrada (staff)
+
+**Qué se hizo:**
+- Bug reportado por el usuario tras desplegar: en el perfil del miembro (staff), al guardar la meta salía "Meta guardada ✓" pero la tarjeta se veía como si no hubiera nada guardado, y "Actualizar recomendación" decía "Primero guarda una meta" aunque sí se había guardado.
+- Causa real: `guardarMetaPerfil()` y `pedirRecomendacionIAPerfil()` actualizaban el array `miembros` en memoria con `_actualizarLocal(...)`, pero nunca reconstruían el índice `miembrosPorId` (el Map que usan para buscar al miembro por id) con `recalcMiembrosPorId()` — así que `miembrosPorId.get(id)` seguía devolviendo el objeto VIEJO, sin la meta recién guardada, aunque el array y Firestore sí la tenían. Mismo patrón que ya usan correctamente `agregarNotaPlan`/`eliminarNotaPlan` (llamar `recalcMiembrosPorId()` justo después de `_actualizarLocal`), que se me había olvidado en las tres llamadas nuevas de esta función. El portal del cliente no tenía este bug (usa `portalMiembro={...portalMiembro,...}` directo, sin Map intermedio).
+
+**Qué se verificó:**
+- `node --check` — sintaxis válida.
+- Reproducción del bug en Node con el mismo patrón real (`_actualizarLocal` sin `recalcMiembrosPorId()` después dejaba el Map viendo el objeto viejo) y confirmación de que, con la llamada agregada, el Map ya refleja la meta guardada de inmediato.
+- `git diff` revisado: son exactamente 3 líneas agregadas (`recalcMiembrosPorId();`), una en cada rama donde faltaba — sin ningún otro cambio.
+
 ## 2026-09-08 — Agente de IA: meta de fitness + recomendación de Gemini vía Worker de Cloudflare (Parte 6)
 
 **Qué se hizo:**

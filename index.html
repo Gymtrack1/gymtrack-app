@@ -3411,6 +3411,7 @@ async function guardarMetaPerfil(){
     if(!tipo){
       await updateDoc(userDoc('miembros',perfilActualId),{metaFitness:null});
       _actualizarLocal(miembros,perfilActualId,{metaFitness:null});
+      recalcMiembrosPorId();
       sincronizarMiembroPublico(perfilActualId);
       renderMetaPerfil(miembrosPorId.get(perfilActualId));
       toast('Meta eliminada ✓');
@@ -3425,6 +3426,7 @@ async function guardarMetaPerfil(){
     const metaFitness={tipo,valorObjetivo,ejercicioObjetivo,fechaObjetivo,creadaEn:Date.now()};
     await updateDoc(userDoc('miembros',perfilActualId),{metaFitness});
     _actualizarLocal(miembros,perfilActualId,{metaFitness});
+    recalcMiembrosPorId();
     sincronizarMiembroPublico(perfilActualId);
     renderMetaPerfil(miembrosPorId.get(perfilActualId));
     toast('Meta guardada ✓');
@@ -3448,6 +3450,7 @@ async function pedirRecomendacionIAPerfil(){
     const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
     await updateDoc(userDoc('miembros',perfilActualId),{ultimaRecomendacionIA});
     _actualizarLocal(miembros,perfilActualId,{ultimaRecomendacionIA});
+    recalcMiembrosPorId();
     sincronizarMiembroPublico(perfilActualId);
     renderRecomendacionIA('p-meta-recomendacion-contenido',ultimaRecomendacionIA);
     toast('Recomendación actualizada ✓');
