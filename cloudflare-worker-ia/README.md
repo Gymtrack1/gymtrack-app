@@ -16,9 +16,13 @@ páginas web. Tiempo estimado: 10-15 minutos.
    Guárdala en un lugar seguro mientras tanto (nunca la pegues dentro de `index.html`
    ni la subas a GitHub).
 
-La capa gratuita de Gemini (modelo `gemini-3.6-flash`) tiene un límite generoso de
+La capa gratuita de Gemini (modelo `gemini-2.5-flash`) tiene un límite generoso de
 peticiones gratis al día — más que suficiente para un gimnasio usando este botón de
-vez en cuando.
+vez en cuando. (Ojo: no todos los modelos de Gemini tienen la misma cuota gratis —
+en la práctica, modelos más nuevos como `gemini-3.6-flash` pueden traer una cuota
+mucho más baja en la misma cuenta. Si en algún momento cambias el modelo con la
+variable `GEMINI_MODEL` de abajo, vale la pena revisar su cuota real en
+https://aistudio.google.com/apikey antes de darlo por bueno.)
 
 ## Paso 2 — Crea tu cuenta de Cloudflare (gratis, sin tarjeta)
 
@@ -55,9 +59,11 @@ vez en cuando.
      no como texto plano).
 3. Guarda los cambios y vuelve a desplegar el Worker si te lo pide.
 
-(Opcional: si en algún momento Google saca un modelo distinto que prefieras usar,
-puedes agregar otra variable `GEMINI_MODEL` con el nombre del modelo, ej.
-`gemini-1.5-flash` — si no la agregas, usa `gemini-3.6-flash` por default.)
+(Opcional: si en algún momento quieres probar otro modelo, puedes agregar otra
+variable `GEMINI_MODEL` con su nombre — si no la agregas, usa `gemini-2.5-flash`
+por default. Antes de cambiarlo, revisa su cuota gratis real en
+https://aistudio.google.com/apikey: no todos los modelos tienen la misma cuota
+en la capa gratuita, y un modelo "más nuevo" no siempre tiene más cuota.)
 
 ## Paso 5 — Dile a index.html cuál es la URL de tu Worker
 

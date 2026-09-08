@@ -4,6 +4,29 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Cambia el modelo por default de gemini-3.6-flash a gemini-2.5-flash: mucha más cuota gratis
+
+**Qué se hizo:**
+- El usuario seguía topándose con error 429 ("quota exceeded") con muy pocos intentos, muy lejos
+  de los ~1,500/día que se había documentado como cuota gratis típica de Gemini Flash. Revisando
+  el dashboard real de la cuenta (aistudio.google.com/apikey → Rate Limit), el límite real de
+  `gemini-3.6-flash` en esa cuenta es de solo **20 peticiones/día y 5/minuto** — mientras que
+  `gemini-2.5-flash`, en la misma cuenta, tiene **1,500/día**. Un modelo más nuevo no siempre
+  trae más cuota gratis; en este caso trae bastante menos.
+- `cloudflare-worker-ia/worker.js`: modelo por default cambiado de `gemini-3.6-flash` a
+  `gemini-2.5-flash` (ambos con "thinking" — la lógica de filtrar `thought:true` y el
+  `maxOutputTokens:3072` de las entradas anteriores siguen aplicando igual, no son específicas de
+  un modelo). `cloudflare-worker-ia/README.md` actualizado con la misma advertencia: antes de
+  cambiar `GEMINI_MODEL` a otro modelo, vale la pena revisar su cuota real en el dashboard, no
+  asumir que "más nuevo = más cuota".
+
+**Qué se verificó:**
+- `node --check cloudflare-worker-ia/worker.js` — sintaxis válida.
+- `git diff` revisado: solo el modelo por default y los comentarios/README relacionados — sin
+  tocar la lógica de razonamiento/parseo ya verificada en las entradas anteriores.
+- Pendiente de confirmar por el usuario en producción: requiere volver a copiar/pegar `worker.js`
+  en el dashboard de Cloudflare y desplegar.
+
 ## 2026-09-08 — El agente de IA ahora genera un plan de fitness con hitos marcables (Parte 7), no solo texto libre
 
 **Qué se hizo:**
