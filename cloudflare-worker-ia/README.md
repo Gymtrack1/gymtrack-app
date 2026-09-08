@@ -16,13 +16,15 @@ páginas web. Tiempo estimado: 10-15 minutos.
    Guárdala en un lugar seguro mientras tanto (nunca la pegues dentro de `index.html`
    ni la subas a GitHub).
 
-La capa gratuita de Gemini (modelo `gemini-2.5-flash`) tiene un límite generoso de
-peticiones gratis al día — más que suficiente para un gimnasio usando este botón de
-vez en cuando. (Ojo: no todos los modelos de Gemini tienen la misma cuota gratis —
-en la práctica, modelos más nuevos como `gemini-3.6-flash` pueden traer una cuota
-mucho más baja en la misma cuenta. Si en algún momento cambias el modelo con la
-variable `GEMINI_MODEL` de abajo, vale la pena revisar su cuota real en
-https://aistudio.google.com/apikey antes de darlo por bueno.)
+Este Worker usa el modelo `gemini-3.6-flash` por default — es el único que Google
+garantiza que funciona en cuentas nuevas ahora mismo (otros modelos, aunque
+documenten más cuota gratis, pueden estar cerrados a cuentas nuevas y devolver
+error). Aun así, revisa tu cuota real en
+**https://aistudio.google.com/apikey** (sección "Rate Limit") antes de asumir
+cuánto puedes usar gratis al día — puede ser bastante menos de lo que Google
+documenta en general para "Gemini Flash". Si tu cuota gratis no te alcanza,
+la opción más simple es activar facturación (ver la nota de "Cuota agotada"
+más abajo).
 
 ## Paso 2 — Crea tu cuenta de Cloudflare (gratis, sin tarjeta)
 
@@ -60,10 +62,12 @@ https://aistudio.google.com/apikey antes de darlo por bueno.)
 3. Guarda los cambios y vuelve a desplegar el Worker si te lo pide.
 
 (Opcional: si en algún momento quieres probar otro modelo, puedes agregar otra
-variable `GEMINI_MODEL` con su nombre — si no la agregas, usa `gemini-2.5-flash`
-por default. Antes de cambiarlo, revisa su cuota gratis real en
-https://aistudio.google.com/apikey: no todos los modelos tienen la misma cuota
-en la capa gratuita, y un modelo "más nuevo" no siempre tiene más cuota.)
+variable `GEMINI_MODEL` con su nombre — si no la agregas, usa `gemini-3.6-flash`
+por default. Antes de cambiarlo, confirma en
+https://aistudio.google.com/apikey (sección "Rate Limit") que tu cuenta puede
+usar ese modelo y cuál es su cuota real — algunos modelos, aunque documenten
+más cuota gratis, están cerrados a cuentas nuevas y devuelven error 404 en vez
+de funcionar.)
 
 ## Paso 5 — Dile a index.html cuál es la URL de tu Worker
 
@@ -97,6 +101,20 @@ en la capa gratuita, y un modelo "más nuevo" no siempre tiene más cuota.)
      nombre de la variable no quedó exactamente `GEMINI_API_KEY`.
    - **Error 502 / "Gemini respondió..."** → revisa que la API key sea correcta y
      esté activa en https://aistudio.google.com/apikey.
+   - **Error 502 con "code": 429 / "quota"** → se agotó la cuota gratis del
+     modelo por hoy (o por minuto). La cuota gratis real puede ser mucho más
+     baja de lo que Google documenta en general — revísala en
+     https://aistudio.google.com/apikey → **"Rate Limit"** (no en "Usage"),
+     buscando la fila del modelo exacto que estás usando (`gemini-3.6-flash`
+     por default). Si necesitas más cuota de la que tu cuenta tiene gratis, la
+     opción más simple es activar facturación en ese mismo proyecto de Google
+     Cloud — Gemini Flash es muy barato (fracciones de centavo por consulta) y
+     ya no dependes del límite gratuito.
+   - **Error 502 con "code": 404 / "no longer available"** → el modelo que
+     estás usando (`GEMINI_MODEL`, o el default de `worker.js`) ya no está
+     disponible para tu cuenta. El mensaje de error normalmente te dice qué
+     modelo usar en su lugar — actualiza el default en `worker.js` (o agrega
+     la variable `GEMINI_MODEL`) a ese modelo y vuelve a desplegar.
    - Si no sale ningún error pero tampoco aparece nada, prueba primero desde una
      computadora con la consola del navegador abierta (F12 → pestaña "Console" o
      "Network") para ver el error real.

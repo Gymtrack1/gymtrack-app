@@ -166,15 +166,17 @@ export default {
       return jsonResponse({ error: 'El Worker no tiene configurada GEMINI_API_KEY (ver README.md)' }, 500, origin);
     }
 
-    // gemini-2.5-flash por default (no gemini-3.6-flash): en la capa gratuita, la cuota de
-    // gemini-3.6-flash puede ser mucho más baja que la de 2.5-flash (visto en la práctica: 20
-    // peticiones/día contra 1,500/día en la misma cuenta) — un modelo "más nuevo" no siempre
-    // tiene más cuota gratis. Si Google cambia esto en el futuro, se puede volver a ajustar acá o
-    // con la variable GEMINI_MODEL, sin tocar el resto del Worker.
-    const modelo = env.GEMINI_MODEL || 'gemini-2.5-flash';
+    // gemini-3.6-flash por default: gemini-2.5-flash se probó como default más generoso en
+    // cuota, pero Google ya no lo deja usar en cuentas nuevas ("no longer available to new
+    // users", 404) — así que aunque su cuota gratis documentada sea mejor, no sirve como default
+    // porque ni siquiera responde en una cuenta nueva. gemini-3.6-flash es el único que Google
+    // confirma que SÍ funciona ahora mismo, aunque su cuota gratis real sea más baja (ver
+    // CHANGELOG.md). Si tienes una cuenta con acceso a otro modelo con mejor cuota, usa la
+    // variable GEMINI_MODEL — pero primero confirma que tu cuenta puede usarlo de verdad.
+    const modelo = env.GEMINI_MODEL || 'gemini-3.6-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${env.GEMINI_API_KEY}`;
 
-    // maxOutputTokens en 3072: en modelos con "thinking" (ej. gemini-2.5-flash y más nuevos), el
+    // maxOutputTokens en 3072: en modelos con "thinking" (ej. gemini-3.6-flash), el
     // razonamiento interno del modelo se descuenta del MISMO presupuesto que la respuesta final
     // — y ahora la respuesta es un JSON con varios hitos/hábitos, más grande que el texto libre
     // de antes.
@@ -214,7 +216,7 @@ export default {
     }
 
     const data = await geminiResp.json();
-    // Modelos con "thinking" (razonamiento interno antes de responder, ej. gemini-2.5-flash)
+    // Modelos con "thinking" (razonamiento interno antes de responder, ej. gemini-3.6-flash)
     // pueden devolver varias "parts": algunas marcadas thought:true (el razonamiento interno,
     // nunca se le debe mostrar al usuario) y la parte final con la respuesta real. Se descartan
     // las de razonamiento y se concatena el resto — en modelos sin thinking esto no cambia nada

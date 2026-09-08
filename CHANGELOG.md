@@ -4,6 +4,35 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Revierte a gemini-3.6-flash: gemini-2.5-flash está cerrado a cuentas nuevas
+
+**Qué se hizo:**
+- El cambio de la entrada anterior (default a `gemini-2.5-flash` por su cuota gratis más alta)
+  rompió el Worker por completo: Gemini respondió 404 — `"models/gemini-2.5-flash is no longer
+  available to new users. Please update your code to use models/gemini-3.6-flash"`. La cuenta de
+  Google del usuario es nueva, y Google ya cerró el acceso a `gemini-2.5-flash` para cuentas
+  nuevas, sin importar lo que muestre el dashboard de cuotas (ese dashboard lista el límite del
+  modelo en general, no si tu cuenta específica puede usarlo).
+- `cloudflare-worker-ia/worker.js`: default revertido a `gemini-3.6-flash` — es el único modelo
+  que Google confirma que sí responde en esta cuenta, aunque su cuota gratis real sea baja (20
+  peticiones/día, 5/minuto — ver la entrada anterior). `cloudflare-worker-ia/README.md`
+  actualizado en consecuencia, y se agregaron dos casos nuevos a la sección de troubleshooting:
+  error 429 (cuota agotada — cómo revisarla de verdad, y la opción de activar facturación) y
+  error 404 (modelo ya no disponible para tu cuenta — cómo diagnosticarlo).
+- Conclusión práctica para este proyecto: con la cuenta de Google actual, 20 peticiones/día es la
+  cuota gratis real disponible. Si no alcanza para el uso real del gym, la opción más simple es
+  activar facturación en el proyecto de Google Cloud (Gemini Flash es muy barato por consulta) en
+  vez de seguir buscando un modelo gratis con mejor cuota — ya se intentó y el "mejor" resultó no
+  estar disponible para esta cuenta.
+
+**Qué se verificó:**
+- `node --check cloudflare-worker-ia/worker.js` — sintaxis válida.
+- `git diff` revisado: solo el modelo por default, sus comentarios, y las adiciones al README —
+  sin tocar el resto del Worker (la lógica de razonamiento/parseo/reintentos sigue intacta y ya
+  verificada en las entradas anteriores).
+- Pendiente de confirmar por el usuario en producción: requiere volver a copiar/pegar `worker.js`
+  en el dashboard de Cloudflare y desplegar.
+
 ## 2026-09-08 — Cambia el modelo por default de gemini-3.6-flash a gemini-2.5-flash: mucha más cuota gratis
 
 **Qué se hizo:**
