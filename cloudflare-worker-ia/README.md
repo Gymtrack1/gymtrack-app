@@ -16,7 +16,7 @@ páginas web. Tiempo estimado: 10-15 minutos.
    Guárdala en un lugar seguro mientras tanto (nunca la pegues dentro de `index.html`
    ni la subas a GitHub).
 
-La capa gratuita de Gemini (modelo `gemini-2.0-flash`) tiene un límite generoso de
+La capa gratuita de Gemini (modelo `gemini-3.6-flash`) tiene un límite generoso de
 peticiones gratis al día — más que suficiente para un gimnasio usando este botón de
 vez en cuando.
 
@@ -57,7 +57,7 @@ vez en cuando.
 
 (Opcional: si en algún momento Google saca un modelo distinto que prefieras usar,
 puedes agregar otra variable `GEMINI_MODEL` con el nombre del modelo, ej.
-`gemini-1.5-flash` — si no la agregas, usa `gemini-2.0-flash` por default.)
+`gemini-1.5-flash` — si no la agregas, usa `gemini-3.6-flash` por default.)
 
 ## Paso 5 — Dile a index.html cuál es la URL de tu Worker
 

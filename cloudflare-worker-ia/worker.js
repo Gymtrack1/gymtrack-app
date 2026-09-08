@@ -107,7 +107,7 @@ export default {
       return jsonResponse({ error: 'El Worker no tiene configurada GEMINI_API_KEY (ver README.md)' }, 500, origin);
     }
 
-    const modelo = env.GEMINI_MODEL || 'gemini-2.0-flash';
+    const modelo = env.GEMINI_MODEL || 'gemini-3.6-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${env.GEMINI_API_KEY}`;
 
     const body = {

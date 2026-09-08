@@ -4,6 +4,25 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Corrige: recomendación IA fallaba porque Google descontinuó el modelo por default
+
+**Qué se hizo:**
+- El botón "🤖 Actualizar recomendación" empezó a fallar con error 502 porque Google descontinuó
+  `gemini-2.0-flash` (el modelo que usaba el Worker de Cloudflare por default cuando no hay
+  variable `GEMINI_MODEL` configurada). El propio error de la API de Gemini indica el reemplazo
+  vigente: `gemini-3.6-flash`.
+- `cloudflare-worker-ia/worker.js`: default de `env.GEMINI_MODEL` cambiado de `gemini-2.0-flash`
+  a `gemini-3.6-flash`. `cloudflare-worker-ia/README.md` actualizado para reflejar el mismo
+  default en las dos menciones (capa gratuita y nota de la variable opcional `GEMINI_MODEL`).
+- Nadie necesita redeploy manual si usa la variable `GEMINI_MODEL`; quien depende del default
+  (no configuró esa variable) sí necesita volver a pegar `worker.js` en el dashboard de
+  Cloudflare y desplegar de nuevo para recoger el nuevo default.
+
+**Qué se verificó:**
+- `node --check cloudflare-worker-ia/worker.js` — sintaxis válida.
+- `git diff` revisado: solo el valor del modelo por default en `worker.js` y las dos menciones
+  equivalentes en `README.md` — sin ningún otro cambio.
+
 ## 2026-09-08 — Corrige: la meta se guardaba pero el perfil la mostraba borrada (staff)
 
 **Qué se hizo:**
