@@ -1702,7 +1702,7 @@ function fmtDateInputVal(ts){
 async function sincronizarMiembroPublico(miembroId){
   const m=miembros.find(x=>x.id===miembroId);
   if(!m)return false;
-  const data={numero:m.numero||0,nombre:m.nombre,vencimientoTs:getVencimiento(miembroId),estatura:m.estatura||null,fechaNacimiento:m.fechaNacimiento||null,metaFitness:m.metaFitness||null,ultimaRecomendacionIA:m.ultimaRecomendacionIA||null};
+  const data={numero:m.numero||0,nombre:m.nombre,vencimientoTs:getVencimiento(miembroId),estatura:m.estatura||null,fechaNacimiento:m.fechaNacimiento||null,metaFitness:m.metaFitness||null,planFitnessIA:m.planFitnessIA||null};
   try{await setDoc(userDoc('miembrosPublicos',miembroId),data);return true;}catch(e){return false;/* espejo del portal: no crítico si falla */}
 }
 // Sincronización manual de TODOS los miembros al portal QR (botón en Miembros): necesaria una
@@ -3385,11 +3385,11 @@ function dibujarChartProgresoPerfil(miembroId){
   });
 }
 
-// META Y RECOMENDACIÓN IA (Parte 6, ver CHANGELOG.md): mismo patrón que peso corporal/notas de
+// META Y RECOMENDACIÓN IA (Parte 6/7, ver CHANGELOG.md): mismo patrón que peso corporal/notas de
 // plan — se edita directo en el perfil del miembro (modal-perfil), no en el modal de alta/
-// edición. metaFitness/ultimaRecomendacionIA viven como campos del propio documento miembros/
-// (no una colección aparte); sincronizarMiembroPublico ya los replica al espejo público que
-// usa el portal (ver la función, más arriba).
+// edición. metaFitness/planFitnessIA viven como campos del propio documento miembros/ (no una
+// colección aparte); sincronizarMiembroPublico ya los replica al espejo público que usa el
+// portal (ver la función, más arriba).
 function perfilToggleMetaEjercicio(){
   const tipo=document.getElementById('p-meta-tipo').value;
   const grupo=document.getElementById('p-meta-ejercicio-grupo');
@@ -3402,7 +3402,7 @@ function renderMetaPerfil(m){
   document.getElementById('p-meta-ejercicio').innerHTML=_opcionesEjercicioSelectHtml(meta?meta.ejercicioObjetivo:null);
   document.getElementById('p-meta-fecha').value=meta&&meta.fechaObjetivo?fmtDateInputVal(meta.fechaObjetivo):'';
   perfilToggleMetaEjercicio();
-  renderRecomendacionIA('p-meta-recomendacion-contenido',m.ultimaRecomendacionIA);
+  renderPlanFitnessIA('p-meta-recomendacion-contenido',m.planFitnessIA,'toggleHabitoPerfil');
 }
 async function guardarMetaPerfil(){
   if(!perfilActualId)return;
@@ -3447,20 +3447,42 @@ async function pedirRecomendacionIAPerfil(btn){
       imc:calcularIMC(pesoActual,m.estatura),
       meta:m.metaFitness,
       tendenciaSemanal:tendencia,
+      planActual:m.planFitnessIA||null,
     };
     toast('Consultando a la IA...');
-    const texto=await _solicitarRecomendacionIA(payload);
-    const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
-    await updateDoc(userDoc('miembros',perfilActualId),{ultimaRecomendacionIA});
-    _actualizarLocal(miembros,perfilActualId,{ultimaRecomendacionIA});
+    const planIA=await _solicitarPlanFitnessIA(payload);
+    const planFusionado=_mergePlanFitnessIA(m.planFitnessIA,planIA);
+    const planFitnessIA={...planFusionado,generadoEn:Date.now(),basadaEnDatosReales:tendencia!==null};
+    await updateDoc(userDoc('miembros',perfilActualId),{planFitnessIA});
+    _actualizarLocal(miembros,perfilActualId,{planFitnessIA});
     recalcMiembrosPorId();
     sincronizarMiembroPublico(perfilActualId);
-    renderRecomendacionIA('p-meta-recomendacion-contenido',ultimaRecomendacionIA);
-    toast('Recomendación actualizada ✓');
+    renderPlanFitnessIA('p-meta-recomendacion-contenido',planFitnessIA,'toggleHabitoPerfil');
+    toast('Plan actualizado ✓');
   }catch(e){
-    toast(`No se pudo obtener la recomendación (${e&&e.message?e.message:'error desconocido'})`,'err');
+    toast(`No se pudo obtener el plan (${e&&e.message?e.message:'error desconocido'})`,'err');
   }finally{
     if(btn){btn.disabled=false;btn.textContent=textoOriginal;}
+  }
+}
+// Marca/desmarca un hábito del plan desde el perfil del miembro (staff) — mismo patrón de
+// reescritura completa del campo que el resto de esta sección (metaFitness, notasPlan): Firestore
+// no permite actualizar un elemento de un array anidado por índice, así que se reconstruye
+// planFitnessIA completo con _marcarHabitoEnPlan y se guarda de vuelta entero.
+async function toggleHabitoPerfil(hitoId,habitoId,completado){
+  if(!perfilActualId)return;
+  const m=miembrosPorId.get(perfilActualId);
+  if(!m||!m.planFitnessIA)return;
+  const planFitnessIA=_marcarHabitoEnPlan(m.planFitnessIA,hitoId,habitoId,completado,'staff');
+  try{
+    await updateDoc(userDoc('miembros',perfilActualId),{planFitnessIA});
+    _actualizarLocal(miembros,perfilActualId,{planFitnessIA});
+    recalcMiembrosPorId();
+    sincronizarMiembroPublico(perfilActualId);
+    renderPlanFitnessIA('p-meta-recomendacion-contenido',planFitnessIA,'toggleHabitoPerfil');
+  }catch(e){
+    toast('No se pudo actualizar el hábito','err');
+    renderPlanFitnessIA('p-meta-recomendacion-contenido',m.planFitnessIA,'toggleHabitoPerfil');
   }
 }
 
@@ -4381,18 +4403,80 @@ function kgALb(kg){return Math.round(kg*2.20462*10)/10;}
 function lbAKg(lb){return Math.round((lb/2.20462)*10)/10;}
 function formatearPeso(pesoKg,unidad){return unidad==='lb'?`${kgALb(pesoKg)}lb`:`${pesoKg}kg`;}
 
-// AGENTE DE IA: RECOMENDACIÓN DE META (Parte 6, ver CHANGELOG.md). El Worker de Cloudflare que
+// AGENTE DE IA: PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md). El Worker de Cloudflare que
 // consulta a Gemini vive APARTE de index.html (código en cloudflare-worker-ia/ de este mismo
 // repo, pero se despliega por fuera de aquí — ver cloudflare-worker-ia/README.md) y guarda la
 // API key de Gemini como secreto de Cloudflare: nunca llega al navegador. index.html solo
-// necesita la URL pública del Worker ya desplegado.
+// necesita la URL pública del Worker ya desplegado. El Worker devuelve {resumenTexto, hitos:
+// [{id,periodo,metaIntermedia,habitos:[{id,texto}]}]} — un roadmap por periodos, no solo texto
+// libre — y este archivo es quien arma el objeto final planFitnessIA (agrega generadoEn,
+// basadaEnDatosReales, y completado/completadoPor/completadoEn de cada hábito: eso lo controla
+// el cliente/staff marcando checkboxes, la IA nunca lo decide).
 //
 // ⚠️ REEMPLAZA esta URL por la de tu propio Worker una vez desplegado. Mientras siga diciendo
 // "REEMPLAZA-CON-TU-WORKER", el botón de recomendación muestra un error claro en vez de fallar
 // en silencio contra una URL que no existe.
 const IA_WORKER_URL='https://gymtrack-ia.luismolinac06.workers.dev';
 
-async function _solicitarRecomendacionIA(payload){
+// Ids cortos y seguros para hitos/hábitos: nunca se confía en los ids que proponga la IA tal
+// cual (van a parar dentro de atributos onclick en el HTML — un id con comillas rompería el
+// atributo), así que solo se aceptan si calzan con este patrón simple; si no, se genera uno
+// propio. Esto es más simple y más seguro que intentar escapar cualquier string arbitrario que
+// devuelva un modelo de IA para usarlo dentro de JS embebido en HTML.
+function _idAleatorio(prefijo){return `${prefijo}_${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}`;}
+function _idSeguro(id,prefijo){return typeof id==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)?id:_idAleatorio(prefijo);}
+
+// Convierte la respuesta cruda del Worker ({resumenTexto, hitos:[{id,periodo,metaIntermedia,
+// habitos:[{id,texto}]}]}) en la forma que se guarda en planFitnessIA: agrega completado/
+// completadoPor/completadoEn (siempre en false/null al generarse — nunca los decide la IA),
+// asegura ids seguros, y descarta cualquier hito/hábito que venga sin los campos mínimos (mismo
+// criterio de "fallback si el JSON viene mal" que ya aplica el Worker, por si algo se coló).
+function _normalizarPlanIA(raw){
+  const hitos=(raw.hitos||[]).map(h=>{
+    const habitos=(h.habitos||[]).map(hab=>{
+      const texto=typeof hab.texto==='string'?hab.texto.trim():'';
+      if(!texto)return null;
+      return {id:_idSeguro(hab.id,'hab'),texto,completado:false,completadoPor:null,completadoEn:null};
+    }).filter(Boolean);
+    const periodo=typeof h.periodo==='string'?h.periodo.trim():'';
+    const metaIntermedia=typeof h.metaIntermedia==='string'?h.metaIntermedia.trim():'';
+    if(!periodo||!metaIntermedia||!habitos.length)return null;
+    return {id:_idSeguro(h.id,'h'),periodo,metaIntermedia,habitos};
+  }).filter(Boolean);
+  return {resumenTexto:typeof raw.resumenTexto==='string'?raw.resumenTexto.trim():'',hitos};
+}
+
+// Al regenerar el plan, conserva el progreso ya marcado: cualquier hito del plan viejo que tenga
+// AL MENOS un hábito completado se preserva TAL CUAL (id, periodo, metaIntermedia y hábitos
+// intactos) — nunca se reescribe ni se desmarca, sin importar qué haya devuelto la IA para ese
+// mismo hito. El plan nuevo solo aporta los hitos que no calzan con uno ya congelado (hitos
+// nuevos o ajustados para lo pendiente/futuro). Esto es la misma regla que ya se le pide a la IA
+// en el prompt del Worker, aplicada aquí como red de seguridad — nunca hay que confiar
+// ciegamente en que un modelo de IA respete una instrucción al 100%.
+function _mergePlanFitnessIA(planViejo,planNuevo){
+  if(!planViejo||!Array.isArray(planViejo.hitos)||!planViejo.hitos.length)return planNuevo;
+  const hitosCongelados=planViejo.hitos.filter(h=>(h.habitos||[]).some(hab=>hab.completado));
+  const idsCongelados=new Set(hitosCongelados.map(h=>h.id));
+  const hitosNuevosFiltrados=planNuevo.hitos.filter(h=>!idsCongelados.has(h.id));
+  return {...planNuevo,hitos:[...hitosCongelados,...hitosNuevosFiltrados]};
+}
+
+// Marca/desmarca un hábito dentro de un planFitnessIA — compartido entre el perfil del miembro
+// (staff) y el portal del cliente, ambos pueden marcar (origen:'staff'|'cliente').
+function _marcarHabitoEnPlan(plan,hitoId,habitoId,completado,origen){
+  const hitos=(plan.hitos||[]).map(h=>{
+    if(h.id!==hitoId)return h;
+    return {...h,habitos:(h.habitos||[]).map(hab=>{
+      if(hab.id!==habitoId)return hab;
+      return completado
+        ?{...hab,completado:true,completadoPor:origen,completadoEn:Date.now()}
+        :{...hab,completado:false,completadoPor:null,completadoEn:null};
+    })};
+  });
+  return {...plan,hitos};
+}
+
+async function _solicitarPlanFitnessIA(payload){
   if(IA_WORKER_URL.includes('REEMPLAZA-CON-TU-WORKER'))throw new Error('El gym todavía no configuró el Worker de recomendaciones (ver cloudflare-worker-ia/README.md)');
   const resp=await fetch(IA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(!resp.ok){
@@ -4405,18 +4489,36 @@ async function _solicitarRecomendacionIA(payload){
     throw new Error(`El servicio de IA respondió con error (${resp.status})${detalle}`);
   }
   const data=await resp.json();
-  if(!data||typeof data.texto!=='string'||!data.texto.trim())throw new Error('Respuesta inválida del servicio de IA');
-  return data.texto;
+  if(!data||typeof data.resumenTexto!=='string'||!data.resumenTexto.trim()||!Array.isArray(data.hitos)){
+    throw new Error('Respuesta inválida del servicio de IA (formato inesperado)');
+  }
+  return _normalizarPlanIA(data);
 }
-// Pinta el texto cacheado de la última recomendación (o un estado vacío) dentro de `elId` —
-// compartida por el perfil del miembro (staff) y el portal, ambos guardan la misma forma de
-// caché: {texto, basadaEnDatosReales, generadaEn}.
-function renderRecomendacionIA(elId,cache){
+// Pinta el roadmap de hitos marcable (o un estado vacío) dentro de `elId` — compartida por el
+// perfil del miembro (staff) y el portal, ambos guardan la misma forma de plan (planFitnessIA).
+// `toggleFn` es el nombre de la función global a llamar al marcar/desmarcar un hábito
+// (toggleHabitoPerfil en staff, portalToggleHabito en el portal) — cada lado persiste distinto
+// (userDoc vs. gymDoc+espejo público), por eso no se comparte la función de guardado, solo el
+// render y el cálculo del merge/normalización.
+function renderPlanFitnessIA(elId,plan,toggleFn){
   const el=document.getElementById(elId);
   if(!el)return;
-  if(!cache||!cache.texto){el.innerHTML='<div style="font-size:12px;color:var(--muted)">Aún no hay recomendación. Pulsa el botón para pedirle una a la IA.</div>';return;}
-  el.innerHTML=`<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escAttr(cache.texto)}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:8px">${cache.basadaEnDatosReales?'📊 Basada en tu historial real':'🔮 Estimado inicial (poco historial todavía)'} · ${fmtDate(cache.generadaEn)}</div>`;
+  if(!plan||!plan.resumenTexto){el.innerHTML='<div style="font-size:12px;color:var(--muted)">Aún no hay plan. Pulsa el botón para pedirle uno a la IA.</div>';return;}
+  const hitos=plan.hitos||[];
+  el.innerHTML=`<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escAttr(plan.resumenTexto)}</div>
+    <div style="font-size:11px;color:var(--muted);margin:8px 0 14px">${plan.basadaEnDatosReales?'📊 Basada en tu historial real':'🔮 Estimado inicial (poco historial todavía)'} · ${fmtDate(plan.generadoEn)}</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      ${hitos.map(h=>`<div style="border-left:3px solid var(--accent);padding-left:12px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">${escAttr(h.periodo)}</div>
+          <div style="font-weight:700;font-size:13px;margin:2px 0 8px">${escAttr(h.metaIntermedia)}</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${(h.habitos||[]).map(hab=>`<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer">
+                <input type="checkbox" ${hab.completado?'checked':''} style="margin-top:2px" onchange="${toggleFn}('${h.id}','${hab.id}',this.checked)">
+                <span style="${hab.completado?'text-decoration:line-through;color:var(--muted)':''}">${escAttr(hab.texto)}</span>
+              </label>`).join('')}
+          </div>
+        </div>`).join('')}
+    </div>`;
 }
 
 window.addEventListener('portalReady',()=>{
@@ -4534,7 +4636,7 @@ function renderPortalHome(){
   if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':'');
   dibujarChartPortalPeso();
   dibujarChartPortalProgreso();
-  renderRecomendacionIA('portal-meta-recomendacion-contenido',portalMiembro.ultimaRecomendacionIA);
+  renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
 }
 
 // NAVEGACIÓN "Registrar serie" (Parte 3): reemplaza el modelo anterior de un QR por máquina.
@@ -4817,20 +4919,39 @@ async function portalPedirRecomendacionIA(btn){
       imc:calcularIMC(pesoActual,portalMiembro.estatura),
       meta:portalMiembro.metaFitness,
       tendenciaSemanal:tendencia,
+      planActual:portalMiembro.planFitnessIA||null,
     };
     toast('Consultando a la IA...');
-    const texto=await _solicitarRecomendacionIA(payload);
+    const planIA=await _solicitarPlanFitnessIA(payload);
     const gymId=window._portalGym;
-    const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
-    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{ultimaRecomendacionIA});
-    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{ultimaRecomendacionIA});
-    portalMiembro={...portalMiembro,ultimaRecomendacionIA};
-    renderRecomendacionIA('portal-meta-recomendacion-contenido',ultimaRecomendacionIA);
-    toast('Recomendación actualizada ✓');
+    const planFusionado=_mergePlanFitnessIA(portalMiembro.planFitnessIA,planIA);
+    const planFitnessIA={...planFusionado,generadoEn:Date.now(),basadaEnDatosReales:tendencia!==null};
+    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{planFitnessIA});
+    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{planFitnessIA});
+    portalMiembro={...portalMiembro,planFitnessIA};
+    renderPlanFitnessIA('portal-meta-recomendacion-contenido',planFitnessIA,'portalToggleHabito');
+    toast('Plan actualizado ✓');
   }catch(e){
-    alert(`No se pudo obtener la recomendación. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
+    alert(`No se pudo obtener el plan. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
   }finally{
     if(btn){btn.disabled=false;btn.textContent=textoOriginal;}
+  }
+}
+// Marca/desmarca un hábito del plan desde el portal del cliente — mismo criterio de doble
+// escritura (miembros/ + espejo miembrosPublicos) que portalGuardarMeta, ya que el portal lee
+// del espejo público pero el documento real vive en miembros/.
+async function portalToggleHabito(hitoId,habitoId,completado){
+  if(!portalMiembro.planFitnessIA)return;
+  const planFitnessIA=_marcarHabitoEnPlan(portalMiembro.planFitnessIA,hitoId,habitoId,completado,'cliente');
+  const gymId=window._portalGym;
+  try{
+    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{planFitnessIA});
+    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{planFitnessIA});
+    portalMiembro={...portalMiembro,planFitnessIA};
+    renderPlanFitnessIA('portal-meta-recomendacion-contenido',planFitnessIA,'portalToggleHabito');
+  }catch(e){
+    alert('No se pudo actualizar. Intenta de nuevo.');
+    renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
   }
 }
 

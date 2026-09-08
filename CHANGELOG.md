@@ -4,6 +4,83 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — El agente de IA ahora genera un plan de fitness con hitos marcables (Parte 7), no solo texto libre
+
+**Qué se hizo:**
+- Evoluciona el agente de IA (Parte 6) de "un párrafo de texto libre" a un roadmap estructurado:
+  Gemini ahora responde en JSON (`{resumenTexto, hitos:[{id, periodo, metaIntermedia,
+  habitos:[{id, texto}]}]}`) en vez de texto libre, usando el modo de salida estructurada de
+  Gemini (`responseMimeType:'application/json'` + `responseSchema` en
+  `cloudflare-worker-ia/worker.js`) para que la API misma fuerce esa forma, con parseo
+  `try/catch` + validación de forma del lado del Worker como red de seguridad (nunca hay que
+  confiar ciegamente en que un modelo de IA respete el formato pedido al 100%).
+- Nuevo campo `planFitnessIA` en el documento del miembro (reemplaza a `ultimaRecomendacionIA`,
+  que ya no se usa — no había datos reales guardados con la forma vieja, los intentos previos
+  habían fallado): `{resumenTexto, generadoEn, basadaEnDatosReales, hitos:[{id, periodo,
+  metaIntermedia, habitos:[{id, texto, completado, completadoPor, completadoEn}]}]}`.
+  `completado`/`completadoPor`(`'staff'`|`'cliente'`)/`completadoEn` los agrega y controla
+  SIEMPRE `index.html`, nunca la IA (el esquema JSON que le pide el Worker a Gemini ni siquiera
+  incluye esos campos).
+- El perfil del miembro (staff) y "Mi Meta" del portal del cliente ahora muestran el plan como
+  una línea de tiempo de tarjetas por hito (periodo + meta intermedia), cada una con su checklist
+  de hábitos marcable (`renderPlanFitnessIA`, compartida entre ambos lados). Marcar/desmarcar un
+  hábito (`toggleHabitoPerfil` en staff, `portalToggleHabito` en el portal) reescribe el campo
+  `planFitnessIA` completo con el hábito actualizado — mismo patrón que ya usan
+  `agregarNotaPlan`/`guardarMetaPerfil` en esta misma sección, porque Firestore no permite
+  actualizar un elemento de un array anidado por índice. Ambos lados pueden marcar.
+- Al darle "Actualizar recomendación" con un plan ya existente, se manda a la IA el plan actual
+  completo (`planActual` en el payload, incluyendo qué hábitos ya están marcados) y el prompt del
+  Worker instruye explícitamente a NUNCA reescribir ni desmarcar lo ya completado — pero eso es
+  solo el primer nivel de defensa. La garantía real es del lado de `index.html`
+  (`_mergePlanFitnessIA`): cualquier hito del plan viejo con al menos un hábito completado se
+  preserva TAL CUAL (mismo id, periodo, meta intermedia y hábitos, intactos), sin importar qué
+  haya devuelto la IA para ese mismo id — el plan nuevo solo aporta hitos que no correspondan a
+  uno ya "congelado". Nunca hay que confiar ciegamente en que un modelo de IA respete una
+  instrucción al 100%, así que la regla de negocio real vive en código determinista, no en el
+  prompt.
+- Ids de hitos/hábitos: nunca se usa tal cual el `id` que proponga la IA (podría traer comillas u
+  otros caracteres que rompan los atributos `onclick` donde se usan para marcar el hábito
+  correspondiente) — se valida contra un patrón simple (`_idSeguro`) y si no calza se genera uno
+  propio (`_idAleatorio`), en vez de intentar escapar cualquier string arbitrario de un modelo de
+  IA para incrustarlo en JS embebido en HTML.
+- `firestore.rules` (y su copia en `rules-test/firestore.rules`, usada por el emulador):
+  `planFitnessIA` reemplaza a `ultimaRecomendacionIA` en la misma excepción de escritura acotada
+  que ya usan `estatura`/`fechaNacimiento`/`metaFitness` (tanto en `miembros` como en
+  `miembrosPublicos`) — sigue siendo el mismo mecanismo de "reescritura del campo completo", sin
+  regla aparte para marcar/desmarcar hábitos. `sincronizarMiembroPublico` ahora replica
+  `planFitnessIA` al espejo público en vez de `ultimaRecomendacionIA`.
+- De paso, se subió `maxOutputTokens` de 2048 a 3072: la respuesta ahora es un JSON con varios
+  hitos/hábitos (más grande que el párrafo de texto libre de antes), y en modelos con "thinking"
+  (`gemini-3.6-flash`) el razonamiento interno se descuenta del mismo presupuesto que la
+  respuesta final (ver la entrada de más abajo sobre ese mismo tema).
+
+**Qué se verificó:**
+- `node --check` sobre `cloudflare-worker-ia/worker.js` y sobre ambos bloques `<script>` de
+  `index.html` (extraídos a archivos temporales) — sintaxis válida en los tres.
+- Simulación en Node de `buildUserPrompt` del Worker: sin plan previo instruye a generar uno
+  desde cero; con un plan previo con hábitos completados, describe cada hábito con su estado
+  (`[COMPLETADO, no lo toques]`/`[pendiente]`) e instruye explícitamente a no reescribirlos; con
+  `planActual.hitos` vacío se trata igual que sin plan previo.
+- Simulación en Node del parseo/validación del Worker: JSON válido con la forma esperada pasa;
+  JSON mal formado da un error claro sin reventar; JSON válido pero sin `hitos` (o con `hitos` que
+  no es array) da error de forma; con una part de `thought:true` sigue descartando el
+  razonamiento y parseando el JSON real; con `finishReason:'MAX_TOKENS'` da error ANTES de
+  intentar parsear un JSON cortado a medias.
+- Simulación en Node de las funciones nuevas de `index.html`: `_idSeguro` conserva ids
+  alfanuméricos simples y reemplaza los que traen espacios/comillas; `_normalizarPlanIA` recorta
+  espacios, descarta hitos sin periodo/meta/hábitos y hábitos con texto vacío, e inicializa todo
+  hábito nuevo con `completado:false`; `_mergePlanFitnessIA` — el caso central — conserva TAL
+  CUAL un hito con progreso aunque la IA mande una versión distinta para el mismo id, agrega los
+  hitos nuevos de la IA, y descarta los hitos viejos SIN progreso que la IA no volvió a mandar;
+  `_marcarHabitoEnPlan` marca/desmarca sin mutar el objeto original.
+- `rules-test`: `npm test` contra el emulador real de Firestore — 58/58 casos OK (55 previos + 3
+  nuevos), incluyendo: el cliente anónimo SÍ puede guardar `planFitnessIA` completo y SÍ puede
+  marcar un hábito como completado (reescritura del campo completo) en `miembros` y en
+  `miembrosPublicos`, pero sigue sin poder colar `telefono`/`numero` junto con él.
+- Pendiente de confirmar en producción: requiere volver a copiar/pegar `worker.js` en el
+  dashboard de Cloudflare y desplegar (este archivo vive fuera de `index.html` — ver
+  `cloudflare-worker-ia/README.md`); `index.html` se publica solo vía GitHub Pages como siempre.
+
 ## 2026-09-08 — Corrige (de raíz): la recomendación IA seguía saliendo truncada — el límite de tokens era insuficiente para el "thinking" del modelo
 
 **Qué se hizo:**

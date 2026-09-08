@@ -1,20 +1,25 @@
-// GymTrack — Worker de Cloudflare para la recomendación de IA (Parte 6, ver CHANGELOG.md del
+// GymTrack — Worker de Cloudflare para el plan de fitness con IA (Parte 6, ver CHANGELOG.md del
 // repo principal). Proyecto APARTE de index.html — se despliega por su cuenta en Cloudflare
 // (ver README.md en esta misma carpeta). Nunca importa nada de index.html ni al revés: la
 // única conexión es la URL pública que index.html llama por fetch(), y el JSON que va y viene.
 //
 // Qué hace, en resumen:
 //   1. Recibe un POST del navegador del cliente (o del panel de staff) con datos NO sensibles
-//      del miembro: edad, peso actual, estatura, IMC, su meta (metaFitness) y — si ya hay
-//      suficiente historial — el ritmo real de cambio (tendenciaSemanal, kg/semana). Nunca
-//      recibe nombre, teléfono, ni ningún dato que identifique a la persona.
+//      del miembro: edad, peso actual, estatura, IMC, su meta (metaFitness), el ritmo real de
+//      cambio si ya hay suficiente historial (tendenciaSemanal, kg/semana), y el plan actual si
+//      ya tenía uno (planActual, con qué hábitos/hitos ya están marcados como completados).
+//      Nunca recibe nombre, teléfono, ni ningún dato que identifique a la persona.
 //   2. Arma un prompt para Gemini con un system prompt fijo (ver SYSTEM_PROMPT abajo) que fuerza
-//      español, tono motivador pero realista, prohíbe diagnósticos médicos, y siempre agrega el
-//      aviso de que esto no sustituye a un entrenador o médico si la meta implica un cambio de
-//      peso significativo.
+//      español, tono motivador pero realista, prohíbe diagnósticos médicos, pide un plan en
+//      formato JSON con hitos por periodo + hábitos accionables, e instruye a NUNCA reescribir
+//      ni desmarcar los hitos/hábitos que ya vienen marcados como completados en planActual.
 //   3. Llama a la API de Gemini (capa gratuita) usando la API key guardada como SECRETO de
-//      Cloudflare (nunca en este archivo, nunca en el navegador — ver README.md).
-//   4. Devuelve { texto: "..." } como JSON al navegador.
+//      Cloudflare (nunca en este archivo, nunca en el navegador — ver README.md), pidiendo
+//      salida JSON estructurada (responseMimeType + responseSchema) para minimizar el riesgo de
+//      que la IA devuelva texto que no se pueda parsear.
+//   4. Devuelve { resumenTexto, hitos } como JSON al navegador — index.html es quien arma el
+//      objeto final planFitnessIA (agrega generadoEn, basadaEnDatosReales, y el estado
+//      completado/completadoPor/completadoEn de cada hábito, que la IA nunca decide).
 //
 // CORS: solo se permite llamar a este Worker desde el dominio de GitHub Pages de GymTrack (ver
 // ALLOWED_ORIGIN abajo) — así una página cualquiera no puede usar tu cuota gratuita de Gemini
@@ -25,15 +30,58 @@
 
 const ALLOWED_ORIGIN = 'https://gymtrack1.github.io';
 
-const SYSTEM_PROMPT = `Eres un asistente de fitness para GymTrack, una app de gestión de gimnasios. Un cliente del gimnasio (o el propio staff en su nombre) te pide una recomendación de entrenamiento hacia una meta personal.
+const SYSTEM_PROMPT = `Eres un asistente de fitness para GymTrack, una app de gestión de gimnasios. Un cliente del gimnasio (o el propio staff en su nombre) te pide un plan hacia una meta personal, organizado en hitos por periodo con hábitos accionables que se pueden ir marcando como completados.
 
 REGLAS OBLIGATORIAS:
-- Responde SIEMPRE en español, con un tono motivador pero realista y honesto — nunca prometas resultados garantizados ni uses lenguaje sensacionalista.
-- NO des diagnósticos médicos, ni recomendaciones de salud fuera del fitness general (nutrición clínica, suplementación específica, condiciones médicas, lesiones). Si la pregunta implícita se acerca a eso, redirige brevemente a consultar a un profesional de la salud.
-- Si en el contexto te dan un "ritmo real" (tendenciaSemanal, en kg o carga por semana, calculado del propio historial del cliente), ÚSALO TAL CUAL para estimar cuánto tiempo falta para la meta — nunca inventes ni calcules otro ritmo distinto al que te dieron. Haz la cuenta simple: (valor objetivo - valor actual) / ritmo semanal = semanas estimadas, y comunícalo de forma clara y aproximada (ej. "a este ritmo, unas 8 semanas").
-- Si NO te dan un ritmo real (tendenciaSemanal es null, historial insuficiente todavía), estima con tu conocimiento general de fitness UNA recomendación y un rango de tiempo razonable, pero deja explícito en el propio texto que es un estimado inicial que se irá afinando conforme haya más historial registrado — nunca lo presentes como si fuera un cálculo preciso.
-- Si la meta implica un cambio de peso corporal significativo (más de aproximadamente 5% del peso actual, en cualquier dirección), SIEMPRE incluye al final una nota breve dejando claro que esto no sustituye a un entrenador personal ni a un médico.
-- Sé breve: 3-5 oraciones o un párrafo corto. No uses formato markdown (sin **negritas**, sin listas con guiones) — es texto plano que se muestra directo en pantalla.`;
+- Responde ÚNICAMENTE con el JSON solicitado (según el esquema dado) — sin texto, explicación ni bloques de código markdown fuera de él.
+- resumenTexto: 2-4 oraciones en español, con un tono motivador pero realista y honesto — nunca prometas resultados garantizados ni uses lenguaje sensacionalista. Sin formato markdown (sin **negritas**, sin listas con guiones) — es texto plano que se muestra directo en pantalla.
+- NO des diagnósticos médicos, ni recomendaciones de salud fuera del fitness general (nutrición clínica, suplementación específica, condiciones médicas, lesiones). Si la meta implícita se acerca a eso, redirige brevemente (dentro de resumenTexto) a consultar a un profesional de la salud.
+- Si te dan un "ritmo real" (tendenciaSemanal, calculado del propio historial del cliente), ÚSALO TAL CUAL para estimar los periodos de los hitos — nunca inventes ni calcules otro ritmo distinto al que te dieron.
+- Si NO te dan un ritmo real (historial insuficiente todavía), estima con tu conocimiento general de fitness, pero deja explícito en resumenTexto que es un estimado inicial que se irá afinando conforme haya más historial registrado — nunca lo presentes como si fuera un cálculo preciso.
+- Si la meta implica un cambio de peso corporal significativo (más de aproximadamente 5% del peso actual, en cualquier dirección), incluye en resumenTexto una nota breve de que esto no sustituye a un entrenador personal ni a un médico.
+- Si te dan un "plan actual" con hitos/hábitos ya marcados como completados, NUNCA los reescribas, renombres, elimines ni los des por pendientes — trátalos como fijos e inamovibles, ni siquiera los repitas en tu respuesta. Genera o ajusta SOLO hitos nuevos para lo que sigue pendiente o para periodos futuros, considerando el progreso real ya mostrado.
+- Genera entre 3 y 5 hitos con periodos secuenciales y realistas (ej. "Semana 1-2", "Semana 3-4", "Mes 2"), cada uno con una meta intermedia concreta (metaIntermedia) y de 2 a 4 hábitos breves y accionables (texto de cada hábito: máximo ~10 palabras).`;
+
+// Esquema de salida estructurada de Gemini (subset de OpenAPI): fuerza a la API a devolver JSON
+// con esta forma exacta, en vez de confiar solo en la instrucción del prompt — reduce mucho el
+// riesgo de una respuesta que no se pueda parsear. id/texto de cada hábito son intencionalmente
+// lo único que la IA controla de cada hábito — completado/completadoPor/completadoEn los agrega
+// index.html, nunca la IA.
+const RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    resumenTexto: { type: 'string' },
+    hitos: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          periodo: { type: 'string' },
+          metaIntermedia: { type: 'string' },
+          habitos: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                texto: { type: 'string' },
+              },
+              required: ['id', 'texto'],
+            },
+          },
+        },
+        required: ['id', 'periodo', 'metaIntermedia', 'habitos'],
+      },
+    },
+  },
+  required: ['resumenTexto', 'hitos'],
+};
+
+function describirHabito(hab) {
+  const estado = hab && hab.completado ? '[COMPLETADO, no lo toques]' : '[pendiente]';
+  return `${estado} ${hab && hab.texto ? hab.texto : ''}`;
+}
 
 function buildUserPrompt(datos) {
   const partes = [];
@@ -56,10 +104,21 @@ function buildUserPrompt(datos) {
   if (typeof datos.tendenciaSemanal === 'number') {
     partes.push(`Ritmo real medido de su propio historial: ${datos.tendenciaSemanal} kg por semana (usa este número tal cual para tu estimado, no calcules otro).`);
   } else {
-    partes.push('Todavía no hay suficiente historial para medir un ritmo real — este cliente es nuevo o tiene pocos registros. Da un estimado inicial general y dilo explícitamente.');
+    partes.push('Todavía no hay suficiente historial para medir un ritmo real — este cliente es nuevo o tiene pocos registros. Da un estimado inicial general y dilo explícitamente en resumenTexto.');
   }
 
-  partes.push('Redacta una recomendación breve y el estimado de tiempo hacia la meta, siguiendo las reglas del system prompt.');
+  const planActual = datos.planActual;
+  if (planActual && Array.isArray(planActual.hitos) && planActual.hitos.length) {
+    partes.push('Plan actual del cliente (respeta EXACTAMENTE lo ya marcado como completado, no lo reescribas ni lo desmarques — genera hitos nuevos solo para lo pendiente o periodos futuros):');
+    planActual.hitos.forEach((h) => {
+      const habitosDesc = (h.habitos || []).map(describirHabito).join('; ');
+      partes.push(`- Hito "${h.periodo || ''}" (meta intermedia: ${h.metaIntermedia || ''}): ${habitosDesc || 'sin hábitos'}.`);
+    });
+  } else {
+    partes.push('El cliente no tiene un plan previo — genera uno nuevo desde cero.');
+  }
+
+  partes.push('Genera el plan siguiendo el esquema JSON dado y las reglas del system prompt.');
   return partes.join(' ');
 }
 
@@ -110,14 +169,18 @@ export default {
     const modelo = env.GEMINI_MODEL || 'gemini-3.6-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${env.GEMINI_API_KEY}`;
 
-    // maxOutputTokens en 2048 (no 400): en modelos con "thinking" (ej. gemini-3.6-flash), el
-    // razonamiento interno del modelo se descuenta del MISMO presupuesto que la respuesta final
-    // — con 400 el modelo gastaba casi todo pensando y se quedaba sin espacio para escribir la
-    // recomendación, devolviendo un fragmento truncado de su razonamiento en vez del texto real.
+    // maxOutputTokens en 3072: en modelos con "thinking" (ej. gemini-3.6-flash), el razonamiento
+    // interno del modelo se descuenta del MISMO presupuesto que la respuesta final — y ahora la
+    // respuesta es un JSON con varios hitos/hábitos, más grande que el texto libre de antes.
     const body = {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: buildUserPrompt(datos) }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 3072,
+        responseMimeType: 'application/json',
+        responseSchema: RESPONSE_SCHEMA,
+      },
     };
 
     const pedirAGemini = () => fetch(url, {
@@ -152,22 +215,34 @@ export default {
     // (una sola part, sin el campo thought).
     const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
       data.candidates[0].content.parts;
-    const texto = Array.isArray(parts)
+    const textoJson = Array.isArray(parts)
       ? parts.filter((p) => p && typeof p.text === 'string' && !p.thought).map((p) => p.text).join('')
       : null;
 
     // Si el modelo se quedó sin presupuesto de tokens (razonamiento interno + respuesta) antes de
-    // terminar, finishReason viene 'MAX_TOKENS' — el texto que haya, si lo hay, puede venir
-    // cortado a medias. Mejor avisar con un error claro que mostrarle al usuario una recomendación
-    // incompleta o confusa.
+    // terminar, finishReason viene 'MAX_TOKENS' — el JSON, si lo hay, viene cortado a medias y no
+    // va a parsear. Mejor avisar con un error claro que intentar mostrar algo incompleto.
     if (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason === 'MAX_TOKENS') {
       return jsonResponse({ error: 'Gemini se quedó sin espacio de respuesta (intenta de nuevo)' }, 502, origin);
     }
 
-    if (!texto || !texto.trim()) {
+    if (!textoJson || !textoJson.trim()) {
       return jsonResponse({ error: 'Gemini no devolvió texto (puede que haya bloqueado la respuesta por seguridad)' }, 502, origin);
     }
 
-    return jsonResponse({ texto: texto.trim() }, 200, origin);
+    // A pesar de pedir salida JSON estructurada (responseMimeType + responseSchema), el parseo
+    // se hace con try/catch y validación de forma — nunca hay que confiar ciegamente en que un
+    // modelo de IA devuelva siempre exactamente lo pedido.
+    let plan;
+    try {
+      plan = JSON.parse(textoJson);
+    } catch (e) {
+      return jsonResponse({ error: 'Gemini no devolvió un plan en formato JSON válido (intenta de nuevo)' }, 502, origin);
+    }
+    if (!plan || typeof plan.resumenTexto !== 'string' || !plan.resumenTexto.trim() || !Array.isArray(plan.hitos)) {
+      return jsonResponse({ error: 'El plan de Gemini no tiene el formato esperado (intenta de nuevo)' }, 502, origin);
+    }
+
+    return jsonResponse({ resumenTexto: plan.resumenTexto.trim(), hitos: plan.hitos }, 200, origin);
   },
 };

@@ -4,7 +4,7 @@ rules_version = '2';
 //
 // Modelo de datos real (visto en index.html):
 //   usuarios/{gymId}                      doc de cuenta de gimnasio (o "pending_<email>" antes del 1er login)
-//   usuarios/{gymId}/miembros/{id}        incluye metaFitness y ultimaRecomendacionIA (ver más abajo, Parte 6)
+//   usuarios/{gymId}/miembros/{id}        incluye metaFitness y planFitnessIA (ver más abajo, Parte 6/7)
 //   usuarios/{gymId}/pagos/{id}
 //   usuarios/{gymId}/asistencias/{id}
 //   usuarios/{gymId}/empleados/{id}
@@ -116,16 +116,19 @@ rules_version = '2';
 //     colecciones.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// AGENTE DE IA: META Y RECOMENDACIÓN (Parte 6, ver CHANGELOG.md) — NO es una
-// colección nueva, son dos campos más dentro del documento miembros/{id} ya
-// existente (metaFitness y ultimaRecomendacionIA), agregados a la misma
-// excepción de escritura acotada que ya usan estatura/fechaNacimiento
-// arriba (miembrosPublicos y miembros). El cliente edita su propia meta y
-// guarda el texto que le devolvió la IA, sin abrir ningún otro campo del
-// documento. La llamada al Worker de Cloudflare que consulta a Gemini pasa
-// por fuera de Firestore por completo (fetch directo desde index.html al
-// Worker) — estas reglas no intervienen en esa parte, solo en guardar el
-// resultado de vuelta en el documento del miembro.
+// AGENTE DE IA: META Y PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md) — NO es
+// una colección nueva, son dos campos más dentro del documento miembros/{id}
+// ya existente (metaFitness y planFitnessIA), agregados a la misma excepción
+// de escritura acotada que ya usan estatura/fechaNacimiento arriba
+// (miembrosPublicos y miembros). El cliente edita su propia meta y guarda el
+// plan (resumenTexto + hitos con hábitos marcables) que le devolvió la IA,
+// sin abrir ningún otro campo del documento — incluye marcar/desmarcar
+// hábitos como completados, que también reescribe el campo planFitnessIA
+// completo (mismo mecanismo, sin regla aparte). La llamada al Worker de
+// Cloudflare que consulta a Gemini pasa por fuera de Firestore por completo
+// (fetch directo desde index.html al Worker) — estas reglas no intervienen
+// en esa parte, solo en guardar el resultado de vuelta en el documento del
+// miembro.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -183,17 +186,18 @@ service cloud.firestore {
       // ── PORTAL PÚBLICO DEL CLIENTE — ver nota extensa arriba ──
 
       // Espejo público mínimo de miembros (numero, nombre, vencimientoTs,
-      // estatura, fechaNacimiento, metaFitness, ultimaRecomendacionIA —
-      // NUNCA teléfono/dirección/notas/etc). Lectura pública; escritura
-      // pública acotada solo a esos campos editables desde el portal
-      // (estatura/fechaNacimiento del perfil físico, metaFitness de la
-      // meta, ultimaRecomendacionIA como caché de la respuesta de la IA —
-      // ver Parte 6, CHANGELOG.md). El resto de los campos del espejo los
-      // mantiene el staff vía la regla genérica de más abajo.
+      // estatura, fechaNacimiento, metaFitness, planFitnessIA — NUNCA
+      // teléfono/dirección/notas/etc). Lectura pública; escritura pública
+      // acotada solo a esos campos editables desde el portal (estatura/
+      // fechaNacimiento del perfil físico, metaFitness de la meta,
+      // planFitnessIA como el plan que devolvió la IA — incluye marcar/
+      // desmarcar hábitos, misma escritura del campo completo — ver Parte
+      // 6/7, CHANGELOG.md). El resto de los campos del espejo los mantiene
+      // el staff vía la regla genérica de más abajo.
       match /miembrosPublicos/{docId} {
         allow read: if isSignedIn();
         allow update: if isSignedIn() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento', 'metaFitness', 'ultimaRecomendacionIA']);
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento', 'metaFitness', 'planFitnessIA']);
       }
 
       // Series de progreso por ejercicio y peso corporal: cualquier
@@ -215,15 +219,15 @@ service cloud.firestore {
       }
 
       // Excepción de escritura sobre miembros/: el portal público necesita
-      // poder guardar estatura/fechaNacimiento/metaFitness/
-      // ultimaRecomendacionIA directamente en el documento real (no solo
-      // en el espejo), y esta es la única forma de permitirlo sin abrir el
-      // resto del documento (teléfono, dirección, notas, etc. — esos
-      // siguen 100% cerrados, ni siquiera de lectura, a cualquiera que no
-      // sea el dueño del gimnasio o el admin).
+      // poder guardar estatura/fechaNacimiento/metaFitness/planFitnessIA
+      // directamente en el documento real (no solo en el espejo), y esta es
+      // la única forma de permitirlo sin abrir el resto del documento
+      // (teléfono, dirección, notas, etc. — esos siguen 100% cerrados, ni
+      // siquiera de lectura, a cualquiera que no sea el dueño del gimnasio o
+      // el admin).
       match /miembros/{miembroId} {
         allow update: if isSignedIn() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento', 'metaFitness', 'ultimaRecomendacionIA']);
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estatura', 'fechaNacimiento', 'metaFitness', 'planFitnessIA']);
       }
 
       // Buzón de sugerencias — ver nota extensa arriba. Solo creación, acotada a la forma
