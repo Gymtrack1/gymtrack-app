@@ -116,13 +116,21 @@ export default {
       generationConfig: { temperature: 0.7, maxOutputTokens: 400 },
     };
 
+    const pedirAGemini = () => fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
     let geminiResp;
     try {
-      geminiResp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      geminiResp = await pedirAGemini();
+      // 503 = "modelo saturado temporalmente" del lado de Google (no un error nuestro) — un
+      // solo reintento corto suele bastar, ya que estos picos de demanda son momentáneos.
+      if (geminiResp.status === 503) {
+        await new Promise((r) => setTimeout(r, 1200));
+        geminiResp = await pedirAGemini();
+      }
     } catch (e) {
       return jsonResponse({ error: 'No se pudo contactar a Gemini' }, 502, origin);
     }
@@ -133,9 +141,16 @@ export default {
     }
 
     const data = await geminiResp.json();
-    const texto = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
-      data.candidates[0].content.parts && data.candidates[0].content.parts[0] &&
-      data.candidates[0].content.parts[0].text;
+    // Modelos con "thinking" (razonamiento interno antes de responder, ej. gemini-3.6-flash)
+    // pueden devolver varias "parts": algunas marcadas thought:true (el razonamiento interno,
+    // nunca se le debe mostrar al usuario) y la parte final con la respuesta real. Se descartan
+    // las de razonamiento y se concatena el resto — en modelos sin thinking esto no cambia nada
+    // (una sola part, sin el campo thought).
+    const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content &&
+      data.candidates[0].content.parts;
+    const texto = Array.isArray(parts)
+      ? parts.filter((p) => p && typeof p.text === 'string' && !p.thought).map((p) => p.text).join('')
+      : null;
 
     if (!texto || !texto.trim()) {
       return jsonResponse({ error: 'Gemini no devolvió texto (puede que haya bloqueado la respuesta por seguridad)' }, 502, origin);

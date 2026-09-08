@@ -4,6 +4,32 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Corrige: la recomendación IA mostraba el "razonamiento interno" del modelo en vez de la respuesta real, y reintenta una vez si Gemini está saturado
+
+**Qué se hizo:**
+- Reportado por el usuario: la tarjeta de recomendación mostraba texto tipo "Rule Check: Spanish?
+  Yes. Tone: Motivating/realistic" en vez de una recomendación real. Causa: `gemini-3.6-flash`
+  (modelo actualizado en el fix anterior) es de la nueva generación con "thinking" — razona
+  internamente antes de responder — y la respuesta de la API puede traer varias `parts`: unas
+  marcadas `thought:true` (el razonamiento interno, nunca se le debe mostrar al usuario) y la
+  parte final con la respuesta real. `cloudflare-worker-ia/worker.js` solo leía `parts[0]`, así
+  que en esos casos devolvía el razonamiento interno en vez de la recomendación.
+- `worker.js`: ahora recorre todas las `parts`, descarta las marcadas `thought:true` y concatena
+  el resto — en modelos sin "thinking" (una sola part, sin ese campo) el comportamiento es
+  idéntico al de antes.
+- De paso, también se vio un error 503 ("modelo saturado temporalmente", del lado de Google, no
+  un bug nuestro) — se agregó un solo reintento automático con ~1.2s de espera antes de darlo por
+  fallido, ya que esos picos de demanda suelen ser momentáneos.
+
+**Qué se verificó:**
+- `node --check cloudflare-worker-ia/worker.js` — sintaxis válida.
+- Simulación en Node de la extracción de texto: con una respuesta que trae una part de
+  `thought:true` seguida de la respuesta real, devuelve SOLO la respuesta real (nunca el
+  razonamiento interno); con una respuesta de un modelo sin thinking (una sola part simple) el
+  resultado es idéntico al comportamiento anterior; con una respuesta sin `candidates`, no revienta.
+- `git diff` revisado: cambios acotados a la llamada a Gemini (reintento en 503) y a la extracción
+  del texto de la respuesta — sin tocar el resto del Worker.
+
 ## 2026-09-08 — Evita doble consulta a la IA por doble clic en "Actualizar recomendación"
 
 **Qué se hizo:**
