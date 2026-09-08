@@ -1,0 +1,13 @@
+# Configuración opcional para desplegar con la CLI de Cloudflare (wrangler) en vez del
+# dashboard web. La forma más simple para alguien sin experiencia programando es seguir
+# README.md (copiar/pegar worker.js directo en el dashboard) — este archivo es solo para quien
+# prefiera la línea de comandos.
+#
+# Uso (requiere Node.js instalado):
+#   npx wrangler login
+#   npx wrangler secret put GEMINI_API_KEY   # te pide pegar la key, la guarda como secreto
+#   npx wrangler deploy
+
+name = "gymtrack-ia"
+main = "worker.js"
+compatibility_date = "2025-01-01"

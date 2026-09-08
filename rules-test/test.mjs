@@ -105,6 +105,14 @@ await check('Cliente anónimo NO puede colar el teléfono al "actualizar estatur
 await check('Cliente anónimo NO puede cambiar nombre/notas de un miembro vía miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { notas: 'hackeado' }), false);
 await check('Cliente anónimo SÍ puede actualizar estatura/fechaNacimiento en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { estatura: 175 }), true);
 await check('Cliente anónimo NO puede tocar numero/vencimientoTs en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { vencimientoTs: 0 }), false);
+
+console.log('\n--- Meta y recomendación IA (Parte 6, campos nuevos en miembros/miembrosPublicos) ---');
+await check('Cliente anónimo SÍ puede guardar su metaFitness en miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { metaFitness: { tipo: 'pesoCorporal', valorObjetivo: 65, ejercicioObjetivo: null, fechaObjetivo: null, creadaEn: Date.now() } }), true);
+await check('Cliente anónimo SÍ puede guardar ultimaRecomendacionIA en miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { ultimaRecomendacionIA: { texto: 'Vas bien, sigue así.', basadaEnDatosReales: true, generadaEn: Date.now() } }), true);
+await check('Cliente anónimo NO puede colar el teléfono junto con metaFitness en miembros/', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembros', 'm1'), { metaFitness: { tipo: 'pesoCorporal', valorObjetivo: 65, ejercicioObjetivo: null, fechaObjetivo: null, creadaEn: Date.now() }, telefono: '0000000000' }), false);
+await check('Cliente anónimo SÍ puede guardar metaFitness en el espejo miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { metaFitness: { tipo: 'pesoCorporal', valorObjetivo: 65, ejercicioObjetivo: null, fechaObjetivo: null, creadaEn: Date.now() } }), true);
+await check('Cliente anónimo NO puede colar numero junto con metaFitness en miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { metaFitness: { tipo: 'pesoCorporal', valorObjetivo: 65, ejercicioObjetivo: null, fechaObjetivo: null, creadaEn: Date.now() }, numero: 999 }), false);
+
 await check('Cliente anónimo puede crear un registro de progreso (ejercicioId/musculo, ya no maquinaId)', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10, fecha: Date.now() }), true);
 await check('Cliente anónimo puede leer los registros de progreso que acaba de crear', getDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1')), true);
 await check('Cliente anónimo puede crear un registro de peso corporal', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'p1'), { miembroId: 'm1', peso: 70.5, fecha: Date.now() }), true);

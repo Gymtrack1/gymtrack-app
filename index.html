@@ -601,6 +601,27 @@ contenedor, igual que app-screen/admin-screen. -->
       <div id="p-progreso-contenido"></div>
     </div>
 
+    <div class="ec-card" style="margin-top:16px;padding:16px 18px">
+      <h3>🎯 Meta y Recomendación IA</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Tipo de meta</label><select id="p-meta-tipo" onchange="perfilToggleMetaEjercicio()">
+          <option value="">— Sin meta —</option>
+          <option value="pesoCorporal">Peso corporal</option>
+          <option value="ejercicio">Ejercicio específico</option>
+        </select></div>
+        <div class="form-group"><label>Valor objetivo (kg)</label><input type="number" id="p-meta-valor" placeholder="70"></div>
+      </div>
+      <div class="form-group" id="p-meta-ejercicio-grupo" style="display:none">
+        <label>Ejercicio</label>
+        <select id="p-meta-ejercicio"></select>
+      </div>
+      <div class="form-group"><label>Fecha objetivo (opcional)</label><input type="date" id="p-meta-fecha"></div>
+      <button class="btn btn-primary btn-sm" onclick="guardarMetaPerfil()">💾 Guardar meta</button>
+      <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+      <div id="p-meta-recomendacion-contenido"></div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px" onclick="pedirRecomendacionIAPerfil()">🤖 Actualizar recomendación</button>
+    </div>
+
     <div class="form-actions" style="margin-top:16px">
       <button class="btn btn-ghost" onclick="closeModal('modal-perfil')">Cerrar</button>
       <button class="btn btn-primary btn-sm" id="p-editar-btn">Editar</button>
@@ -948,6 +969,13 @@ const RECORDATORIO_DECAY_SEMANAL=0.75;
 // RECORDATORIO_MIN_ASISTENCIAS, evita mencionar una compra aislada como si fuera un hábito.
 // Ver calcularPatronCompra más abajo.
 const COMPRA_MIN_VENTAS=3;
+// Mínimo de puntos de historial Y de días de separación entre el primero y el último para
+// considerar confiable un ritmo de cambio (kg/semana o carga/semana) hacia una meta — mismo
+// criterio que RECORDATORIO_MIN_ASISTENCIAS/COMPRA_MIN_VENTAS: con muy pocos datos o muy
+// juntos en el tiempo, cualquier ritmo calculado sería ruido, no una tendencia real. Ver
+// calcularTendenciaMeta/portalCalcularTendenciaMeta más abajo (Parte 6, CHANGELOG.md).
+const META_MIN_REGISTROS=3;
+const META_MIN_DIAS_HISTORIAL=10;
 const DIAS_SEMANA=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 let pinFinanzas=null;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
@@ -1674,7 +1702,7 @@ function fmtDateInputVal(ts){
 async function sincronizarMiembroPublico(miembroId){
   const m=miembros.find(x=>x.id===miembroId);
   if(!m)return false;
-  const data={numero:m.numero||0,nombre:m.nombre,vencimientoTs:getVencimiento(miembroId),estatura:m.estatura||null,fechaNacimiento:m.fechaNacimiento||null};
+  const data={numero:m.numero||0,nombre:m.nombre,vencimientoTs:getVencimiento(miembroId),estatura:m.estatura||null,fechaNacimiento:m.fechaNacimiento||null,metaFitness:m.metaFitness||null,ultimaRecomendacionIA:m.ultimaRecomendacionIA||null};
   try{await setDoc(userDoc('miembrosPublicos',miembroId),data);return true;}catch(e){return false;/* espejo del portal: no crítico si falla */}
 }
 // Sincronización manual de TODOS los miembros al portal QR (botón en Miembros): necesaria una
@@ -1859,6 +1887,39 @@ function calcularPatronCompra(mid){
   if(!mejor)return null;
   return{diaSemana:mejor.diaSemana,producto:mejor.producto,compras:mejor.compras};
 }
+
+// META Y RECOMENDACIÓN IA (Parte 6, ver CHANGELOG.md): ritmo real de cambio hacia la meta de un
+// miembro, calculado sobre su propio historial (peso corporal, o el peso levantado en el
+// ejercicio objetivo). Se le manda este número a la IA para que redacte su recomendación sobre
+// datos reales en vez de inventar un ritmo — nunca al revés. Mismo criterio de confiabilidad
+// que calcularPatronAsistencia/calcularPatronCompra: sin suficientes puntos NI suficiente
+// separación en el tiempo (META_MIN_REGISTROS/META_MIN_DIAS_HISTORIAL), regresa null en vez de
+// un número calculado con ruido.
+//
+// Núcleo puro (compartido entre el lado staff y el portal, cada uno arma su propio historial
+// desde sus propios arrays en memoria — miembros/pesoCorporal/registrosProgreso en el panel,
+// portalMiembro/portalPesos/portalRegistros en el portal anónimo).
+function _historialParaMeta(meta,pesos,registros){
+  if(!meta)return null;
+  if(meta.tipo==='pesoCorporal')return pesos.map(p=>({fecha:p.fecha,valor:p.peso}));
+  if(meta.tipo==='ejercicio'&&meta.ejercicioObjetivo)return registros.filter(r=>r.ejercicioId===meta.ejercicioObjetivo).map(r=>({fecha:r.fecha,valor:r.peso}));
+  return null;
+}
+function _tendenciaMetaDesdeHistorial(historial){
+  if(!historial||historial.length<META_MIN_REGISTROS)return null;
+  const ordenado=[...historial].sort((a,b)=>a.fecha-b.fecha);
+  const dias=(ordenado[ordenado.length-1].fecha-ordenado[0].fecha)/86400000;
+  if(dias<META_MIN_DIAS_HISTORIAL)return null;
+  const cambioTotal=ordenado[ordenado.length-1].valor-ordenado[0].valor;
+  return Math.round((cambioTotal/(dias/7))*100)/100; // kg (o carga) por semana
+}
+function calcularTendenciaMeta(mid){
+  const m=miembrosPorId.get(mid);
+  if(!m||!m.metaFitness)return null;
+  const historial=_historialParaMeta(m.metaFitness,pesoCorporal.filter(p=>p.miembroId===mid),registrosProgreso.filter(r=>r.miembroId===mid));
+  return _tendenciaMetaDesdeHistorial(historial);
+}
+
 // Miembros con patrón detectado, que hoy es su día habitual, ya pasó su hora habitual (+
 // margen de tolerancia) y no tienen asistencia registrada hoy. Respeta recibeRecordatorios:
 // un miembro con recibeRecordatorios===false nunca aparece aquí, sin importar su patrón.
@@ -3140,6 +3201,7 @@ function verPerfil(id){
   renderComprasPerfil(m);
   renderPesoCorporalPerfil(m);
   renderProgresoPerfil(m);
+  renderMetaPerfil(m);
   document.getElementById('p-editar-btn').onclick=()=>{closeModal('modal-perfil');editMiembro(id);};
   document.getElementById('p-wha-btn').onclick=()=>enviarWhatsApp(id);
   openModal('modal-perfil');
@@ -3321,6 +3383,77 @@ function dibujarChartProgresoPerfil(miembroId){
     data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:asc.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
   });
+}
+
+// META Y RECOMENDACIÓN IA (Parte 6, ver CHANGELOG.md): mismo patrón que peso corporal/notas de
+// plan — se edita directo en el perfil del miembro (modal-perfil), no en el modal de alta/
+// edición. metaFitness/ultimaRecomendacionIA viven como campos del propio documento miembros/
+// (no una colección aparte); sincronizarMiembroPublico ya los replica al espejo público que
+// usa el portal (ver la función, más arriba).
+function perfilToggleMetaEjercicio(){
+  const tipo=document.getElementById('p-meta-tipo').value;
+  const grupo=document.getElementById('p-meta-ejercicio-grupo');
+  if(grupo)grupo.style.display=tipo==='ejercicio'?'block':'none';
+}
+function renderMetaPerfil(m){
+  const meta=m.metaFitness||null;
+  document.getElementById('p-meta-tipo').value=meta?meta.tipo:'';
+  document.getElementById('p-meta-valor').value=meta?meta.valorObjetivo:'';
+  document.getElementById('p-meta-ejercicio').innerHTML=_opcionesEjercicioSelectHtml(meta?meta.ejercicioObjetivo:null);
+  document.getElementById('p-meta-fecha').value=meta&&meta.fechaObjetivo?fmtDateInputVal(meta.fechaObjetivo):'';
+  perfilToggleMetaEjercicio();
+  renderRecomendacionIA('p-meta-recomendacion-contenido',m.ultimaRecomendacionIA);
+}
+async function guardarMetaPerfil(){
+  if(!perfilActualId)return;
+  const tipo=document.getElementById('p-meta-tipo').value;
+  try{
+    if(!tipo){
+      await updateDoc(userDoc('miembros',perfilActualId),{metaFitness:null});
+      _actualizarLocal(miembros,perfilActualId,{metaFitness:null});
+      sincronizarMiembroPublico(perfilActualId);
+      renderMetaPerfil(miembrosPorId.get(perfilActualId));
+      toast('Meta eliminada ✓');
+      return;
+    }
+    const valorObjetivo=parseFloat(document.getElementById('p-meta-valor').value);
+    if(!valorObjetivo)return alert('Escribe el valor objetivo');
+    const ejercicioObjetivo=tipo==='ejercicio'?document.getElementById('p-meta-ejercicio').value:null;
+    if(tipo==='ejercicio'&&!ejercicioObjetivo)return alert('Elige un ejercicio');
+    const fechaStr=document.getElementById('p-meta-fecha').value;
+    const fechaObjetivo=fechaStr?new Date(fechaStr+'T12:00:00').getTime():null;
+    const metaFitness={tipo,valorObjetivo,ejercicioObjetivo,fechaObjetivo,creadaEn:Date.now()};
+    await updateDoc(userDoc('miembros',perfilActualId),{metaFitness});
+    _actualizarLocal(miembros,perfilActualId,{metaFitness});
+    sincronizarMiembroPublico(perfilActualId);
+    renderMetaPerfil(miembrosPorId.get(perfilActualId));
+    toast('Meta guardada ✓');
+  }catch(e){toast('Error al guardar la meta','err');}
+}
+async function pedirRecomendacionIAPerfil(){
+  if(!perfilActualId)return;
+  const m=miembrosPorId.get(perfilActualId);
+  if(!m||!m.metaFitness)return alert('Primero guarda una meta');
+  const pesoActual=ultimoPesoCorporal(perfilActualId);
+  const tendencia=calcularTendenciaMeta(perfilActualId);
+  const payload={
+    edad:edadMostrar(m),pesoActual,estatura:m.estatura||null,
+    imc:calcularIMC(pesoActual,m.estatura),
+    meta:m.metaFitness,
+    tendenciaSemanal:tendencia,
+  };
+  toast('Consultando a la IA...');
+  try{
+    const texto=await _solicitarRecomendacionIA(payload);
+    const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
+    await updateDoc(userDoc('miembros',perfilActualId),{ultimaRecomendacionIA});
+    _actualizarLocal(miembros,perfilActualId,{ultimaRecomendacionIA});
+    sincronizarMiembroPublico(perfilActualId);
+    renderRecomendacionIA('p-meta-recomendacion-contenido',ultimaRecomendacionIA);
+    toast('Recomendación actualizada ✓');
+  }catch(e){
+    toast(`No se pudo obtener la recomendación (${e&&e.message?e.message:'error desconocido'})`,'err');
+  }
 }
 
 // SAVE MIEMBRO
@@ -4189,6 +4322,14 @@ function buscarEjercicioInfo(id){
   }
   return null;
 }
+// <option> de toda la biblioteca agrupados por músculo (<optgroup>) — usado por el selector de
+// "Ejercicio" de la meta de fitness (Parte 6), tanto en el perfil del miembro (staff) como en
+// el portal. Comparte la misma biblioteca fija que el registro de progreso.
+function _opcionesEjercicioSelectHtml(seleccionado){
+  return Object.entries(BIBLIOTECA_EJERCICIOS).map(([musculo,arr])=>
+    `<optgroup label="${escAttr(musculo)}">${arr.map(ex=>`<option value="${ex.id}" ${ex.id===seleccionado?'selected':''}>${escAttr(ex.nombre)}</option>`).join('')}</optgroup>`
+  ).join('');
+}
 
 // BUZÓN DE SUGERENCIAS (Parte 4, ver CHANGELOG.md): lista fija de categorías — la misma que
 // valida firestore.rules al crear un documento en `sugerencias` (categoria debe ser uno de
@@ -4231,6 +4372,36 @@ function coincideBusquedaEjercicio(nombre,busqueda){
 function kgALb(kg){return Math.round(kg*2.20462*10)/10;}
 function lbAKg(lb){return Math.round((lb/2.20462)*10)/10;}
 function formatearPeso(pesoKg,unidad){return unidad==='lb'?`${kgALb(pesoKg)}lb`:`${pesoKg}kg`;}
+
+// AGENTE DE IA: RECOMENDACIÓN DE META (Parte 6, ver CHANGELOG.md). El Worker de Cloudflare que
+// consulta a Gemini vive APARTE de index.html (código en cloudflare-worker-ia/ de este mismo
+// repo, pero se despliega por fuera de aquí — ver cloudflare-worker-ia/README.md) y guarda la
+// API key de Gemini como secreto de Cloudflare: nunca llega al navegador. index.html solo
+// necesita la URL pública del Worker ya desplegado.
+//
+// ⚠️ REEMPLAZA esta URL por la de tu propio Worker una vez desplegado. Mientras siga diciendo
+// "REEMPLAZA-CON-TU-WORKER", el botón de recomendación muestra un error claro en vez de fallar
+// en silencio contra una URL que no existe.
+const IA_WORKER_URL='https://REEMPLAZA-CON-TU-WORKER.tu-subdominio.workers.dev';
+
+async function _solicitarRecomendacionIA(payload){
+  if(IA_WORKER_URL.includes('REEMPLAZA-CON-TU-WORKER'))throw new Error('El gym todavía no configuró el Worker de recomendaciones (ver cloudflare-worker-ia/README.md)');
+  const resp=await fetch(IA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!resp.ok)throw new Error(`El servicio de IA respondió con error (${resp.status})`);
+  const data=await resp.json();
+  if(!data||typeof data.texto!=='string'||!data.texto.trim())throw new Error('Respuesta inválida del servicio de IA');
+  return data.texto;
+}
+// Pinta el texto cacheado de la última recomendación (o un estado vacío) dentro de `elId` —
+// compartida por el perfil del miembro (staff) y el portal, ambos guardan la misma forma de
+// caché: {texto, basadaEnDatosReales, generadaEn}.
+function renderRecomendacionIA(elId,cache){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  if(!cache||!cache.texto){el.innerHTML='<div style="font-size:12px;color:var(--muted)">Aún no hay recomendación. Pulsa el botón para pedirle una a la IA.</div>';return;}
+  el.innerHTML=`<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escAttr(cache.texto)}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">${cache.basadaEnDatosReales?'📊 Basada en tu historial real':'🔮 Estimado inicial (poco historial todavía)'} · ${fmtDate(cache.generadaEn)}</div>`;
+}
 
 window.addEventListener('portalReady',()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
@@ -4320,6 +4491,14 @@ function portalUltimoPeso(){
   const ps=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
   return ps.length?ps[0].peso:null;
 }
+// Equivalente a calcularTendenciaMeta(mid) pero del lado del portal (anónimo): usa
+// portalMiembro/portalPesos/portalRegistros en vez de los arrays del staff, mismo núcleo
+// compartido (_historialParaMeta/_tendenciaMetaDesdeHistorial, ver Parte 6 más arriba).
+function portalCalcularTendenciaMeta(){
+  if(!portalMiembro||!portalMiembro.metaFitness)return null;
+  const historial=_historialParaMeta(portalMiembro.metaFitness,portalPesos,portalRegistros);
+  return _tendenciaMetaDesdeHistorial(historial);
+}
 
 // Orden de las secciones = qué tan seguido se usan: 1) Registrar serie (elegir músculo ->
 // ejercicio -> guardar), lo que motiva la visita al portal; 2) Mi progreso, para revisar la
@@ -4330,6 +4509,7 @@ function renderPortalHome(){
   let html=`<div class="portal-hello">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
   html+=renderPortalNavegacionSeccion();
   html+=renderPortalProgresoSeccion();
+  html+=renderPortalMetaSeccion();
   html+=renderPortalPerfilFisicoSeccion();
   el.innerHTML=html;
   const otro=document.getElementById('portal-tipo-otro');
@@ -4338,6 +4518,7 @@ function renderPortalHome(){
   if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':'');
   dibujarChartPortalPeso();
   dibujarChartPortalProgreso();
+  renderRecomendacionIA('portal-meta-recomendacion-contenido',portalMiembro.ultimaRecomendacionIA);
 }
 
 // NAVEGACIÓN "Registrar serie" (Parte 3): reemplaza el modelo anterior de un QR por máquina.
@@ -4547,6 +4728,89 @@ function dibujarChartPortalPeso(){
     data:{labels:datos.map(p=>fmtDate(p.fecha)),datasets:[{label:'Peso (kg)',data:datos.map(p=>p.peso),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
   });
+}
+
+// MI META Y RECOMENDACIÓN IA (Parte 6, ver CHANGELOG.md): mismo patrón editable que Mi Perfil
+// Físico de abajo (formulario simple + botón Guardar), más el botón que dispara la consulta al
+// Worker de Cloudflare/Gemini. Va justo después de Mi progreso porque la recomendación depende
+// de ese historial (calcularTendenciaMeta/portalCalcularTendenciaMeta, más arriba).
+function renderPortalMetaSeccion(){
+  const meta=portalMiembro.metaFitness||null;
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>🎯 Mi Meta</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Tipo de meta</label><select id="portal-meta-tipo" onchange="portalToggleMetaEjercicio()">
+        <option value="">— Sin meta —</option>
+        <option value="pesoCorporal" ${meta&&meta.tipo==='pesoCorporal'?'selected':''}>Peso corporal</option>
+        <option value="ejercicio" ${meta&&meta.tipo==='ejercicio'?'selected':''}>Ejercicio específico</option>
+      </select></div>
+      <div class="form-group"><label>Valor objetivo (kg)</label><input type="number" id="portal-meta-valor" placeholder="70" value="${meta?meta.valorObjetivo:''}"></div>
+    </div>
+    <div class="form-group" id="portal-meta-ejercicio-grupo" style="display:${meta&&meta.tipo==='ejercicio'?'block':'none'}">
+      <label>Ejercicio</label>
+      <select id="portal-meta-ejercicio">${_opcionesEjercicioSelectHtml(meta?meta.ejercicioObjetivo:null)}</select>
+    </div>
+    <div class="form-group"><label>Fecha objetivo (opcional)</label><input type="date" id="portal-meta-fecha" value="${meta&&meta.fechaObjetivo?fmtDateInputVal(meta.fechaObjetivo):''}"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarMeta()">💾 Guardar meta</button>
+    <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+    <div id="portal-meta-recomendacion-contenido"></div>
+    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA()">🤖 Actualizar recomendación</button>
+  </div>`;
+}
+function portalToggleMetaEjercicio(){
+  const tipo=document.getElementById('portal-meta-tipo').value;
+  const grupo=document.getElementById('portal-meta-ejercicio-grupo');
+  if(grupo)grupo.style.display=tipo==='ejercicio'?'block':'none';
+}
+async function portalGuardarMeta(){
+  const tipo=document.getElementById('portal-meta-tipo').value;
+  const gymId=window._portalGym;
+  try{
+    if(!tipo){
+      await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{metaFitness:null});
+      await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{metaFitness:null});
+      portalMiembro={...portalMiembro,metaFitness:null};
+      toast('Meta eliminada ✓');
+      renderPortalHome();
+      return;
+    }
+    const valorObjetivo=parseFloat(document.getElementById('portal-meta-valor').value);
+    if(!valorObjetivo)return alert('Escribe el valor objetivo');
+    const ejercicioObjetivo=tipo==='ejercicio'?document.getElementById('portal-meta-ejercicio').value:null;
+    if(tipo==='ejercicio'&&!ejercicioObjetivo)return alert('Elige un ejercicio');
+    const fechaStr=document.getElementById('portal-meta-fecha').value;
+    const fechaObjetivo=fechaStr?new Date(fechaStr+'T12:00:00').getTime():null;
+    const metaFitness={tipo,valorObjetivo,ejercicioObjetivo,fechaObjetivo,creadaEn:Date.now()};
+    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{metaFitness});
+    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{metaFitness});
+    portalMiembro={...portalMiembro,metaFitness};
+    toast('Meta guardada ✓');
+    renderPortalHome();
+  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+}
+async function portalPedirRecomendacionIA(){
+  if(!portalMiembro.metaFitness)return alert('Primero guarda tu meta');
+  const pesoActual=portalUltimoPeso();
+  const tendencia=portalCalcularTendenciaMeta();
+  const payload={
+    edad:edadMostrar(portalMiembro),pesoActual,estatura:portalMiembro.estatura||null,
+    imc:calcularIMC(pesoActual,portalMiembro.estatura),
+    meta:portalMiembro.metaFitness,
+    tendenciaSemanal:tendencia,
+  };
+  toast('Consultando a la IA...');
+  try{
+    const texto=await _solicitarRecomendacionIA(payload);
+    const gymId=window._portalGym;
+    const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
+    await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{ultimaRecomendacionIA});
+    await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{ultimaRecomendacionIA});
+    portalMiembro={...portalMiembro,ultimaRecomendacionIA};
+    renderRecomendacionIA('portal-meta-recomendacion-contenido',ultimaRecomendacionIA);
+    toast('Recomendación actualizada ✓');
+  }catch(e){
+    alert(`No se pudo obtener la recomendación. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
+  }
 }
 
 // MI PERFIL FÍSICO: fecha de nacimiento + estatura + IMC (Parte 2b/2c/2d) y peso corporal con
