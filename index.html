@@ -619,7 +619,7 @@ contenedor, igual que app-screen/admin-screen. -->
       <button class="btn btn-primary btn-sm" onclick="guardarMetaPerfil()">💾 Guardar meta</button>
       <div style="border-top:1px solid var(--border);margin:16px 0"></div>
       <div id="p-meta-recomendacion-contenido"></div>
-      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px" onclick="pedirRecomendacionIAPerfil()">🤖 Actualizar recomendación</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px" onclick="pedirRecomendacionIAPerfil(this)">🤖 Actualizar recomendación</button>
     </div>
 
     <div class="form-actions" style="margin-top:16px">
@@ -3432,20 +3432,23 @@ async function guardarMetaPerfil(){
     toast('Meta guardada ✓');
   }catch(e){toast('Error al guardar la meta','err');}
 }
-async function pedirRecomendacionIAPerfil(){
+async function pedirRecomendacionIAPerfil(btn){
   if(!perfilActualId)return;
   const m=miembrosPorId.get(perfilActualId);
   if(!m||!m.metaFitness)return alert('Primero guarda una meta');
-  const pesoActual=ultimoPesoCorporal(perfilActualId);
-  const tendencia=calcularTendenciaMeta(perfilActualId);
-  const payload={
-    edad:edadMostrar(m),pesoActual,estatura:m.estatura||null,
-    imc:calcularIMC(pesoActual,m.estatura),
-    meta:m.metaFitness,
-    tendenciaSemanal:tendencia,
-  };
-  toast('Consultando a la IA...');
+  if(btn&&btn.disabled)return; // ya hay una petición en curso — evita doble clic disparando dos consultas a la IA
+  const textoOriginal=btn?btn.textContent:null;
+  if(btn){btn.disabled=true;btn.textContent='Consultando...';}
   try{
+    const pesoActual=ultimoPesoCorporal(perfilActualId);
+    const tendencia=calcularTendenciaMeta(perfilActualId);
+    const payload={
+      edad:edadMostrar(m),pesoActual,estatura:m.estatura||null,
+      imc:calcularIMC(pesoActual,m.estatura),
+      meta:m.metaFitness,
+      tendenciaSemanal:tendencia,
+    };
+    toast('Consultando a la IA...');
     const texto=await _solicitarRecomendacionIA(payload);
     const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
     await updateDoc(userDoc('miembros',perfilActualId),{ultimaRecomendacionIA});
@@ -3456,6 +3459,8 @@ async function pedirRecomendacionIAPerfil(){
     toast('Recomendación actualizada ✓');
   }catch(e){
     toast(`No se pudo obtener la recomendación (${e&&e.message?e.message:'error desconocido'})`,'err');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=textoOriginal;}
   }
 }
 
@@ -4765,7 +4770,7 @@ function renderPortalMetaSeccion(){
     <button class="btn btn-primary" style="width:100%" onclick="portalGuardarMeta()">💾 Guardar meta</button>
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
     <div id="portal-meta-recomendacion-contenido"></div>
-    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA()">🤖 Actualizar recomendación</button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA(this)">🤖 Actualizar recomendación</button>
   </div>`;
 }
 function portalToggleMetaEjercicio(){
@@ -4799,18 +4804,21 @@ async function portalGuardarMeta(){
     renderPortalHome();
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
 }
-async function portalPedirRecomendacionIA(){
+async function portalPedirRecomendacionIA(btn){
   if(!portalMiembro.metaFitness)return alert('Primero guarda tu meta');
-  const pesoActual=portalUltimoPeso();
-  const tendencia=portalCalcularTendenciaMeta();
-  const payload={
-    edad:edadMostrar(portalMiembro),pesoActual,estatura:portalMiembro.estatura||null,
-    imc:calcularIMC(pesoActual,portalMiembro.estatura),
-    meta:portalMiembro.metaFitness,
-    tendenciaSemanal:tendencia,
-  };
-  toast('Consultando a la IA...');
+  if(btn&&btn.disabled)return; // ya hay una petición en curso — evita doble clic disparando dos consultas a la IA
+  const textoOriginal=btn?btn.textContent:null;
+  if(btn){btn.disabled=true;btn.textContent='Consultando...';}
   try{
+    const pesoActual=portalUltimoPeso();
+    const tendencia=portalCalcularTendenciaMeta();
+    const payload={
+      edad:edadMostrar(portalMiembro),pesoActual,estatura:portalMiembro.estatura||null,
+      imc:calcularIMC(pesoActual,portalMiembro.estatura),
+      meta:portalMiembro.metaFitness,
+      tendenciaSemanal:tendencia,
+    };
+    toast('Consultando a la IA...');
     const texto=await _solicitarRecomendacionIA(payload);
     const gymId=window._portalGym;
     const ultimaRecomendacionIA={texto,basadaEnDatosReales:tendencia!==null,generadaEn:Date.now()};
@@ -4821,6 +4829,8 @@ async function portalPedirRecomendacionIA(){
     toast('Recomendación actualizada ✓');
   }catch(e){
     alert(`No se pudo obtener la recomendación. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=textoOriginal;}
   }
 }
 

@@ -4,6 +4,27 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Evita doble consulta a la IA por doble clic en "Actualizar recomendación"
+
+**Qué se hizo:**
+- Tras el fix del modelo de Gemini, salió un error 429 ("exceeded your current quota") en pruebas.
+  Revisando el código, ni `pedirRecomendacionIAPerfil()` (perfil del miembro, staff) ni
+  `portalPedirRecomendacionIA()` (portal del cliente) deshabilitaban el botón mientras la petición
+  estaba en curso — un doble clic (o clic repetido por impaciencia mientras carga) disparaba dos o
+  más consultas a Gemini en paralelo, consumiendo la cuota gratuita más rápido de lo esperado.
+- Ambas funciones ahora reciben el botón (`onclick="...(this)"`, mismo patrón que ya usa
+  `saveNuevoGym()` para su botón de guardar) y lo deshabilitan (`disabled=true`, texto
+  "Consultando...") antes de armar el payload y llamar a `_solicitarRecomendacionIA`, y lo
+  restauran en un bloque `finally` (así se re-habilita tanto si la petición tiene éxito como si
+  falla). Un clic mientras el botón ya está deshabilitado no hace nada.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` (extraídos a archivos temporales)
+  — sintaxis válida.
+- `git diff` revisado: solo se movió el armado del payload dentro del `try` y se agregó el
+  deshabilitado/rehabilitado del botón alrededor — la lógica de negocio (payload, llamada a la IA,
+  guardado del resultado) queda idéntica a antes.
+
 ## 2026-09-08 — Corrige: recomendación IA fallaba porque Google descontinuó el modelo por default
 
 **Qué se hizo:**
