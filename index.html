@@ -4382,7 +4382,7 @@ function formatearPeso(pesoKg,unidad){return unidad==='lb'?`${kgALb(pesoKg)}lb`:
 // ⚠️ REEMPLAZA esta URL por la de tu propio Worker una vez desplegado. Mientras siga diciendo
 // "REEMPLAZA-CON-TU-WORKER", el botón de recomendación muestra un error claro en vez de fallar
 // en silencio contra una URL que no existe.
-const IA_WORKER_URL='https://REEMPLAZA-CON-TU-WORKER.tu-subdominio.workers.dev';
+const IA_WORKER_URL='https://gymtrack-ia.luismolinac06.workers.dev';
 
 async function _solicitarRecomendacionIA(payload){
   if(IA_WORKER_URL.includes('REEMPLAZA-CON-TU-WORKER'))throw new Error('El gym todavía no configuró el Worker de recomendaciones (ver cloudflare-worker-ia/README.md)');
