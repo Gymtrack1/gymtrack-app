@@ -4,6 +4,34 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-08 — Corrige (de raíz): la recomendación IA seguía saliendo truncada — el límite de tokens era insuficiente para el "thinking" del modelo
+
+**Qué se hizo:**
+- Después del fix anterior (filtrar `parts` marcadas `thought:true`), el usuario reportó que
+  seguía viendo texto truncado tipo "*Format Constraints:* NO markdown (no" en vez de la
+  recomendación — ya con el Worker actualizado y desplegado en Cloudflare, así que no era el
+  mismo bug. Causa real: en los modelos con "thinking" (`gemini-3.6-flash`), los tokens que el
+  modelo gasta razonando internamente se descuentan del MISMO presupuesto que `maxOutputTokens`
+  — el Worker lo tenía en 400, tan bajo que el modelo gastaba casi todo pensando y se quedaba sin
+  espacio para escribir la respuesta final, cortándose a la mitad de una frase.
+- `cloudflare-worker-ia/worker.js`: `maxOutputTokens` subido de 400 a 2048 (deja margen de sobra
+  para razonamiento + respuesta completa). Además, ahora revisa `finishReason` de la respuesta de
+  Gemini: si viene `'MAX_TOKENS'` (se quedó sin espacio antes de terminar, aunque sea con el nuevo
+  límite más alto), devuelve un error claro pidiendo reintentar en vez de mostrarle al usuario un
+  fragmento de texto cortado a medias.
+
+**Qué se verificó:**
+- `node --check cloudflare-worker-ia/worker.js` — sintaxis válida.
+- Simulación en Node combinando ambas protecciones: una respuesta con `finishReason:'MAX_TOKENS'`
+  y texto cortado da error (nunca se le muestra el fragmento al usuario); una respuesta completa
+  (`finishReason:'STOP'`) pasa el texto normal; una respuesta con `thought:true` + `STOP` sigue
+  descartando el razonamiento y devolviendo solo la respuesta real (no se rompió el fix anterior).
+- `git diff` revisado: cambio acotado a `maxOutputTokens` y la nueva verificación de
+  `finishReason` — sin tocar el resto del Worker.
+- Pendiente de confirmar por el usuario en producción tras volver a desplegar el Worker en
+  Cloudflare (este archivo vive fuera de `index.html`, requiere copiar/pegar manual — ver
+  `cloudflare-worker-ia/README.md`).
+
 ## 2026-09-08 — Corrige: la recomendación IA mostraba el "razonamiento interno" del modelo en vez de la respuesta real, y reintenta una vez si Gemini está saturado
 
 **Qué se hizo:**

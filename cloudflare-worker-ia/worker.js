@@ -110,10 +110,14 @@ export default {
     const modelo = env.GEMINI_MODEL || 'gemini-3.6-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${env.GEMINI_API_KEY}`;
 
+    // maxOutputTokens en 2048 (no 400): en modelos con "thinking" (ej. gemini-3.6-flash), el
+    // razonamiento interno del modelo se descuenta del MISMO presupuesto que la respuesta final
+    // — con 400 el modelo gastaba casi todo pensando y se quedaba sin espacio para escribir la
+    // recomendación, devolviendo un fragmento truncado de su razonamiento en vez del texto real.
     const body = {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: buildUserPrompt(datos) }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 400 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
     };
 
     const pedirAGemini = () => fetch(url, {
@@ -151,6 +155,14 @@ export default {
     const texto = Array.isArray(parts)
       ? parts.filter((p) => p && typeof p.text === 'string' && !p.thought).map((p) => p.text).join('')
       : null;
+
+    // Si el modelo se quedó sin presupuesto de tokens (razonamiento interno + respuesta) antes de
+    // terminar, finishReason viene 'MAX_TOKENS' — el texto que haya, si lo hay, puede venir
+    // cortado a medias. Mejor avisar con un error claro que mostrarle al usuario una recomendación
+    // incompleta o confusa.
+    if (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason === 'MAX_TOKENS') {
+      return jsonResponse({ error: 'Gemini se quedó sin espacio de respuesta (intenta de nuevo)' }, 502, origin);
+    }
 
     if (!texto || !texto.trim()) {
       return jsonResponse({ error: 'Gemini no devolvió texto (puede que haya bloqueado la respuesta por seguridad)' }, 502, origin);
