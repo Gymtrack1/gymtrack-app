@@ -4,6 +4,45 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Autocompleta "Monto ($)" según el precio de la categoría del miembro y el plan (Parte 9)
+
+**Qué se hizo:**
+- Igual que con la inscripción de ayer, pero para las mensualidades: los gimnasios cobran precios
+  distintos según la categoría de membresía (ej. "Full access" vs. "Solo pesas"), así que en vez
+  de un solo monto global, el precio se configura por **categoría + duración de plan** (las mismas
+  6 duraciones que ya existían: Quincenal/Mensual/Bimestral/Trimestral/Semestral/Anual).
+- El modal "Categorías de Membresía" (donde ya se configuran los beneficios de cada categoría)
+  ahora tiene también un toggle "▼ Precios (N)" por categoría, con un campo numérico por cada
+  duración — ninguno es obligatorio, una categoría puede tener precio solo para "Mensual" y dejar
+  el resto vacío. Se guarda como `precios:{15,30,60,90,180,365}` en el doc de esa categoría
+  (`categoriasMembresia/{id}`, colección que ya existía) — no hace falta ninguna regla nueva de
+  Firestore, el dueño del gym ya tiene permiso de escritura ahí.
+- En el modal de "Registrar Pago" (reutilizado tal cual), el campo "Monto ($)" ahora se
+  autocompleta solo con el precio configurado para la categoría del miembro seleccionado y la
+  duración de plan elegida — se recalcula tanto al elegir el miembro como al cambiar el Plan. Si
+  el miembro no tiene categoría, o esa categoría no tiene precio para esa duración específica, el
+  campo queda vacío (nunca deja pegado el monto de una selección anterior) y el staff lo escribe a
+  mano, como siempre — sigue siendo 100% editable después de autocompletarse.
+- De paso se corrigieron dos vacíos que ya existían en `openModal('modal-pago')`: ni "Monto ($)"
+  ni "Plan" se reseteaban al abrir el modal normalmente, así que podía quedar pegado el valor de
+  un pago anterior. Ahora "Plan" vuelve a "Mensual" (default) y "Monto" se limpia, cada vez que el
+  modal se abre desde cero.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node de `actualizarMontoAutomatico`: dos categorías con precios distintos por
+  duración autocompletan el monto correcto cada una; cambiar de plan en el mismo miembro
+  autocompleta el precio de la NUEVA duración (no deja el de la anterior); cambiar de miembro
+  autocompleta el precio de SU categoría (no arrastra el de la selección anterior); miembro sin
+  categoría, con categoría borrada, o con categoría sin ningún precio configurado — los tres casos
+  dejan el monto vacío sin reventar.
+- Simulación en Node de `guardarPreciosCategoria`: valores vacíos, negativos, cero, o texto no
+  numérico en cualquiera de las 6 duraciones se guardan como `null` (nunca como `NaN` ni un precio
+  inválido); valores válidos se guardan tal cual.
+- `git diff` revisado: cambios acotados al modal de Categorías de Membresía (nueva sección de
+  precios), al modal de pago (autocompletado + reset de Monto/Plan al abrir) — sin tocar
+  Finanzas/Reportes ni la lógica de guardado de `savePago` en sí.
+
 ## 2026-09-09 — Agrega cuota de inscripción opcional (Parte 8), premarcada al dar de alta un miembro
 
 **Qué se hizo:**

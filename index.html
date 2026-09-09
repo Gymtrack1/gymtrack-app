@@ -647,7 +647,7 @@ contenedor, igual que app-screen/admin-screen. -->
     <div class="form-row">
       <div class="form-group"><label>Monto ($)</label><input type="number" id="p-monto" placeholder="500"></div>
       <div class="form-group"><label>Plan</label>
-        <select id="p-plan">
+        <select id="p-plan" onchange="actualizarMontoAutomatico()">
           <option value="15">Quincenal (15 días)</option>
           <option value="30" selected>Mensual (30 días)</option>
           <option value="60">Bimestral (60 días)</option>
@@ -3642,6 +3642,7 @@ function preRegPago(mid,contexto){
   document.getElementById('p-miembro').value=mid;
   document.getElementById('p-miembro-search').value=m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'';
   document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];
+  actualizarMontoAutomatico();
   const btnCancelar=document.getElementById('pago-btn-cancelar');
   if(btnCancelar)btnCancelar.textContent=contexto==='nuevoMiembro'?'Omitir por ahora':'Cancelar';
   if(contexto==='nuevoMiembro'&&montoInscripcion>0){
@@ -3677,6 +3678,21 @@ function seleccionarMiembro(id,label){
   document.getElementById('p-miembro').value=id;
   document.getElementById('p-miembro-search').value=label;
   document.getElementById('p-miembro-results').style.display='none';
+  actualizarMontoAutomatico();
+}
+// Autocompleta "Monto ($)" (Parte 9, ver CHANGELOG.md) según el precio configurado para la
+// categoría de membresía del miembro seleccionado y la duración de plan elegida — se llama al
+// elegir miembro (seleccionarMiembro) y al cambiar el Plan. Si el miembro no tiene categoría, o
+// esa categoría no tiene precio configurado para esa duración, deja el campo vacío (nunca deja un
+// monto de una selección anterior puesto por error) — el staff sigue pudiendo escribirlo a mano
+// en cualquier caso, esto solo le ahorra el paso cuando sí hay un precio configurado.
+function actualizarMontoAutomatico(){
+  const mid=document.getElementById('p-miembro').value;
+  const dias=document.getElementById('p-plan').value;
+  const m=miembros.find(x=>x.id===mid);
+  const cat=m&&m.categoriaMembresia?categoriasMembresia.find(c=>c.nombre===m.categoriaMembresia):null;
+  const precio=cat&&cat.precios?cat.precios[dias]:null;
+  document.getElementById('p-monto').value=precio>0?precio:'';
 }
 // Cerrar dropdown al hacer clic fuera
 document.addEventListener('click',e=>{
@@ -3823,20 +3839,49 @@ async function eliminarCategoriaMembresia(id){
   renderCategoriasMembresiaModal();
   toast('Categoría eliminada ✓');
 }
+// Precios por categoría (Parte 9, ver CHANGELOG.md): cada categoría de membresía puede traer un
+// precio distinto por cada duración de plan (mismas 6 duraciones que ya usa el modal de pago,
+// PLAN_DIAS_NOMBRE) — ninguno es obligatorio, una categoría puede tener precio solo para
+// "Mensual" y dejar el resto vacío. Mismo patrón de toggle expandir/colapsar que ya usan los
+// beneficios, pero independiente (categoriaPreciosExpandido, no categoriaBeneficiosExpandido).
+let categoriaPreciosExpandido={};
+function togglePreciosCategoria(id){categoriaPreciosExpandido[id]=!categoriaPreciosExpandido[id];renderCategoriasMembresiaModal();}
+async function guardarPreciosCategoria(id){
+  const precios={};
+  Object.keys(PLAN_DIAS_NOMBRE).forEach(dias=>{
+    const input=document.getElementById(`cat-precio-${id}-${dias}`);
+    const val=input?parseFloat(input.value):NaN;
+    precios[dias]=val>0?val:null;
+  });
+  await updateDoc(userDoc('categoriasMembresia',id),{precios});
+  _actualizarLocal(categoriasMembresia,id,{precios});
+  toast('Precios guardados ✓');
+}
 function renderCategoriasMembresiaModal(){
   const el=document.getElementById('lista-categorias-membresia');
   el.innerHTML=categoriasMembresia.length?categoriasMembresia.map(c=>{
     const beneficios=c.beneficios||[];
     const expandido=!!categoriaBeneficiosExpandido[c.id];
+    const precios=c.precios||{};
+    const numPrecios=Object.values(precios).filter(v=>v>0).length;
+    const preciosExpandido=!!categoriaPreciosExpandido[c.id];
     return`<div class="ec-card" style="padding:12px 14px;margin-bottom:10px">
       <div class="ec-row" style="border-bottom:none;padding:0">
         <span>${escAttr(c.nombre)}</span>
         <span style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="togglePreciosCategoria('${c.id}')">${preciosExpandido?'▲':'▼'} Precios (${numPrecios})</button>
           <button class="btn btn-ghost btn-sm" onclick="toggleCategoriaBeneficios('${c.id}')">${expandido?'▲':'▼'} Beneficios (${beneficios.length})</button>
           <button class="btn btn-ghost btn-sm" onclick="editarCategoriaMembresia('${c.id}')">Editar</button>
           <button class="btn btn-danger btn-sm" onclick="eliminarCategoriaMembresia('${c.id}')">✕</button>
         </span>
       </div>
+      ${preciosExpandido?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Precio para esta categoría en cada duración de plan. Deja vacío el que no apliques — el monto no se autocompletará solo para esas duraciones, el staff lo escribe a mano.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:10px">
+          ${Object.entries(PLAN_DIAS_NOMBRE).map(([dias,nombre])=>`<div class="form-group" style="margin:0"><label style="font-size:11px">${nombre}</label><input type="number" id="cat-precio-${c.id}-${dias}" value="${precios[dias]||''}" placeholder="$"></div>`).join('')}
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="guardarPreciosCategoria('${c.id}')">💾 Guardar precios</button>
+      </div>`:''}
       ${expandido?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
         <div style="margin-bottom:8px">${beneficios.length?beneficios.map((b,i)=>`<span class="beneficio-chip">${escAttr(b)}<button onclick="eliminarBeneficioCategoria('${c.id}',${i})" title="Quitar">✕</button></span>`).join(''):'<span style="color:var(--muted);font-size:12px">Sin beneficios definidos todavía.</span>'}</div>
         <div style="display:flex;gap:8px">
@@ -4161,7 +4206,7 @@ function abrirModalPersonalizacion(){
 // MODALES
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
-  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
+  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'){
     const dl=document.getElementById('zonas-inventario');
