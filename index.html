@@ -675,7 +675,7 @@ contenedor, igual que app-screen/admin-screen. -->
         <input type="number" id="p-inscripcion-monto" placeholder="Monto de inscripción">
       </div>
     </div>
-    <div class="form-group"><label>Promoción aplicada (opcional)</label><select id="p-promocion"><option value="">Ninguna</option></select></div>
+    <div class="form-group"><label>Promoción aplicada (opcional)</label><select id="p-promocion" onchange="aplicarPromocionSeleccionada()"><option value="">Ninguna</option></select></div>
     <div class="form-actions">
       <button class="btn btn-ghost" id="pago-btn-cancelar" onclick="closeModal('modal-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="savePago()">Guardar</button>
@@ -3686,13 +3686,32 @@ function seleccionarMiembro(id,label){
 // esa categoría no tiene precio configurado para esa duración, deja el campo vacío (nunca deja un
 // monto de una selección anterior puesto por error) — el staff sigue pudiendo escribirlo a mano
 // en cualquier caso, esto solo le ahorra el paso cuando sí hay un precio configurado.
+// El monto de la PROMOCIÓN seleccionada (si trae uno configurado, Parte 10) tiene prioridad sobre
+// el de la categoría — una promoción es un precio especial a propósito, no debe perderse solo
+// porque además exista un precio de categoría para esa misma duración.
 function actualizarMontoAutomatico(){
+  const promoNombre=document.getElementById('p-promocion').value;
+  const promo=promoNombre?promociones.find(p=>p.nombre===promoNombre):null;
+  if(promo&&promo.monto>0){
+    document.getElementById('p-monto').value=promo.monto;
+    return;
+  }
   const mid=document.getElementById('p-miembro').value;
   const dias=document.getElementById('p-plan').value;
   const m=miembros.find(x=>x.id===mid);
   const cat=m&&m.categoriaMembresia?categoriasMembresia.find(c=>c.nombre===m.categoriaMembresia):null;
   const precio=cat&&cat.precios?cat.precios[dias]:null;
   document.getElementById('p-monto').value=precio>0?precio:'';
+}
+// Al elegir una promoción (Parte 10): si trae una duración configurada, cambia "Plan" a esa
+// duración (recreando en el modal la selección que el staff habría hecho a mano) y siempre
+// recalcula el monto — actualizarMontoAutomatico ya sabe darle prioridad al monto de la promoción
+// sobre el de la categoría.
+function aplicarPromocionSeleccionada(){
+  const promoNombre=document.getElementById('p-promocion').value;
+  const promo=promoNombre?promociones.find(p=>p.nombre===promoNombre):null;
+  if(promo&&promo.dias)document.getElementById('p-plan').value=promo.dias;
+  actualizarMontoAutomatico();
 }
 // Cerrar dropdown al hacer clic fuera
 document.addEventListener('click',e=>{
@@ -3935,9 +3954,37 @@ async function eliminarPromocion(id){
   renderPromocionesModal();
   toast('Promoción eliminada ✓');
 }
+// Duración + monto de la promoción (Parte 10, ver CHANGELOG.md): igual que los precios por
+// categoría, reutiliza las mismas 6 duraciones de PLAN_DIAS_NOMBRE — una promoción es UN plan
+// con UN precio especial (ej. "2x1 verano" = Bimestral a $400), no una tabla de precios como las
+// categorías. Ambos campos son opcionales: una promoción sin dias/monto configurados sigue
+// funcionando como badge informativo puro, igual que antes de esta parte.
+async function guardarDetallePromocion(id){
+  const diasVal=document.getElementById(`promo-dias-${id}`).value;
+  const dias=diasVal?parseInt(diasVal):null;
+  const montoVal=parseFloat(document.getElementById(`promo-monto-${id}`).value);
+  const monto=montoVal>0?montoVal:null;
+  await updateDoc(userDoc('promociones',id),{dias,monto});
+  _actualizarLocal(promociones,id,{dias,monto});
+  toast('Promoción actualizada ✓');
+}
 function renderPromocionesModal(){
   const el=document.getElementById('lista-promociones');
-  el.innerHTML=promociones.length?promociones.map(p=>`<div class="ec-row"><span>${escAttr(p.nombre)}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarPromocion('${p.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarPromocion('${p.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes promociones. Agrega la primera arriba.</div></div>';
+  el.innerHTML=promociones.length?promociones.map(p=>`<div class="ec-card" style="padding:12px 14px;margin-bottom:10px">
+      <div class="ec-row" style="border-bottom:none;padding:0">
+        <span>${escAttr(p.nombre)}</span>
+        <span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarPromocion('${p.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarPromocion('${p.id}')">✕</button></span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1;min-width:140px"><label style="font-size:11px">Duración</label>
+          <select id="promo-dias-${p.id}"><option value="">— Ninguna —</option>${Object.entries(PLAN_DIAS_NOMBRE).map(([dias,nombre])=>`<option value="${dias}" ${String(p.dias||'')===dias?'selected':''}>${nombre}</option>`).join('')}</select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label style="font-size:11px">Monto ($)</label>
+          <input type="number" id="promo-monto-${p.id}" value="${p.monto||''}" placeholder="$">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="guardarDetallePromocion('${p.id}')">💾 Guardar</button>
+      </div>
+    </div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes promociones. Agrega la primera arriba.</div></div>';
 }
 function abrirModalPromociones(){renderPromocionesModal();openModal('modal-promociones');}
 

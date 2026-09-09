@@ -4,6 +4,39 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Al elegir una promoción, autocompleta Plan y Monto (Parte 10)
+
+**Qué se hizo:**
+- Mismo patrón que las mensualidades por categoría de ayer, pero para Promociones: cada
+  promoción ahora puede traer una **duración** (una de las 6 de siempre: Quincenal/Mensual/
+  Bimestral/Trimestral/Semestral/Anual) y un **monto** propio — ej. "2x1 verano" = Bimestral a
+  $400. Ambos son opcionales; una promoción sin ninguno de los dos configurados se sigue
+  comportando exactamente como antes (un badge puramente informativo).
+- El modal "Promociones" (donde ya se agregan/editan/borran) ahora muestra, debajo de cada
+  promoción, un selector de duración + un campo de monto + su propio botón "Guardar" — se guardan
+  en la misma colección `promociones` que ya existía (`dias`, `monto`), sin reglas de Firestore
+  nuevas.
+- En el modal de "Registrar Pago" (reutilizado tal cual), al elegir una promoción del dropdown
+  "Promoción aplicada": si trae duración configurada, cambia "Plan" a esa duración automáticamente;
+  y `actualizarMontoAutomatico()` (ya existente, de Parte 9) ahora le da **prioridad al monto de la
+  promoción** sobre el precio de categoría — una promoción es un precio especial a propósito, no
+  debe perderse solo porque la categoría del miembro también tenga un precio para esa misma
+  duración. Sin promoción seleccionada, todo sigue funcionando igual que ayer (precio por
+  categoría).
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node: sin promoción usa el precio de categoría; al elegir una promoción con
+  duración+monto propios, cambia el Plan Y el monto gana sobre el precio de categoría (aunque la
+  categoría tenga un precio distinto para esa misma duración); una promoción con monto pero SIN
+  duración configurada no toca el Plan, solo el monto; una promoción sin dias/monto configurados
+  (como las que ya existían antes de esta parte) cae al precio de categoría, comportándose como
+  badge puro — no rompe promociones creadas antes de este cambio; al volver a "Ninguna" se
+  restablece el precio de categoría normal.
+- `git diff` revisado: cambios acotados al modal de Promociones (selects/inputs nuevos por fila +
+  `guardarDetallePromocion`) y a `actualizarMontoAutomatico`/nueva `aplicarPromocionSeleccionada`
+  en el modal de pago — sin tocar `savePago` ni Finanzas/Reportes.
+
 ## 2026-09-09 — Autocompleta "Monto ($)" según el precio de la categoría del miembro y el plan (Parte 9)
 
 **Qué se hizo:**
