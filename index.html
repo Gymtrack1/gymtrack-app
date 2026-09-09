@@ -1621,6 +1621,10 @@ async function loadAll(){
   // detalle fila por fila si el usuario está viendo el Dashboard. Se renderiza al entrar a esa pestaña
   // (activarTab) o si ya está activa en este momento (ej. tras recargar datos desde otra pestaña).
   if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
+  // En segundo plano, sin bloquear la carga (Parte 12, ver CHANGELOG.md): corrige sola cualquier
+  // fecha de pago importado que haya quedado mal calculada — el botón manual "Corregir Fechas
+  // Importadas" sigue existiendo como respaldo, pero ya no hace falta darle clic.
+  corregirFechasImportadasAuto();
 }
 function isTabActive(name){const el=document.getElementById('tab-'+name);return!!el&&el.classList.contains('active');}
 // RECOMENDACIÓN (no implementada — ver auditoría de lecturas): loadMiembros() sigue trayendo
@@ -2298,23 +2302,47 @@ async function _guardarImportados(rows){
   toast(`✓ ${contadorM} miembro${contadorM===1?'':'s'} importado${contadorM===1?'':'s'}${contadorP?' + '+contadorP+' pagos':''}`);
 }
 
-// CORREGIR FECHAS DE PAGOS IMPORTADOS (utilidad de una sola vez)
+// CORREGIR FECHAS DE PAGOS IMPORTADOS
 // Los pagos importados antes de que _guardarImportados infiriera la fecha real
 // quedaron con fechaPago = momento de la importación. Aquí se recalcula
 // fechaPago = fechaFin - duración del plan, igual que ahora hace la importación.
 // Los montos NO se tocan (esa información nunca se guardó y no es recuperable).
-async function corregirFechasImportadas(){
-  const candidatos=pagos.filter(p=>p.importado===true);
-  if(!candidatos.length){toast('No hay pagos importados para corregir','err');return;}
-
-  const cambios=candidatos.map(p=>{
+//
+// Desde la Parte 12 (ver CHANGELOG.md) esto ya NO depende de que alguien le dé clic al botón:
+// corregirFechasImportadasAuto() corre sola y en silencio cada vez que se cargan los datos del
+// gym (loadAll), así que en la práctica este botón manual casi nunca encuentra nada que hacer —
+// se deja como respaldo visible (ej. por si la corrección automática falla por falta de conexión
+// justo al cargar) en vez de quitarlo, hasta confirmar que la automática cubre todos los casos.
+function _pagosImportadosPorCorregir(){
+  return pagos.filter(p=>p.importado===true).map(p=>{
     const dias=diasPorNombrePlan(p.planNombre)||30;
     const fechaNueva=p.fechaFin-dias*86400000;
     return{id:p.id,miembroNombre:(miembrosPorId.get(p.miembroId)||{}).nombre||'—',
       fechaActual:p.fechaPago,fechaNueva,diasActual:p.diasPlan,diasNuevo:dias,
       cambia:p.fechaPago!==fechaNueva||p.diasPlan!==dias};
   }).filter(c=>c.cambia);
-
+}
+// Corrección automática y silenciosa: se llama desde loadAll(), sin bloquear la carga principal
+// si falla (mismo criterio que sincronizarMiembroPublico) — el botón manual sigue ahí de respaldo.
+async function corregirFechasImportadasAuto(){
+  const cambios=_pagosImportadosPorCorregir();
+  if(!cambios.length)return;
+  try{
+    for(let start=0;start<cambios.length;start+=IMPORT_BATCH_SIZE){
+      const chunk=cambios.slice(start,start+IMPORT_BATCH_SIZE);
+      const batch=writeBatchFn(db);
+      chunk.forEach(c=>{batch.update(userDoc('pagos',c.id),{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo});});
+      await batch.commit();
+    }
+    cambios.forEach(c=>_actualizarLocal(pagos,c.id,{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo}));
+    recalcPagosPorMiembro();
+    renderDashboard();renderPagos();renderEstadoCuenta();renderReportes();
+    toast(`Se corrigieron automáticamente ${cambios.length} fecha${cambios.length===1?'':'s'} de pago importado${cambios.length===1?'':'s'} ✓`);
+  }catch(e){console.error('corregirFechasImportadasAuto error:',e);/* no bloquea el flujo principal si falla — el botón manual sigue disponible */}
+}
+async function corregirFechasImportadas(){
+  const cambios=_pagosImportadosPorCorregir();
+  if(!pagos.some(p=>p.importado===true)){toast('No hay pagos importados para corregir','err');return;}
   if(!cambios.length){toast('Todas las fechas importadas ya están correctas ✓');return;}
 
   const muestra=cambios.slice(0,5).map(c=>`• ${c.miembroNombre}: ${fmtDate(c.fechaActual)} → ${fmtDate(c.fechaNueva)}`).join('\n');

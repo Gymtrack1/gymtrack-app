@@ -4,6 +4,41 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — "Corregir Fechas Importadas" ahora se corre solo, sin necesitar el botón (Parte 12)
+
+**Qué se hizo:**
+- El usuario preguntó si los botones junto a "Plantilla" (Miembros) de verdad se seguían usando.
+  Al revisar: `_guardarImportados` (la importación de Excel actual) YA calcula bien la fecha de
+  pago desde hace tiempo (`fechaFin - duración del plan`) — el botón manual "Corregir Fechas
+  Importadas" es una utilidad de reparación para pagos que se importaron ANTES de ese arreglo, no
+  algo que la importación de hoy siga necesitando. El usuario pidió no quitarlo todavía, pero sí
+  que su función pudiera pasar sola en vez de depender de un clic manual.
+- Se extrajo la detección de "qué pagos importados tienen la fecha mal calculada" a una función
+  compartida (`_pagosImportadosPorCorregir`), usada tanto por el botón manual como por la nueva
+  `corregirFechasImportadasAuto()` — así la fórmula de qué está mal y cómo arreglarlo vive en un
+  solo lugar, no duplicada.
+- `corregirFechasImportadasAuto()` se llama sola al final de `loadAll()` (cada vez que se cargan
+  los datos del gym, ej. al iniciar sesión), sin bloquear la carga si falla (mismo criterio que
+  `sincronizarMiembroPublico`) y sin pedir confirmación — si no hay nada que corregir (el caso
+  normal de aquí en adelante), no hace nada ni molesta con ningún aviso; si sí corrige algo, avisa
+  con un toast breve.
+- El botón manual "Corregir Fechas Importadas" SIGUE ahí, sin quitarse — ahora es un respaldo
+  visible por si la corrección automática falla (ej. sin conexión justo al cargar), no la vía
+  principal. En la práctica, para cualquier cuenta que ya haya abierto la app una vez desde este
+  cambio, el botón manual va a decir "Todas las fechas importadas ya están correctas" casi
+  siempre.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node de `_pagosImportadosPorCorregir` (la lógica compartida): detecta un pago
+  importado con la fecha vieja/mal calculada; confirma que un pago importado por el flujo YA
+  arreglado (como los que se crean hoy) NO necesita corrección — prueba directa de que el import
+  actual ya está bien; los pagos normales (no importados) nunca se tocan; en una mezcla de varios
+  pagos, detecta solo los que de verdad hacen falta corregir.
+- `git diff` revisado: cambios acotados a extraer la detección compartida, la nueva función
+  automática, y una línea en `loadAll()` — el botón manual conserva su confirm y sus toasts de
+  progreso tal cual estaban, solo reutiliza la detección compartida en vez de duplicarla.
+
 ## 2026-09-09 — Autocompleta "Edad" al poner la Fecha de Nacimiento (Parte 11)
 
 **Qué se hizo:**
