@@ -1774,13 +1774,21 @@ async function sincronizarMiembroPublico(miembroId){
 // TODOS los miembros sin filtrar y eso es costoso para gyms grandes. El botón manual de abajo se
 // deja tal cual, como respaldo por si algún día hace falta forzar un resync completo (ej. se
 // sospecha que algo quedó desincronizado).
+//
+// Solo sincroniza a los miembros VIGENTES ('activo'/'por-vencer', ver getEstado) — un miembro
+// vencido/sin-pago que nadie ha tocado en años probablemente tampoco va a usar el portal QR
+// ahora mismo, y de todas formas se sincroniza solo en cuanto vuelva a pagar (savePago ya llama
+// a sincronizarMiembroPublico) o se le edite el perfil (saveMiembro, mismo mecanismo). Menos
+// escrituras la primera vez, sin perder cobertura real: nadie que sí necesite el portal se queda
+// afuera para siempre, solo hasta que vuelva a tener actividad.
 async function sincronizarTodosLosMiembrosPublicosAuto(){
   if(qrSincronizado||!miembros.length)return;
-  await Promise.all(miembros.map(m=>sincronizarMiembroPublico(m.id)));
+  const vigentes=miembros.filter(m=>{const e=getEstado(m.id);return e==='activo'||e==='por-vencer';});
+  await Promise.all(vigentes.map(m=>sincronizarMiembroPublico(m.id)));
   await sincronizarPersonalizacionPublica();
   qrSincronizado=true;
   try{await updateDoc(docFn(db,'usuarios',uid),{qrSincronizado:true});}catch(e){/* si falla el flag, se reintenta solo en el próximo login */}
-  toast('Portal QR sincronizado automáticamente por primera vez ✓');
+  toast(`Portal QR sincronizado automáticamente por primera vez ✓ (${vigentes.length} miembros al corriente)`);
 }
 async function sincronizarTodosLosMiembrosPublicos(){
   if(!miembros.length)return alert('No hay miembros que sincronizar');

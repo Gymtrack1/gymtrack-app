@@ -4,6 +4,31 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — La sincronización automática del Portal QR solo cubre miembros vigentes
+
+**Qué se hizo:**
+- Respuesta a un contra real que se señaló de la Parte 13 (sincronizar TODOS los miembros gasta
+  escrituras de más, incluso las de quien nunca va a usar el portal): `sincronizarTodosLos
+  MiembrosPublicosAuto()` ahora solo sincroniza a los miembros VIGENTES (`getEstado` = `'activo'`
+  o `'por-vencer'`) en el backfill inicial — no a los vencidos ni a los que nunca han pagado.
+- No se pierde cobertura real: un miembro vencido/sin-pago que quede fuera de este backfill se
+  sincroniza solo en cuanto vuelva a tener actividad — `savePago()` ya llama a
+  `sincronizarMiembroPublico()` en cada pago nuevo, y `saveMiembro()` en cada edición de perfil
+  (ambos mecanismos ya existían desde antes de esta parte, no se tocaron). Es decir: en cuanto un
+  miembro inactivo vuelve a pagar, queda sincronizado automáticamente igual que siempre.
+- El botón manual "Sincronizar Portal QR" NO se tocó — sigue sincronizando a todos sin filtrar,
+  a propósito: su razón de ser es justamente ser el respaldo de "fuerza un resync completo de
+  absolutamente todos" si algún día hace falta, sin las limitaciones del backfill automático.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node con 4 miembros en los 4 estados posibles: activo y por-vencer SÍ se
+  sincronizan en el backfill automático; vencido y sin-pago NO se sincronizan ahí (menos
+  escrituras); confirma que de 4 miembros totales, solo se tocan los 2 vigentes.
+- `git diff` revisado: cambio acotado al filtro dentro de
+  `sincronizarTodosLosMiembrosPublicosAuto` — el botón manual y `sincronizarMiembroPublico` (la
+  sincronización incremental por pago/edición) quedan intactos.
+
 ## 2026-09-09 — "Sincronizar Portal QR" también se dispara sola, una vez por cuenta (Parte 13)
 
 **Qué se hizo:**
