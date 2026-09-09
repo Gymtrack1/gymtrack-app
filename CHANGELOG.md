@@ -4,6 +4,38 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Al dar de alta un miembro, ofrece registrar su pago ya con el modal preseleccionado
+
+**Qué se hizo:**
+- Tras guardar exitosamente un "Nuevo Miembro" (nunca al editar uno existente), `saveMiembro()`
+  ahora abre el modal de "Registrar Pago" ya existente con ese miembro preseleccionado —
+  reutilizado tal cual, sin duplicar la lógica de `savePago()`. Antes había que salir de
+  Miembros, ir a Pagos, y volver a buscar al miembro recién creado.
+- El botón "Cancelar" del modal de pago cambia a **"Omitir por ahora"** solo en este flujo (mismo
+  botón, mismo `closeModal('modal-pago')`, solo el texto), para dejar claro al staff que
+  registrar el pago ahí mismo es opcional — no bloquea nada, el miembro ya quedó guardado antes
+  de que este modal se abriera. Si el staff cancela el modal de ALTA (nunca llega a guardar), no
+  pasa nada de esto — el flujo vive dentro de `saveMiembro()`, nunca se dispara desde el botón
+  Cancelar de "Nuevo Miembro".
+- Bug encontrado y corregido de paso: `preRegPago(mid)` (ya usado por el botón "Renovar" de
+  Alertas) preseleccionaba el miembro y LUEGO llamaba a `openModal('modal-pago')` — pero
+  `openModal` resetea el buscador de miembro (`populateMiembrosSelect()` sin `selectedId`), así
+  que ese reset borraba la preselección justo después de fijarla. Nunca se notó porque el
+  buscador de todas formas deja escribir para buscar de nuevo. Se corrigió el orden (`openModal`
+  primero, preselección después) — esto también arregla "Renovar" desde Alertas, que ahora sí
+  preselecciona al miembro de una vez.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node con un DOM mínimo simulado: `preRegPago(id,'nuevoMiembro')` deja el miembro
+  preseleccionado (id y nombre en el buscador) y el botón en "Omitir por ahora"; `preRegPago(id)`
+  sin contexto (como lo llama "Renovar") también preselecciona correctamente y el botón queda en
+  "Cancelar"; abrir el modal de pago de la forma normal ("+ Registrar Pago") restaura el botón a
+  "Cancelar" y resetea el buscador, sin quedar pegado en "Omitir por ahora" de un uso anterior.
+- `git diff` revisado: cambios acotados a `saveMiembro` (dispara el flujo solo al crear), el
+  reordenamiento de `preRegPago`, el `id` nuevo del botón Cancelar, y su reset en `openModal` —
+  `savePago()` no se tocó en absoluto.
+
 ## 2026-09-09 — Corrige: el checkbox de cada hábito del plan IA rompía el layout en celular
 
 **Qué se hizo:**

@@ -668,7 +668,7 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
     <div class="form-group"><label>Promoción aplicada (opcional)</label><select id="p-promocion"><option value="">Ninguna</option></select></div>
     <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
+      <button class="btn btn-ghost" id="pago-btn-cancelar" onclick="closeModal('modal-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="savePago()">Guardar</button>
     </div>
   </div>
@@ -3517,6 +3517,10 @@ async function saveMiembro(){
   closeModal('modal-miembro');
   renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();renderRecordatoriosPendientes();
   toast(editId?'Miembro actualizado ✓':'Miembro agregado ✓');
+  // Solo al DAR DE ALTA (nunca al editar): abre el modal de pago con el miembro recién creado ya
+  // preseleccionado, para no tener que salir de Miembros, ir a Pagos y volver a buscarlo. El
+  // staff puede darle "Omitir por ahora" si no va a cobrar en este momento — no es obligatorio.
+  if(!editId)preRegPago(savedId,'nuevoMiembro');
 }
 // FIX: delMiembro ahora borra también los pagos y asistencias del miembro
 // Antes quedaban datos huérfanos que contaminaban las finanzas y estadísticas
@@ -3586,12 +3590,19 @@ async function savePago(){
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
   toast('Pago registrado ✓');
 }
-function preRegPago(mid){
+// FIX: openModal('modal-pago') resetea el buscador de miembro (populateMiembrosSelect sin
+// selectedId) — por eso openModal() se llama PRIMERO y la preselección se fija DESPUÉS, nunca al
+// revés, o el reset del modal borraría lo que acabamos de preseleccionar.
+// `contexto==='nuevoMiembro'` (llamado desde saveMiembro tras dar de alta) cambia el botón de
+// "Cancelar" a "Omitir por ahora" para dejar claro que registrar el pago ahí mismo es opcional.
+function preRegPago(mid,contexto){
+  openModal('modal-pago');
   const m=miembros.find(x=>x.id===mid);
   document.getElementById('p-miembro').value=mid;
   document.getElementById('p-miembro-search').value=m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'';
   document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];
-  openModal('modal-pago');
+  const btnCancelar=document.getElementById('pago-btn-cancelar');
+  if(btnCancelar)btnCancelar.textContent=contexto==='nuevoMiembro'?'Omitir por ahora':'Cancelar';
 }
 function populateMiembrosSelect(selectedId=''){
   // resetear buscador al abrir el modal sin miembro preseleccionado
@@ -4087,7 +4098,7 @@ function abrirModalPersonalizacion(){
 // MODALES
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
-  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';}
+  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'){
     const dl=document.getElementById('zonas-inventario');
