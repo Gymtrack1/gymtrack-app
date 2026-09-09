@@ -4,6 +4,29 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Autocompleta "Edad" al poner la Fecha de Nacimiento (Parte 11)
+
+**Qué se hizo:**
+- El formulario de alta/edición de miembro pedía "Edad" Y "Fecha de Nacimiento" por separado,
+  obligando al staff a calcular la edad a mano — aunque `calcularEdad()`/`edadMostrar()` ya
+  existían y se usan en todos lados (perfil, IA, etc.) para calcular la edad real a partir de la
+  fecha de nacimiento cuando está disponible.
+- En cuanto el staff pone o cambia la Fecha de Nacimiento, "Edad" se autocompleta sola
+  (`actualizarEdadDesdeFechaNacimiento`, reutiliza `calcularEdad` tal cual, sin duplicar la
+  cuenta). Sigue siendo un campo editable — el staff puede corregirlo a mano después, y si no
+  pone fecha de nacimiento (no la sabe con exactitud), el campo de Edad no se toca y se puede
+  seguir llenando a mano como siempre.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node de `actualizarEdadDesdeFechaNacimiento`: una fecha de hace exactamente 25
+  años autocompleta 25; una fecha donde el cumpleaños todavía no llega este año resta 1 año
+  correctamente (29, no 30 — mismo cálculo exacto que ya usa `calcularEdad` en el resto de la
+  app); después de autocompletarse, el staff puede seguir editando el valor a mano sin que nada lo
+  sobreescriba; borrar la fecha de nacimiento no borra una edad ya puesta.
+- `git diff` revisado: dos cambios quirúrgicos — el `onchange` en el input de fecha de nacimiento,
+  y la función nueva — sin tocar `calcularEdad`/`edadMostrar` ni ningún otro cálculo existente.
+
 ## 2026-09-09 — Al elegir una promoción, autocompleta Plan y Monto (Parte 10)
 
 **Qué se hizo:**

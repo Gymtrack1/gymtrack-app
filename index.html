@@ -521,7 +521,7 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
     <div class="form-group"><label>Dirección</label><input type="text" id="m-direccion" placeholder="Calle, Colonia, Ciudad"></div>
     <div class="form-row">
-      <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="m-fecha-nacimiento"></div>
+      <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="m-fecha-nacimiento" onchange="actualizarEdadDesdeFechaNacimiento()"></div>
       <div class="form-group"><label>Estatura (cm)</label><input type="number" id="m-estatura" placeholder="170"></div>
     </div>
     <div class="form-group"><label>Categoría de membresía</label><select id="m-categoria-membresia"><option value="">— Sin categoría —</option></select></div>
@@ -1704,6 +1704,17 @@ function calcularEdad(fechaNacimientoTs){
 function edadMostrar(m){
   const calc=calcularEdad(m.fechaNacimiento);
   return calc!==null?calc:(m.edad||null);
+}
+// Autocompleta "Edad" (Parte 11, ver CHANGELOG.md) en cuanto el staff pone/cambia la Fecha de
+// Nacimiento en el formulario de alta/edición de miembro — reutiliza calcularEdad, la misma
+// función que ya usa edadMostrar en todos lados (perfil, IA, etc.), en vez de dejar que el staff
+// haga la cuenta a mano y la escriba por separado. Si no hay fecha de nacimiento, no toca el
+// campo — sigue siendo editable a mano como siempre, para cuando no se sabe la fecha exacta.
+function actualizarEdadDesdeFechaNacimiento(){
+  const fechaStr=document.getElementById('m-fecha-nacimiento').value;
+  if(!fechaStr)return;
+  const edad=calcularEdad(new Date(fechaStr+'T12:00:00').getTime());
+  if(edad!==null)document.getElementById('m-edad').value=edad;
 }
 function calcularIMC(pesoKg,estaturaCm){
   if(!pesoKg||!estaturaCm)return null;
