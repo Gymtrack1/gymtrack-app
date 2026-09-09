@@ -4,6 +4,33 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Corrige: el checkbox de cada hábito del plan IA rompía el layout en celular
+
+**Qué se hizo:**
+- Reportado por el usuario: en el roadmap de hitos ("MES 1/2/3" con checklist de hábitos), en
+  pantalla de celular el checkbox de cada hábito quedaba a la izquierda pero el texto (ej.
+  "REGISTRAR TODAS LAS COMIDAS DIARIAS") se salía del contenedor visible en vez de ir junto al
+  checkbox y hacer wrap. En desktop se veía bien.
+- Causa: la regla CSS global `input,select,textarea{width:100%;background:...;border:...;
+  padding:...}` (pensada para los campos de texto de los formularios) también le pegaba al
+  `<input type="checkbox">` de cada hábito — lo agrandaba a 100% del ancho de la fila y le
+  agregaba fondo/borde/padding de campo de texto, dejándole poquísimo o nada de espacio al
+  `<span>` del texto dentro del `label` flex. En un modal ancho de escritorio el efecto se
+  disimulaba; en una pantalla angosta de celular se notaba feo.
+- `renderPlanFitnessIA` (`index.html`, compartida por el perfil de staff y el portal): el
+  checkbox ahora trae estilos inline que anulan explícitamente esa regla global
+  (`width:auto;flex:0 0 auto;background:none;border:none;padding:0;border-radius:0`) y el
+  `<span>` del texto usa `flex:1;min-width:0` para hacer wrap normal dentro del ancho disponible
+  del contenedor, en vez de salirse.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node del HTML generado para una fila de hábito: confirma que el checkbox anula el
+  `width:100%`/fondo/borde globales, que no crece dentro del flex (`flex:0 0 auto`), y que el
+  texto usa `flex:1;min-width:0` para poder hacer wrap.
+- `git diff` revisado: cambio acotado a los estilos inline de esa fila — sin tocar la lógica de
+  marcar/desmarcar hábitos ni el resto del roadmap.
+
 ## 2026-09-08 — Confirmado: gemini-3.5-flash-lite funciona en esta cuenta con 500 peticiones/día
 
 **Qué se hizo:**
