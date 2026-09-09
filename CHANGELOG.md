@@ -4,6 +4,37 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — "Sincronizar Portal QR" también se dispara sola, una vez por cuenta (Parte 13)
+
+**Qué se hizo:**
+- Mismo espíritu que la Parte 12 (fechas importadas), pero para el otro botón que el usuario
+  preguntó si de verdad seguía haciendo falta: "🔄 Sincronizar Portal QR". A diferencia de las
+  fechas, esta sí reescribe TODOS los miembros sin filtrar (no solo los que hacen falta) — para un
+  gym con miles de miembros es una operación cara, así que NO puede correr en cada carga como la
+  de fechas. Se automatizó como un backfill de **una sola vez por cuenta**: nueva bandera
+  `qrSincronizado` en el doc del gym (mismo patrón que `pinFinanzas`/`montoInscripcion` — se carga
+  en `loadPlan()` y en el listener en tiempo real).
+- `sincronizarTodosLosMiembrosPublicosAuto()` se llama sola al final de `loadAll()`: si
+  `qrSincronizado` ya es `true`, no hace nada (ni una sola lectura/escritura de más); si es la
+  primera vez, sincroniza todo en silencio y guarda la bandera para nunca repetirse sola después.
+  El botón manual "Sincronizar Portal QR" sigue ahí tal cual, como respaldo por si algún día hace
+  falta forzar un resync completo — y si el staff lo usa manualmente, también deja la bandera en
+  `true` para que la automática no lo repita innecesariamente después.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node de `sincronizarTodosLosMiembrosPublicosAuto`: con `qrSincronizado=false`
+  (cuenta nueva o de antes de esta parte) sincroniza todos los miembros y deja la bandera en
+  `true` (local y en el doc del gym); una segunda llamada en la misma sesión con la bandera ya en
+  `true` NO vuelve a tocar Firestore; una cuenta que ya traía `qrSincronizado=true` cargado desde
+  Firestore nunca dispara la sincronización automática.
+- `git diff` revisado: cambios acotados a la nueva bandera (declaración + carga en los dos
+  lugares donde ya se carga `pinFinanzas`), la nueva función automática, una línea en `loadAll()`,
+  y que el botón manual también marque la bandera al usarse — sin tocar
+  `sincronizarMiembroPublico` (la sincronización incremental por miembro, que ya funcionaba bien).
+- Sin cambios en `firestore.rules`: el dueño del gym ya tiene permiso de escritura sin restricción
+  de campos sobre su propio doc `usuarios/{uid}`.
+
 ## 2026-09-09 — "Corregir Fechas Importadas" ahora se corre solo, sin necesitar el botón (Parte 12)
 
 **Qué se hizo:**
