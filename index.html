@@ -365,7 +365,7 @@ contenedor, igual que app-screen/admin-screen. -->
 
   <!-- PAGOS -->
   <div class="tab" id="tab-pagos">
-    <div class="header-row"><div class="page-title">Pagos</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="abrirModalPromociones()">🏷️ Promociones</button><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div></div>
+    <div class="header-row"><div class="page-title">Pagos</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="abrirModalInscripcion()">🎫 Inscripción</button><button class="btn btn-ghost" onclick="abrirModalPromociones()">🏷️ Promociones</button><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Promoción</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
@@ -666,6 +666,15 @@ contenedor, igual que app-screen/admin-screen. -->
         </select>
       </div>
     </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+        <input type="checkbox" id="p-inscripcion-check" style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:none;border-radius:0" onchange="document.getElementById('p-inscripcion-monto-grupo').style.display=this.checked?'block':'none'">
+        <span>🎫 Cobrar inscripción</span>
+      </label>
+      <div id="p-inscripcion-monto-grupo" style="display:none;margin-top:8px">
+        <input type="number" id="p-inscripcion-monto" placeholder="Monto de inscripción">
+      </div>
+    </div>
     <div class="form-group"><label>Promoción aplicada (opcional)</label><select id="p-promocion"><option value="">Ninguna</option></select></div>
     <div class="form-actions">
       <button class="btn btn-ghost" id="pago-btn-cancelar" onclick="closeModal('modal-pago')">Cancelar</button>
@@ -818,6 +827,24 @@ contenedor, igual que app-screen/admin-screen. -->
     <div id="lista-categorias-membresia"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-categorias')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL INSCRIPCIÓN (Parte 8, ver CHANGELOG.md): un solo monto opcional por gimnasio — no
+     todos los gyms la cobran, por eso no es un select de categorías ni nada obligatorio, solo un
+     número que si se deja vacío significa "este gym no cobra inscripción". -->
+<div class="modal-overlay" id="modal-inscripcion">
+  <div class="modal">
+    <h2>🎫 Inscripción</h2>
+    <div class="form-group">
+      <label>Monto de inscripción (opcional)</label>
+      <input type="number" id="insc-monto" placeholder="Ej. 200">
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Cuota única al dar de alta a un miembro nuevo, aparte de la mensualidad. Si tu gimnasio no la cobra, déjalo vacío — el checkbox de "Cobrar inscripción" no aparecerá premarcado al registrar el pago.</div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-inscripcion')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarInscripcion()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -978,6 +1005,9 @@ const META_MIN_REGISTROS=3;
 const META_MIN_DIAS_HISTORIAL=10;
 const DIAS_SEMANA=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 let pinFinanzas=null;
+// Cuota única de inscripción (Parte 8, ver CHANGELOG.md): un solo monto por gimnasio, opcional —
+// no todos los gyms la cobran. Si es null/0, el checkbox del modal de pago no viene premarcado.
+let montoInscripcion=null;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
 let pinTabPendiente=null,pinEventPendiente=null;
 
@@ -1270,6 +1300,7 @@ window.addEventListener('firebaseReady',async()=>{
         userPlan=data.plan||'sencillo';
         userFunciones=(data.funciones&&data.funciones.length>0)?data.funciones:defaultFunciones(userPlan);
         pinFinanzas=data.pinFinanzas||null;
+        montoInscripcion=data.montoInscripcion||null;
         console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
         applyPlan();
         if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
@@ -1324,6 +1355,7 @@ async function loadPlan(){
       userPlan = d.plan||'sencillo';
       userFunciones = (d.funciones&&d.funciones.length>0) ? d.funciones : defaultFunciones(userPlan);
       pinFinanzas = d.pinFinanzas||null;
+      montoInscripcion = d.montoInscripcion||null;
 
       // Cargar mensaje personalizado de WhatsApp si existe
       if(d.msgWhatsApp) msgWA=d.msgWhatsApp;
@@ -2322,7 +2354,7 @@ function renderPagos(){
   if(pagosPage<1)pagosPage=1;
   const start=(pagosPage-1)*PAGOS_PAGE_SIZE;
   const pagina=sorted.slice(start,start+PAGOS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${p.monto}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${p.monto}${p.inscripcion?`<div style="font-size:10px;color:var(--muted)">incl. $${p.inscripcion} inscripción</div>`:''}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
   renderPagosPaginacion(sorted.length,totalPaginas);
 }
 function renderPagosPaginacion(total,totalPaginas){
@@ -3576,9 +3608,15 @@ async function savePago(){
   const formaPago=document.getElementById('p-forma-pago').value;
   const promocionUsada=document.getElementById('p-promocion').value||null;
   if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
+  // Inscripción (Parte 8, ver CHANGELOG.md): si el checkbox está marcado, su monto se SUMA al
+  // total del pago (monto) para que Finanzas/Reportes sigan sumando lo que de verdad se cobró
+  // sin tener que tocar esos cálculos — y se guarda aparte (inscripcion) solo como referencia de
+  // cuánto de ese total era inscripción, para mostrarlo en la tabla de Pagos.
+  const inscripcionMonto=document.getElementById('p-inscripcion-check').checked
+    ?(parseFloat(document.getElementById('p-inscripcion-monto').value)||0):0;
   const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
   const fechaFin=fechaPago+dias*86400000;
-  const data={miembroId:mid,monto:parseFloat(monto),planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,promocionUsada,creadoEn:Date.now()};
+  const data={miembroId:mid,monto:parseFloat(monto)+inscripcionMonto,planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,promocionUsada,inscripcion:inscripcionMonto>0?inscripcionMonto:null,creadoEn:Date.now()};
   const ref=await addDoc(userCol('pagos'),data);
   // Registrar un pago es la acción más frecuente de la app — antes releía TODA la
   // colección de pagos (loadPagos) por cada uno. Con el doc que acabamos de crear
@@ -3594,7 +3632,10 @@ async function savePago(){
 // selectedId) — por eso openModal() se llama PRIMERO y la preselección se fija DESPUÉS, nunca al
 // revés, o el reset del modal borraría lo que acabamos de preseleccionar.
 // `contexto==='nuevoMiembro'` (llamado desde saveMiembro tras dar de alta) cambia el botón de
-// "Cancelar" a "Omitir por ahora" para dejar claro que registrar el pago ahí mismo es opcional.
+// "Cancelar" a "Omitir por ahora" para dejar claro que registrar el pago ahí mismo es opcional, y
+// premarca "Cobrar inscripción" con el monto configurado (Parte 8) — solo si el gym la usa
+// (montoInscripcion>0). En cualquier otro caso (Renovar desde Alertas, etc.) el checkbox queda
+// desmarcado por default, como cualquier apertura normal del modal.
 function preRegPago(mid,contexto){
   openModal('modal-pago');
   const m=miembros.find(x=>x.id===mid);
@@ -3603,6 +3644,11 @@ function preRegPago(mid,contexto){
   document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];
   const btnCancelar=document.getElementById('pago-btn-cancelar');
   if(btnCancelar)btnCancelar.textContent=contexto==='nuevoMiembro'?'Omitir por ahora':'Cancelar';
+  if(contexto==='nuevoMiembro'&&montoInscripcion>0){
+    document.getElementById('p-inscripcion-check').checked=true;
+    document.getElementById('p-inscripcion-monto').value=montoInscripcion;
+    document.getElementById('p-inscripcion-monto-grupo').style.display='block';
+  }
 }
 function populateMiembrosSelect(selectedId=''){
   // resetear buscador al abrir el modal sin miembro preseleccionado
@@ -3849,6 +3895,23 @@ function renderPromocionesModal(){
   el.innerHTML=promociones.length?promociones.map(p=>`<div class="ec-row"><span>${escAttr(p.nombre)}</span><span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarPromocion('${p.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="eliminarPromocion('${p.id}')">✕</button></span></div>`).join(''):'<div class="empty"><div class="empty-icon">🏷️</div><div>Aún no tienes promociones. Agrega la primera arriba.</div></div>';
 }
 function abrirModalPromociones(){renderPromocionesModal();openModal('modal-promociones');}
+
+// INSCRIPCIÓN (Parte 8, ver CHANGELOG.md): un solo campo, sin lista — guarda montoInscripcion
+// directo en el doc del gym (usuarios/{uid}), mismo patrón que pinFinanzas/msgWhatsApp.
+function abrirModalInscripcion(){
+  document.getElementById('insc-monto').value=montoInscripcion||'';
+  openModal('modal-inscripcion');
+}
+async function guardarInscripcion(){
+  const val=parseFloat(document.getElementById('insc-monto').value);
+  const nuevoMonto=val>0?val:null;
+  try{
+    await updateDoc(docFn(db,'usuarios',uid),{montoInscripcion:nuevoMonto});
+    montoInscripcion=nuevoMonto;
+    closeModal('modal-inscripcion');
+    toast(nuevoMonto?'Monto de inscripción guardado ✓':'Inscripción desactivada ✓');
+  }catch(e){toast('Error al guardar: '+e.message,'err');}
+}
 function populatePromocionSelect(){
   const sel=document.getElementById('p-promocion');
   if(!sel)return;
@@ -4098,7 +4161,7 @@ function abrirModalPersonalizacion(){
 // MODALES
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
-  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';}
+  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'){
     const dl=document.getElementById('zonas-inventario');

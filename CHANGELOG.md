@@ -4,6 +4,43 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Agrega cuota de inscripción opcional (Parte 8), premarcada al dar de alta un miembro
+
+**Qué se hizo:**
+- No todos los gimnasios cobran una cuota única de "inscripción" al dar de alta a un miembro
+  (aparte de la mensualidad) — así que se agregó como un único monto opcional por gimnasio, no
+  como algo obligatorio ni por categoría de membresía.
+- Nuevo botón "🎫 Inscripción" en la pestaña Pagos (junto a "🏷️ Promociones") abre un modal chico
+  con un solo campo numérico. Si se deja vacío, significa que ese gimnasio no la cobra. Se guarda
+  como `montoInscripcion` directo en el doc de la cuenta (`usuarios/{uid}`) — mismo patrón que
+  `pinFinanzas`/`msgWhatsApp` (nada de colecciones nuevas ni reglas de Firestore adicionales: el
+  dueño del gym ya tiene permiso de escritura sobre su propio doc).
+- El modal de "Registrar Pago" (el mismo de siempre, reutilizado tal cual) ahora tiene un checkbox
+  "🎫 Cobrar inscripción" con su campo de monto — oculto hasta que se marca. Se premarca
+  automáticamente con el monto configurado SOLO cuando el modal se abre desde el flujo de "Nuevo
+  Miembro" (ver la entrada de ayer) y el gym sí tiene inscripción configurada; en cualquier otro
+  caso (Renovar desde Alertas, "+ Registrar Pago" normal) arranca desmarcado — sigue siendo 100%
+  opcional, el staff puede desmarcarlo o marcarlo a mano en cualquier momento.
+- Al guardar, el monto de inscripción se SUMA al total del pago (así Finanzas/Reportes, que ya
+  suman `monto`, no necesitaron ningún cambio) y se guarda aparte en `inscripcion` solo como
+  referencia — la tabla de Pagos muestra "incl. $X inscripción" debajo del monto cuando aplica.
+- El nuevo checkbox usa los mismos estilos inline defensivos (`width:auto;flex:0 0 auto;
+  background:none;border:none`) que se le pusieron ayer al checkbox de hábitos del plan IA, para
+  no reintroducir el mismo bug de layout en celular con la regla CSS global de `input`.
+
+**Qué se verificó:**
+- `node --check` sobre ambos bloques `<script>` de `index.html` — sintaxis válida.
+- Simulación en Node con un DOM mínimo: alta de miembro nuevo con inscripción configurada premarca
+  el checkbox y prellena el monto; sin inscripción configurada nunca premarca aunque sea alta
+  nueva; "Renovar" (sin el contexto `nuevoMiembro`) nunca premarca aunque el gym sí cobre
+  inscripción; el staff puede desmarcar el checkbox aunque venga premarcado y el total no incluye
+  la inscripción; una apertura normal del modal de pago siempre resetea todo (checkbox, monto,
+  visibilidad) sin importar el estado previo.
+- `git diff` revisado: cambios acotados a la sección de Pagos (botón, modal nuevo, checkbox en
+  modal-pago, `savePago`, `preRegPago`, `openModal`) y a la carga inicial de `montoInscripcion`
+  junto con `pinFinanzas` — sin tocar Finanzas/Reportes (siguen sumando `monto`, que ya incluye la
+  inscripción si aplica).
+
 ## 2026-09-09 — Al dar de alta un miembro, ofrece registrar su pago ya con el modal preseleccionado
 
 **Qué se hizo:**
