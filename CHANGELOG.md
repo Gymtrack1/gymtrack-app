@@ -4,6 +4,26 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-09 — Se eliminan los botones manuales "Corregir Fechas Importadas" y "Sincronizar Portal QR"
+
+**Qué se hizo:**
+- Ambos procesos llevaban ya un tiempo corriendo solos (Parte 12 y Parte 13, ver entradas de abajo)
+  y el usuario confirmó que ya no hacen falta como respaldo manual — se quitaron los dos botones de
+  la pestaña Miembros y sus funciones (`corregirFechasImportadas()` y
+  `sincronizarTodosLosMiembrosPublicos()`), junto con los comentarios que ya no aplicaban por
+  mencionar "el botón manual".
+- Las versiones automáticas (`corregirFechasImportadasAuto()` y
+  `sincronizarTodosLosMiembrosPublicosAuto()`), que siguen llamándose desde `loadAll()`, NO se
+  tocaron — siguen corriendo solas en cada carga (la primera) o una sola vez por cuenta (la
+  segunda), igual que antes.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` de `index.html` — sintaxis válida tras
+  quitar ambas funciones.
+- `grep` confirma cero referencias restantes a `corregirFechasImportadas()` /
+  `sincronizarTodosLosMiembrosPublicos()` (ni definición ni `onclick`) en todo el archivo; las
+  variantes `...Auto()` siguen intactas y se siguen invocando desde `loadAll()`.
+
 ## 2026-09-09 — La sincronización automática del Portal QR solo cubre miembros vigentes
 
 **Qué se hizo:**

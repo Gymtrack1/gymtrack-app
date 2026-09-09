@@ -347,9 +347,7 @@ contenedor, igual que app-screen/admin-screen. -->
           <input type="file" id="input-importar-xlsx" accept=".xlsx,.xls" style="display:none" onchange="importarMiembros(this)">
         </label>
         <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
-        <button onclick="corregirFechasImportadas()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🛠 Corregir Fechas Importadas</button>
         <button onclick="abrirModalCategorias()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🏷️ Categorías</button>
-        <button onclick="sincronizarTodosLosMiembrosPublicos()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🔄 Sincronizar Portal QR</button>
         <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:var(--text-accent);border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
       </div>
     </div>
@@ -1628,8 +1626,7 @@ async function loadAll(){
   // (activarTab) o si ya está activa en este momento (ej. tras recargar datos desde otra pestaña).
   if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
   // En segundo plano, sin bloquear la carga (Parte 12, ver CHANGELOG.md): corrige sola cualquier
-  // fecha de pago importado que haya quedado mal calculada — el botón manual "Corregir Fechas
-  // Importadas" sigue existiendo como respaldo, pero ya no hace falta darle clic.
+  // fecha de pago importado que haya quedado mal calculada.
   corregirFechasImportadasAuto();
   // Igual, pero para el portal QR (Parte 13): solo se dispara UNA vez por cuenta (ver
   // qrSincronizado) porque a diferencia de la de arriba, esta reescribe TODOS los miembros sin
@@ -1768,12 +1765,10 @@ async function sincronizarMiembroPublico(miembroId){
 // que nadie ha vuelto a tocar desde entonces nunca generó su espejo público y el portal QR no lo
 // encuentra al buscar por número+nombre.
 //
-// Desde la Parte 13 (ver CHANGELOG.md) esa primera vez ya NO depende de que alguien le dé clic al
-// botón: sincronizarTodosLosMiembrosPublicosAuto() la dispara sola, una única vez por cuenta
-// (bandera qrSincronizado en el doc del gym) — nunca se repite sola después, porque reescribe
-// TODOS los miembros sin filtrar y eso es costoso para gyms grandes. El botón manual de abajo se
-// deja tal cual, como respaldo por si algún día hace falta forzar un resync completo (ej. se
-// sospecha que algo quedó desincronizado).
+// Desde la Parte 13 (ver CHANGELOG.md) esa primera vez ya NO depende de que alguien le dé clic a
+// ningún botón: sincronizarTodosLosMiembrosPublicosAuto() la dispara sola, una única vez por
+// cuenta (bandera qrSincronizado en el doc del gym) — nunca se repite sola después, porque
+// reescribe TODOS los miembros sin filtrar y eso es costoso para gyms grandes.
 //
 // Solo sincroniza a los miembros VIGENTES ('activo'/'por-vencer', ver getEstado) — un miembro
 // vencido/sin-pago que nadie ha tocado en años probablemente tampoco va a usar el portal QR
@@ -1789,25 +1784,6 @@ async function sincronizarTodosLosMiembrosPublicosAuto(){
   qrSincronizado=true;
   try{await updateDoc(docFn(db,'usuarios',uid),{qrSincronizado:true});}catch(e){/* si falla el flag, se reintenta solo en el próximo login */}
   toast(`Portal QR sincronizado automáticamente por primera vez ✓ (${vigentes.length} miembros al corriente)`);
-}
-async function sincronizarTodosLosMiembrosPublicos(){
-  if(!miembros.length)return alert('No hay miembros que sincronizar');
-  if(!confirm(`¿Sincronizar los ${miembros.length} miembros y la personalización (colores/logo) con el portal QR?`))return;
-  toastPersistente(`Sincronizando 0 / ${miembros.length}...`);
-  let hechos=0,fallos=0;
-  await Promise.all(miembros.map(async m=>{
-    const ok=await sincronizarMiembroPublico(m.id);
-    if(!ok)fallos++;
-    hechos++;
-    toastPersistente(`Sincronizando ${hechos} / ${miembros.length}...`);
-  }));
-  // También la personalización (colores/logo) — un solo doc chico, se sincroniza junto con
-  // los miembros para que este botón sea "sincronizar TODO lo del portal QR de una vez".
-  const okPersonalizacion=await sincronizarPersonalizacionPublica();
-  if(!okPersonalizacion)fallos++;
-  qrSincronizado=true;
-  updateDoc(docFn(db,'usuarios',uid),{qrSincronizado:true}).catch(()=>{});
-  toast(fallos?`Sincronizados ${miembros.length-fallos}/${miembros.length} — ${fallos} fallaron, intenta de nuevo`:'Miembros y personalización sincronizados con el portal QR ✓');
 }
 // Espejo público de la personalización visual (usuarios/{uid}/config/personalizacion): SOLO
 // colorAcento/colorFondo/colorTarjetas/logoUrl — el doc real usuarios/{uid} sigue cerrado a
@@ -2341,11 +2317,9 @@ async function _guardarImportados(rows){
 // fechaPago = fechaFin - duración del plan, igual que ahora hace la importación.
 // Los montos NO se tocan (esa información nunca se guardó y no es recuperable).
 //
-// Desde la Parte 12 (ver CHANGELOG.md) esto ya NO depende de que alguien le dé clic al botón:
-// corregirFechasImportadasAuto() corre sola y en silencio cada vez que se cargan los datos del
-// gym (loadAll), así que en la práctica este botón manual casi nunca encuentra nada que hacer —
-// se deja como respaldo visible (ej. por si la corrección automática falla por falta de conexión
-// justo al cargar) en vez de quitarlo, hasta confirmar que la automática cubre todos los casos.
+// Desde la Parte 12 (ver CHANGELOG.md) esto ya NO depende de que alguien le dé clic a ningún
+// botón: corregirFechasImportadasAuto() corre sola y en silencio cada vez que se cargan los
+// datos del gym (loadAll).
 function _pagosImportadosPorCorregir(){
   return pagos.filter(p=>p.importado===true).map(p=>{
     const dias=diasPorNombrePlan(p.planNombre)||30;
@@ -2356,7 +2330,7 @@ function _pagosImportadosPorCorregir(){
   }).filter(c=>c.cambia);
 }
 // Corrección automática y silenciosa: se llama desde loadAll(), sin bloquear la carga principal
-// si falla (mismo criterio que sincronizarMiembroPublico) — el botón manual sigue ahí de respaldo.
+// si falla (mismo criterio que sincronizarMiembroPublico).
 async function corregirFechasImportadasAuto(){
   const cambios=_pagosImportadosPorCorregir();
   if(!cambios.length)return;
@@ -2371,49 +2345,7 @@ async function corregirFechasImportadasAuto(){
     recalcPagosPorMiembro();
     renderDashboard();renderPagos();renderEstadoCuenta();renderReportes();
     toast(`Se corrigieron automáticamente ${cambios.length} fecha${cambios.length===1?'':'s'} de pago importado${cambios.length===1?'':'s'} ✓`);
-  }catch(e){console.error('corregirFechasImportadasAuto error:',e);/* no bloquea el flujo principal si falla — el botón manual sigue disponible */}
-}
-async function corregirFechasImportadas(){
-  const cambios=_pagosImportadosPorCorregir();
-  if(!pagos.some(p=>p.importado===true)){toast('No hay pagos importados para corregir','err');return;}
-  if(!cambios.length){toast('Todas las fechas importadas ya están correctas ✓');return;}
-
-  const muestra=cambios.slice(0,5).map(c=>`• ${c.miembroNombre}: ${fmtDate(c.fechaActual)} → ${fmtDate(c.fechaNueva)}`).join('\n');
-  const ok=confirm(
-    `Se corregirá la fecha de pago de ${cambios.length} miembro${cambios.length===1?'':'s'} importado${cambios.length===1?'':'s'}.\n\n`+
-    `Se recalcula como: fecha de vencimiento − duración del plan.\n\nEjemplos:\n${muestra}${cambios.length>5?`\n… y ${cambios.length-5} más`:''}\n\n`+
-    `Los montos NO se modifican (siguen igual que ahora). ¿Continuar?`
-  );
-  if(!ok)return;
-
-  const avisarSalida=(e)=>{e.preventDefault();e.returnValue='';return '';};
-  window.addEventListener('beforeunload',avisarSalida);
-  toastPersistente(`Corrigiendo 0 / ${cambios.length}...`);
-  let hechos=0;
-
-  try{
-    for(let start=0;start<cambios.length;start+=IMPORT_BATCH_SIZE){
-      const chunk=cambios.slice(start,start+IMPORT_BATCH_SIZE);
-      const batch=writeBatchFn(db);
-      chunk.forEach(c=>{batch.update(userDoc('pagos',c.id),{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo});});
-      await batch.commit();
-      hechos+=chunk.length;
-      toastPersistente(`Corrigiendo ${hechos} / ${cambios.length}...`);
-    }
-  }catch(err){
-    console.error('corregirFechasImportadas error:',err);
-    toast(`Se corrigieron ${hechos} de ${cambios.length} antes de un error: ${err.message}`,'err');
-    window.removeEventListener('beforeunload',avisarSalida);
-    return;
-  }
-  window.removeEventListener('beforeunload',avisarSalida);
-
-  // Ya sabemos exactamente qué cambió (array 'cambios') — parchear localmente en vez de
-  // releer toda la colección de pagos otra vez.
-  cambios.forEach(c=>_actualizarLocal(pagos,c.id,{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo}));
-  recalcPagosPorMiembro();
-  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderEstadoCuenta();renderReportes();
-  toast(`✓ ${hechos} fecha${hechos===1?'':'s'} de pago corregida${hechos===1?'':'s'}`);
+  }catch(e){console.error('corregirFechasImportadasAuto error:',e);/* no bloquea el flujo principal si falla */}
 }
 
 // PAGOS
