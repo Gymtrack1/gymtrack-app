@@ -4,6 +4,25 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — Vista de Progreso del staff: muestra TODAS las series de la sesión más reciente
+
+**Qué se hizo:** el usuario notó que cada "serie" que registra el cliente ya es un documento
+aparte en `registrosProgreso` (el formulario del portal literalmente se llama "Guardar serie" y
+se manda una vez por serie) — pero `_portalStaffTarjetaMiembro` solo mostraba el registro MÁS
+RECIENTE de cada ejercicio, ocultando que el cliente pudo haber hecho 2-3 series ese mismo día.
+Se cambió para agrupar por ejercicio y quedarse con el DÍA calendario más reciente de cada uno,
+pero mostrando TODAS las series de ese día (ordenadas cronológicamente), no solo la última — así
+el staff ve la sesión completa ("3 series de press banca hoy: 60/62/65kg"), con su propia
+sugerencia de peso por fila (cada serie conserva su propio tipo/peso, así que la sugerencia sigue
+calculándose por fila, no por ejercicio).
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Simulación en Node aislada del agrupamiento (sin DOM/Firestore): 3 series de un mismo
+  ejercicio/día quedan juntas y en orden cronológico; una sesión vieja del mismo ejercicio NO se
+  mezcla con la más reciente; dos ejercicios distintos generan dos grupos ordenados por el más
+  reciente primero; un ejercicio con una sola serie no rompe — **6 OK / 0 FAIL**.
+
 ## 2026-09-10 — FIX: una pestaña del portal (QR) podía tumbar la sesión del dueño en otra pestaña
 
 **El bug (reportado por el usuario):** "de la nada" el Dashboard mostraba 0 miembros y el plan

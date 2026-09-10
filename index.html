@@ -5479,17 +5479,29 @@ function _portalStaffResultadosHtml(){
   return lista.map(m=>_portalStaffTarjetaMiembro(m,porMiembro.get(m.id))).join('');
 }
 function _portalStaffTarjetaMiembro(m,registros){
-  // Registro más reciente POR EJERCICIO (no todo el historial) — es lo que pidió el dueño del
-  // gym: "qué ejercicio hizo cada uno recientemente, con qué peso" para decidir qué ponerle hoy.
-  const masRecientePorEjercicio=new Map();
+  // Agrupa por ejercicio y se queda con la SESIÓN (día calendario) más reciente de cada uno —
+  // pero dentro de esa sesión muestra TODAS las series que hizo, no solo la última (cada serie
+  // es un registro aparte en registrosProgreso, ver portalGuardarSerie). Así el staff ve la
+  // sesión completa ("hizo 3 series de press banca hoy: 60/65/65kg"), no un dato incompleto.
+  const porEjercicio=new Map();
   registros.forEach(r=>{
-    const actual=masRecientePorEjercicio.get(r.ejercicioId);
-    if(!actual||r.fecha>actual.fecha)masRecientePorEjercicio.set(r.ejercicioId,r);
+    if(!porEjercicio.has(r.ejercicioId))porEjercicio.set(r.ejercicioId,[]);
+    porEjercicio.get(r.ejercicioId).push(r);
   });
-  const filas=[...masRecientePorEjercicio.values()].sort((a,b)=>b.fecha-a.fecha).map(r=>{
-    const info=buscarEjercicioInfo(r.ejercicioId);
-    const unidad=r.unidadOriginal||'kg';
-    return`<tr><td>${escAttr(info?info.nombre:'Ejercicio eliminado')}</td><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,unidad)}</td><td>${r.repeticiones}</td><td>${_sugerenciaPesoHoyTexto(r)}</td></tr>`;
+  const grupos=[...porEjercicio.entries()].map(([ejercicioId,regs])=>{
+    const fechaMasReciente=Math.max(...regs.map(r=>r.fecha));
+    const inicioDia=new Date(fechaMasReciente);inicioDia.setHours(0,0,0,0);
+    const desde=inicioDia.getTime(),hasta=desde+86400000;
+    const seriesDelDia=regs.filter(r=>r.fecha>=desde&&r.fecha<hasta).sort((a,b)=>a.fecha-b.fecha);
+    return{ejercicioId,fechaMasReciente,seriesDelDia};
+  }).sort((a,b)=>b.fechaMasReciente-a.fechaMasReciente);
+  const filas=grupos.flatMap(g=>{
+    const info=buscarEjercicioInfo(g.ejercicioId);
+    const nombreEj=info?info.nombre:'Ejercicio eliminado';
+    return g.seriesDelDia.map(r=>{
+      const unidad=r.unidadOriginal||'kg';
+      return`<tr><td>${escAttr(nombreEj)}</td><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,unidad)}</td><td>${r.repeticiones}</td><td>${_sugerenciaPesoHoyTexto(r)}</td></tr>`;
+    });
   }).join('');
   return`<div class="ec-card" style="margin-bottom:12px">
     <h3>${escAttr(m.nombre)} <span style="color:var(--muted);font-weight:400">#${fmtNum(m.numero||0)}</span></h3>
