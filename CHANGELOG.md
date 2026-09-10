@@ -4,6 +4,31 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — Vista de Progreso del staff: link (sin QR) + botón de WhatsApp por empleado
+
+**Qué se hizo:**
+- El usuario pidió explícitamente un LINK, sin QR para descargar/imprimir. Se quitó
+  `descargarQRStaff()` y su botón; en su lugar, la tarjeta de Empleados ahora tiene un botón
+  "🔗 Copiar link" (`copiarLinkStaff()`, `navigator.clipboard.writeText` con fallback a `prompt()`
+  si el navegador bloquea el clipboard) — el link es UNO SOLO por gimnasio (`?gym=...&staff=1`),
+  no cambia por empleado.
+- Nuevo botón 📱 por fila en la tabla de Empleados (`enviarLinkStaffWhatsApp`, mismo mecanismo
+  `wa.me` que ya usan Alertas/Recordatorios/Promociones) que arma un mensaje con el link + el PIN
+  de ESE empleado y abre WhatsApp con el número de su fila — deshabilitado si no tiene teléfono;
+  si le falta el PIN, avisa con `alert` en vez de mandar un link sin forma de entrar.
+- Sin cambios en `firestore.rules` ni en la lógica de identificación/progreso (`portalStaff*`):
+  la regla de `empleadosPublicos` y todo el flujo de PIN/progreso de la Parte 14 original quedan
+  igual, esto solo cambió CÓMO se distribuye el link.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Simulación en Node aislada de `_linkStaff`/`enviarLinkStaffWhatsApp` (sin DOM real): arma bien
+  la URL de wa.me con el teléfono limpio de espacios, el mensaje incluye el link Y el PIN
+  correctos, y los casos sin teléfono / sin PIN / empleado inexistente devuelven error en vez de
+  abrir wa.me con datos incompletos — **10 OK / 0 FAIL**.
+- `git diff` revisado: `grep` confirma cero referencias restantes a `descargarQRStaff` en todo el
+  archivo; los otros dos QR (acceso normal, buzón de sugerencias) no se tocaron.
+
 ## 2026-09-10 — Vista de Progreso del staff, de solo lectura (Parte 14)
 
 **Qué se hizo:**

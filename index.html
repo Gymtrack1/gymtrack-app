@@ -2992,12 +2992,12 @@ function renderEmpleados(){
   if(!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','tu plan actual');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
   <div class="ec-card" style="margin-bottom:16px">
-    <h3>📊 QR de Vista de Progreso (staff)</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Un QR/link aparte, de SOLO LECTURA, para que cualquier empleado con PIN consulte el progreso reciente de TODOS los clientes (qué entrenaron, con qué peso, y una sugerencia de peso para hoy) sin poder editar nada — ni siquiera necesita loguearse como tú. Asígnale un PIN a cada empleado en la tabla de abajo antes de compartirlo.</div>
-    <button class="btn btn-primary btn-sm" onclick="descargarQRStaff()">⬇️ Descargar QR de Vista de Progreso</button>
+    <h3>🔗 Link de Vista de Progreso (staff)</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Un link aparte, de SOLO LECTURA, para que cualquier empleado con PIN consulte el progreso reciente de TODOS los clientes (qué entrenaron, con qué peso, y una sugerencia de peso para hoy) sin poder editar nada — ni siquiera necesita loguearse como tú. Es UN SOLO link para todo el gimnasio; asígnale un PIN a cada empleado en la tabla de abajo y mándaselo por WhatsApp con el botón 📱 de su fila (o copia el link y mándaselo tú mismo).</div>
+    <button class="btn btn-primary btn-sm" onclick="copiarLinkStaff()">🔗 Copiar link</button>
   </div>
   <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>PIN de acceso</th><th>Acciones</th></tr></thead>
-  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${escAttr(e.nombre)}</strong></td><td>${e.puesto?escAttr(e.puesto):'—'}</td><td>${e.telefono?escAttr(e.telefono):'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td>${e.pinAcceso?escAttr(e.pinAcceso):'<span style="color:var(--muted)">Sin PIN</span>'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
+  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${escAttr(e.nombre)}</strong></td><td>${e.puesto?escAttr(e.puesto):'—'}</td><td>${e.telefono?escAttr(e.telefono):'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td>${e.pinAcceso?escAttr(e.pinAcceso):'<span style="color:var(--muted)">Sin PIN</span>'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-whatsapp btn-sm" onclick="enviarLinkStaffWhatsApp('${e.id}')" ${e.telefono?'':'disabled'} title="Enviar link + PIN por WhatsApp">📱</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
 }
 
 // INVENTARIO
@@ -3792,6 +3792,31 @@ async function sincronizarEmpleadoPublico(empleadoId){
   if(!e)return;
   try{await setDoc(userDoc('empleadosPublicos',empleadoId),{nombre:e.nombre,pinAcceso:e.pinAcceso||''});}catch(err){/* espejo no crítico si falla */}
 }
+// LINK DE LA VISTA DE PROGRESO DEL STAFF (Parte 14, ver CHANGELOG.md): un solo link por
+// gimnasio (?gym=...&staff=1), sin QR — se copia o se manda por WhatsApp directo a cada
+// empleado, no se descarga/imprime nada (a diferencia de los otros dos QR del portal).
+function _linkStaff(){return`${location.origin}${location.pathname}?gym=${uid}&staff=1`;}
+async function copiarLinkStaff(){
+  const url=_linkStaff();
+  try{
+    await navigator.clipboard.writeText(url);
+    toast('Link copiado ✓');
+  }catch(e){
+    // Algunos navegadores bloquean el clipboard fuera de un gesto directo del usuario o sin
+    // HTTPS — fallback simple para no dejar al dueño sin forma de copiarlo.
+    prompt('Copia este link manualmente:',url);
+  }
+}
+// Mismo mecanismo wa.me que ya usa Alertas/Recordatorios/Promociones — incluye el PIN del
+// empleado en el mensaje porque el dueño se lo manda directo, no hace falta que lo escriba aparte.
+function enviarLinkStaffWhatsApp(empleadoId){
+  const e=empleados.find(x=>x.id===empleadoId);
+  if(!e||!e.telefono)return alert('Este empleado no tiene teléfono registrado');
+  if(!e.pinAcceso)return alert('Asígnale primero un PIN de acceso a este empleado (Editar) antes de mandarle el link');
+  const msg=`Hola ${e.nombre}, aquí tienes el link para ver el progreso de los clientes del gym:\n${_linkStaff()}\n\nTu PIN de acceso: ${e.pinAcceso}`;
+  const tel=e.telefono.replace(/\D/g,'');
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+}
 
 // GASTOS
 async function saveGasto(){
@@ -4088,14 +4113,6 @@ function descargarQRAcceso(){
 // ?sugerencia=1 del portal — un flujo completamente aparte y anónimo (sin identificación).
 function descargarQRSugerencias(){
   _generarYDescargarQR(`${location.origin}${location.pathname}?gym=${uid}&sugerencia=1`,'QR-sugerencias-GymTrack.gif');
-}
-// QR DE LA VISTA DE PROGRESO DEL STAFF (Parte 14, ver CHANGELOG.md): mismo mecanismo, pero
-// apunta al modo ?staff=1 del portal — un flujo completamente aparte, de solo lectura, donde
-// cualquier empleado con PIN ve el progreso de TODOS los clientes. Se descarga desde el panel de
-// Empleados (no desde la pestaña QR) porque solo tiene sentido una vez que hay empleados con PIN
-// asignado.
-function descargarQRStaff(){
-  _generarYDescargarQR(`${location.origin}${location.pathname}?gym=${uid}&staff=1`,'QR-staff-GymTrack.gif');
 }
 
 // PERSONALIZACIÓN — subida a Storage y guardado en usuarios/{uid}. Logo y fondos se suben y
@@ -5314,8 +5331,9 @@ function guardarSugerenciaEnviadaHoy(){
 
 // ─────────────────────────────────────────────────────────────────────────
 // VISTA DE PROGRESO DEL STAFF (Parte 14, ver CHANGELOG.md) — modo COMPLETAMENTE APARTE del
-// resto del portal, activado por ?gym=...&staff=1 (QR/link propio, se descarga desde el panel
-// de Empleados). A diferencia de portalIdentificar (un cliente viendo SU PROPIO progreso), aquí
+// resto del portal, activado por ?gym=...&staff=1 (un solo link por gimnasio, sin QR — se copia
+// o se manda por WhatsApp desde el panel de Empleados, ver copiarLinkStaff/enviarLinkStaffWhatsApp).
+// A diferencia de portalIdentificar (un cliente viendo SU PROPIO progreso), aquí
 // un empleado ve el progreso de TODOS los clientes del gym — de solo lectura, no edita nada.
 //
 // Identificación: elige su nombre de una lista (espejo público empleadosPublicos, ver
