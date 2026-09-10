@@ -107,14 +107,18 @@
   .sidebar-toggle.open{display:none !important;}
   .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:99;}
   .sidebar-overlay.open{display:block;}
-  main{padding:24px 16px;max-width:1100px;margin-left:220px;}
+  /* main ya no solo empuja el contenido a la derecha del menú (margin-left:220px) — también lo
+     centra DENTRO de ese espacio sobrante (no en toda la pantalla, o quedaría medio tapado por
+     el menú). display:flex + justify-content:center en main, con el .tab visible limitado a
+     max-width:1100px, logra eso sin tocar el ancho máximo de contenido que ya tenía cada pestaña. */
+  main{margin-left:220px;padding:24px 16px;display:flex;justify-content:center;}
   @media (max-width:860px){
     .sidebar-toggle{display:flex;}
     nav{transform:translateX(-100%);box-shadow:0 0 24px rgba(0,0,0,0.2);}
     nav.open{transform:translateX(0);}
     main{margin-left:0;padding-top:70px;}
   }
-  .tab{display:none;} .tab.active{display:block;}
+  .tab{display:none;} .tab.active{display:block;width:100%;max-width:1100px;}
   .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;}
   .stat-card{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
   .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}

@@ -4,6 +4,23 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — El contenido de cada pestaña se centra en el espacio a la derecha del menú
+
+**Qué se hizo:** tras el cambio a barra lateral, el usuario notó que el contenido quedaba pegado
+justo a la derecha del menú en pantallas anchas, en vez de centrado — se veía "muy a la
+izquierda". `main` ahora es `display:flex;justify-content:center` (antes solo tenía
+`margin-left:220px` para no quedar debajo del menú, sin centrar nada dentro de ese espacio
+sobrante); el `.tab` activo se limita a `width:100%;max-width:1100px` (mismo ancho máximo que ya
+tenía antes) para que `justify-content:center` lo centre en vez de que empiece pegado a la
+izquierda. En celular no cambia nada (`margin-left:0` ahí, y como el contenido ya casi siempre
+ocupa el 100% del ancho angosto, centrar o no da igual visualmente).
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Capturas con Playwright en 1920px (ancho, donde antes se notaba más el problema), 1400px y
+  390px (celular, sin cambios) — confirma visualmente que el contenido queda centrado en el
+  espacio a la derecha del menú, sin quedar debajo de él ni desbordarse.
+
 ## 2026-09-10 — La barra de navegación pasa de horizontal (arriba) a vertical (izquierda)
 
 **Qué se hizo:**
