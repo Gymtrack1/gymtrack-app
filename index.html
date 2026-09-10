@@ -11,7 +11,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   const firebaseConfig = { apiKey:"AIzaSyDP2XgeXRfnuu2skfXvgFf9_xkRC9pLJOQ", authDomain:"mi-gimnasio-8d528.firebaseapp.com", projectId:"mi-gimnasio-8d528", storageBucket:"mi-gimnasio-8d528.firebasestorage.app", messagingSenderId:"19052651365", appId:"1:19052651365:web:6914d31e8dbbd63330b78c" };
   const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
@@ -27,6 +27,16 @@
   // Firestore. Esto corta antes de registrar onAuthStateChanged para que el ciclo de vida del
   // portal (sesión anónima) nunca interfiera con una sesión de staff que ya esté abierta en el
   // mismo navegador (ej. una tablet compartida en recepción).
+  //
+  // BUG REAL ENCONTRADO Y CORREGIDO (Parte 14): lo anterior NO bastaba. Firebase Auth persiste
+  // la sesión en localStorage por defecto, que se COMPARTE entre TODAS las pestañas del mismo
+  // sitio — así que un signInAnonymously() en la pestaña del portal (ej. el dueño probando su
+  // propio link de staff en una pestaña nueva del MISMO navegador donde ya tenía su Dashboard
+  // abierto) reemplazaba silenciosamente la sesión del dueño en la OTRA pestaña, mostrando 0
+  // miembros y el plan caído a "Sencillo" ahí (la pestaña del Dashboard recibía onAuthStateChanged
+  // con el usuario anónimo). Se fuerza browserSessionPersistence (sessionStorage, exclusivo de
+  // ESTA pestaña, nunca sincronizado entre pestañas) ANTES de signInAnonymously — así la sesión
+  // del portal queda 100% aislada y nunca vuelve a pisar una sesión de staff en otra pestaña.
   const _portalParams=new URLSearchParams(location.search);
   const _portalGym=_portalParams.get('gym');
   if(_portalGym){
@@ -42,7 +52,7 @@
     window._portalStaff=_portalParams.get('staff')==='1';
     document.getElementById('login-screen').style.display='none';
     document.getElementById('portal-screen').style.display='block';
-    signInAnonymously(auth).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
+    setPersistence(auth,browserSessionPersistence).then(()=>signInAnonymously(auth)).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
       console.error('Error de autenticación anónima del portal:',err);
       const detalle=(err&&err.code)?err.code:(err&&err.message)?err.message:'error desconocido';
       document.getElementById('portal-screen').innerHTML=`<div class="portal-box"><div class="empty"><div class="empty-icon">⚠️</div><div>No se pudo conectar. Verifica tu internet e intenta de nuevo. (${detalle})</div></div></div>`;

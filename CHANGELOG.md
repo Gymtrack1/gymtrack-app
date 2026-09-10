@@ -4,6 +4,44 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — FIX: una pestaña del portal (QR) podía tumbar la sesión del dueño en otra pestaña
+
+**El bug (reportado por el usuario):** "de la nada" el Dashboard mostraba 0 miembros y el plan
+caía a "Sencillo", bloqueando secciones. No era pérdida de datos ni un problema del plan real en
+Firestore — era la sesión de la pestaña la que cambiaba de identidad sola.
+
+**Causa real:** Firebase Auth persiste la sesión en `localStorage` por defecto
+(`browserLocalPersistence`), que se COMPARTE entre TODAS las pestañas del mismo sitio. El portal
+público (`?gym=...`, incluida la nueva Vista de Progreso del staff, `?gym=...&staff=1`) se
+autentica con `signInAnonymously()` para tener una sesión válida de Firestore — pero al escribir
+esa sesión anónima en el mismo `localStorage` compartido, CUALQUIER OTRA pestaña abierta del
+mismo sitio (ej. el Dashboard del dueño en otra pestaña del mismo navegador) recibía ese cambio
+vía `onAuthStateChanged` y quedaba viendo la cuenta anónima en vez de la suya — de ahí el "0
+miembros" y el plan "Sencillo" (fallback por defecto cuando no encuentra doc de esa cuenta). Esto
+YA era un riesgo latente desde que existe el portal (Parte 1), pero la Vista de Progreso del staff
+lo hizo mucho más probable: ahora es común que el propio dueño abra su link de staff en una
+pestaña nueva del MISMO navegador donde tiene su Dashboard abierto (para copiarlo/probarlo/
+mandarlo por WhatsApp), algo que un cliente normal nunca hacía con el QR de acceso.
+
+**Qué se hizo:** se agrega `setPersistence(auth, browserSessionPersistence)` justo antes de
+`signInAnonymously()` en la rama del portal — fuerza que esa sesión anónima se guarde en
+`sessionStorage` (exclusivo de ESA pestaña, nunca sincronizado con otras) en vez de
+`localStorage`. El flujo normal del dueño (login con email/contraseña, rama `else`) no se tocó —
+sigue usando `browserLocalPersistence` por defecto, así que sigue quedando logueado entre
+recargas como siempre.
+
+**Si tu pestaña del Dashboard ya quedó afectada:** cierra sesión (🚪 Salir) y vuelve a entrar con
+tu email/contraseña — eso reescribe tu sesión real en `localStorage` sobre la anónima que la
+pisó. De ahí en adelante, con este fix, un link del portal en otra pestaña ya no puede volver a
+pasar esto.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- `grep` confirma que `signInAnonymously` solo se llama en un único lugar (la rama del portal,
+  `if(_portalGym)`), y que ahora siempre va precedido de `setPersistence(...,browserSessionPersistence)`.
+- Revisión de la rama `else` (login normal del dueño): no se tocó, sin llamadas a
+  `setPersistence` ahí — mantiene `browserLocalPersistence` (comportamiento de siempre).
+
 ## 2026-09-10 — Vista de Progreso del staff: link (sin QR) + botón de WhatsApp por empleado
 
 **Qué se hizo:**
