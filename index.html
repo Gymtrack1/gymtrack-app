@@ -84,21 +84,36 @@
   .portal-header{text-align:center;margin-bottom:20px;}
   .portal-header .login-logo{margin-bottom:2px;}
   .portal-hello{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;}
-  nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:4px;height:60px;position:sticky;top:0;z-index:100;overflow-x:auto;}
-  .logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent);letter-spacing:2px;margin-right:12px;white-space:nowrap;}
-  .nav-logo-img{display:none;height:32px;max-width:140px;object-fit:contain;margin-right:12px;}
-  .nav-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;padding:6px 10px;border-radius:6px;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+  /* Barra lateral izquierda (antes barra horizontal arriba) — logo, pestañas y los controles
+     de la derecha (plan/Personalizar/Sincronizar/Salir) van todos apilados de arriba hacia
+     abajo, en ese orden. En pantallas angostas (celular) queda oculta fuera de pantalla y se
+     abre con el botón ☰, ver .sidebar-toggle/.sidebar-overlay y toggleSidebar() en el script. */
+  nav{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:stretch;gap:4px;width:220px;position:fixed;top:0;left:0;bottom:0;z-index:100;overflow-y:auto;padding:16px 12px;transition:transform 0.2s ease;}
+  .logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--accent);letter-spacing:2px;white-space:nowrap;margin:0 0 12px 4px;}
+  .nav-logo-img{display:none;height:32px;max-width:180px;object-fit:contain;margin:0 0 12px 4px;}
+  .nav-btn{background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;padding:9px 10px;border-radius:6px;cursor:pointer;transition:all 0.2s;white-space:nowrap;text-align:left;width:100%;}
   .nav-btn:hover{color:var(--text-surface);background:var(--surface2);}
   .nav-btn.active{color:var(--accent);background:rgba(198,230,0,0.12);}
   .nav-btn.locked{color:var(--border);cursor:not-allowed;}
-  .user-info{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);white-space:nowrap;}
-  .plan-badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+  .user-info{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;align-items:stretch;gap:8px;font-size:11px;color:var(--muted);}
+  .user-info button{width:100%;}
+  .plan-badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;text-align:center;}
   .plan-sencillo{background:rgba(133,132,122,0.18);color:var(--muted);}
   .plan-pro{background:rgba(37,99,235,0.12);color:var(--blue);}
   .plan-premium{background:rgba(198,230,0,0.18);color:var(--accent);}
   .btn-logout{background:none;border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;}
   .btn-logout:hover{color:var(--text-surface);border-color:var(--text-surface);}
-  main{padding:24px 16px;max-width:1100px;margin:0 auto;}
+  .sidebar-toggle{display:none;position:fixed;top:12px;left:12px;z-index:110;background:var(--surface);border:1px solid var(--border);color:var(--text-surface);width:40px;height:40px;border-radius:8px;font-size:18px;cursor:pointer;align-items:center;justify-content:center;}
+  .sidebar-toggle.open{display:none !important;}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:99;}
+  .sidebar-overlay.open{display:block;}
+  main{padding:24px 16px;max-width:1100px;margin-left:220px;}
+  @media (max-width:860px){
+    .sidebar-toggle{display:flex;}
+    nav{transform:translateX(-100%);box-shadow:0 0 24px rgba(0,0,0,0.2);}
+    nav.open{transform:translateX(0);}
+    main{margin-left:0;padding-top:70px;}
+  }
   .tab{display:none;} .tab.active{display:block;}
   .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;}
   .stat-card{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
@@ -314,7 +329,9 @@ contenedor, igual que app-screen/admin-screen. -->
 
 <!-- APP -->
 <div id="app-screen">
-<nav>
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Abrir menú">☰</button>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+<nav id="app-nav">
   <img id="nav-logo-img" class="nav-logo-img" alt="Logo del gimnasio">
   <div class="logo" id="nav-logo-txt">GymTrack <span style="font-size:9px;color:#85847A">v3</span></div>
   <button class="nav-btn active" id="nav-dashboard" onclick="showTab('dashboard',event)">Dashboard</button>
@@ -4318,7 +4335,15 @@ function activarTab(name,event){
   if(name==='qr')renderSugerencias();
   // Detalle fila por fila de Miembros solo se construye al entrar a esta pestaña
   if(name==='miembros')renderMiembros(document.getElementById('search-miembros').value);
+  closeSidebar(); // en celular, elegir una pestaña cierra el menú lateral (en escritorio es un no-op)
 }
+
+// Barra lateral (antes barra horizontal arriba, ver CHANGELOG.md): en pantallas angostas queda
+// oculta fuera de pantalla por CSS (nav{transform:translateX(-100%)}) y se abre/cierra con estas
+// tres funciones, agregando/quitando la clase "open" en el nav y su overlay. En escritorio
+// (nav sin transform, ver @media en <style>) estas funciones simplemente no tienen efecto visual.
+function toggleSidebar(){document.getElementById('app-nav').classList.toggle('open');document.getElementById('sidebar-overlay').classList.toggle('open');document.getElementById('sidebar-toggle').classList.toggle('open');}
+function closeSidebar(){document.getElementById('app-nav').classList.remove('open');document.getElementById('sidebar-overlay').classList.remove('open');document.getElementById('sidebar-toggle').classList.remove('open');}
 
 // PIN Finanzas/Empleados
 async function sha256Hex(str){

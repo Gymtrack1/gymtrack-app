@@ -4,6 +4,41 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — La barra de navegación pasa de horizontal (arriba) a vertical (izquierda)
+
+**Qué se hizo:**
+- El `nav` del panel de staff (logo, las 9 pestañas, y los controles de la derecha: plan,
+  Personalizar, Sincronizar plan, email, Salir) ya no es una barra horizontal arriba — ahora es
+  una columna fija del lado izquierdo, con todo apilado de arriba hacia abajo en el mismo orden
+  que tenía antes de izquierda a derecha. `main` se corre a la derecha (`margin-left:220px`) para
+  no quedar debajo. Solo afecta a `#app-screen` (el panel del dueño del gym) — el portal público
+  del cliente y el panel de super-admin tienen su propio layout aparte, sin tocar.
+- En pantallas angostas (`max-width:860px`, primera media query que usa este proyecto — antes
+  no había ninguna) la columna queda oculta fuera de pantalla por defecto y se abre con un botón
+  ☰ fijo arriba a la izquierda (`toggleSidebar()`), con un fondo oscuro (`sidebar-overlay`) detrás
+  que la cierra al tocarlo fuera del menú (`closeSidebar()`). Elegir cualquier pestaña también
+  cierra el menú solo (se agregó la llamada al final de `activarTab()`), para no tener que cerrarlo
+  a mano después de navegar.
+- Bug de orden de cascada encontrado y corregido durante la verificación visual: la regla
+  `main{padding-top:70px}` de la media query quedaba ANTES en el archivo que la regla
+  incondicional `main{padding:24px 16px;...}` — en CSS, una regla incondicional posterior gana
+  sobre una condicional anterior con la misma especificidad, así que el padding-top nunca se
+  aplicaba y el botón ☰ tapaba el título de cada pestaña en celular. Se reordenó (incondicional
+  primero, media query después) y se confirmó con captura de pantalla que ya no se encima.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Verificación visual real con Playwright (Chromium), forzando `#app-screen` visible sin depender
+  de un login real: capturas de escritorio (1400px) y celular (390px, cerrado y abierto).
+- Interacción real (no simulada) en el navegador: clic en `#sidebar-toggle` abre el menú
+  (`toggleSidebar()`), clic en el overlay FUERA del ancho del menú lo cierra (`closeSidebar()`,
+  probado a propósito en una posición fuera de los 220px del nav para no toparse con que el nav
+  intercepta los clics ahí — comportamiento correcto, no un bug), y clic en "Dashboard" también lo
+  cierra solo (confirma que `activarTab()` sí llama a `closeSidebar()`).
+- `grep` confirma que no queda ningún otro lugar del código (JS o CSS) que asuma la altura vieja
+  de 60px del nav horizontal.
+
+
 ## 2026-09-10 — Se elimina la pestaña "Reportes"
 
 **Qué se hizo:**
