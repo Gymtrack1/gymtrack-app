@@ -4,6 +4,32 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — Se elimina la pestaña "Reportes"
+
+**Qué se hizo:**
+- Se quitó por completo la pestaña "Reportes" (botón de nav, contenedor `tab-reportes`,
+  `renderReportes()` y su helper exclusivo `calcTasaRenovacion()` — no se usaba en ningún otro
+  lado) y todas sus llamadas (`loadAll`, el listener de plan, `corregirFechasImportadasAuto`,
+  `saveMiembro`/`delMiembro`, `savePago`).
+- Se quitó `{id:'reportes',...}` de `TODAS_SECCIONES` (la lista que controla el menú, el
+  `lockedFeature` por plan, y los checkboxes de "Secciones activas" del panel admin — todo eso
+  se ajustó solo, sin tocarlo, porque ya era genérico sobre esa lista). `PLAN_LIMITE.premium`
+  bajó de 9 a 8 para que el contador del admin ("X/8, todas") siga siendo exacto — Sencillo (3) y
+  Pro (6) no cambian, porque Reportes nunca estuvo dentro de su límite (era la sección #7, solo
+  Premium con 9 la alcanzaba).
+- Ninguna cuenta pierde otra sección por esto: los datos ya guardados en Firestore
+  (`usuarios/{id}.funciones`) pueden seguir teniendo la palabra `"reportes"` suelta en cuentas
+  viejas — es inofensivo, ya no hay ningún botón ni `if` que la lea.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- `grep` confirma cero referencias restantes a "reportes"/"Reportes" en todo `index.html`
+  (código, HTML y comentarios).
+- Simulación en Node aislada de `TODAS_SECCIONES`/`PLAN_LIMITE`/`defaultFunciones`: Sencillo y Pro
+  devuelven exactamente las mismas secciones que antes (Reportes no estaba en su alcance);
+  Premium ahora devuelve las 8 secciones restantes, en el mismo orden, sin `reportes` — **7 OK /
+  0 FAIL**.
+
 ## 2026-09-10 — Vista de Progreso del staff: muestra TODAS las series de la sesión más reciente
 
 **Qué se hizo:** el usuario notó que cada "serie" que registra el cliente ya es un documento

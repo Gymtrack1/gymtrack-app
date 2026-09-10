@@ -323,7 +323,6 @@ contenedor, igual que app-screen/admin-screen. -->
   <button class="nav-btn" id="nav-asistencia" onclick="showTab('asistencia',event)">Asistencia</button>
   <button class="nav-btn" id="nav-alertas" onclick="showTab('alertas',event)">Alertas</button>
   <button class="nav-btn" id="nav-estadocuenta" onclick="showTab('estadocuenta',event)">Finanzas</button>
-  <button class="nav-btn" id="nav-reportes" onclick="showTab('reportes',event)">Reportes</button>
   <button class="nav-btn" id="nav-empleados" onclick="showTab('empleados',event)">Empleados</button>
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
   <button class="nav-btn" id="nav-qr" onclick="showTab('qr',event)">QR y Sugerencias</button>
@@ -483,12 +482,6 @@ contenedor, igual que app-screen/admin-screen. -->
   <!-- FINANZAS -->
   <div class="tab" id="tab-estadocuenta">
     <div id="estadocuenta-content"></div>
-  </div>
-
-  <!-- REPORTES -->
-  <div class="tab" id="tab-reportes">
-    <div class="page-title" style="margin-bottom:20px">Reportes</div>
-    <div id="reportes-content"></div>
   </div>
 
   <!-- EMPLEADOS -->
@@ -1033,9 +1026,9 @@ const PIN_PROTEGIDO=['estadocuenta','empleados'];
 let pinTabPendiente=null,pinEventPendiente=null;
 
 // Límite de secciones por plan
-const PLAN_LIMITE={sencillo:3,pro:6,premium:9};
+const PLAN_LIMITE={sencillo:3,pro:6,premium:8};
 
-// Las 9 secciones disponibles
+// Las 8 secciones disponibles
 const TODAS_SECCIONES=[
   {id:'dashboard',label:'Dashboard'},
   {id:'miembros',label:'Miembros'},
@@ -1043,7 +1036,6 @@ const TODAS_SECCIONES=[
   {id:'asistencia',label:'Asistencia'},
   {id:'alertas',label:'Alertas'},
   {id:'estadocuenta',label:'Finanzas'},
-  {id:'reportes',label:'Reportes'},
   {id:'empleados',label:'Empleados'},
   {id:'inventario',label:'Inventario'},
 ];
@@ -1073,7 +1065,7 @@ const DEFAULT_BG='#FAF9F5';
 const DEFAULT_SURFACE='#FFFFFF';
 const MAX_IMAGEN_BYTES=2*1024*1024; // 2MB
 // Pestañas que aceptan fondo configurable. Mismos ids que TODAS_SECCIONES (excepto
-// Alertas/Reportes, que el gym no personaliza aquí).
+// Alertas, que el gym no personaliza aquí).
 const PESTANAS_FONDO=[
   {id:'dashboard',label:'Dashboard'},
   {id:'miembros',label:'Miembros'},
@@ -1327,7 +1319,7 @@ window.addEventListener('firebaseReady',async()=>{
         applyPlan();
         if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
           toast('Plan actualizado: '+userPlan+' ✓');
-          renderAlertas();renderRecordatoriosPendientes();renderReportes();renderEmpleados();renderInventario();renderEstadoCuenta();
+          renderAlertas();renderRecordatoriosPendientes();renderEmpleados();renderInventario();renderEstadoCuenta();
           renderDashboard();renderPagos();renderAsistencia();
           if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
         }
@@ -1639,7 +1631,7 @@ async function doLogout(){await window._signOut(window._auth);}
 async function loadAll(){
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal(),loadSugerencias()]);
   renderDashboard();renderPagos();renderAsistencia();
-  renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderReportes();renderEmpleados();renderInventario();
+  renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderEmpleados();renderInventario();
   // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
   // detalle fila por fila si el usuario está viendo el Dashboard. Se renderiza al entrar a esa pestaña
   // (activarTab) o si ya está activa en este momento (ej. tras recargar datos desde otra pestaña).
@@ -1678,7 +1670,7 @@ function recalcMiembrosPorId(){
   miembrosPorId=new Map(miembros.map(m=>[m.id,m]));
 }
 // Reconstruye los Maps miembroId->pagos (ordenados) UNA vez por recarga de pagos, en vez de recorrer
-// el arreglo completo de pagos por cada miembro en cada render (Dashboard, Miembros, Asistencia, Alertas, Reportes).
+// el arreglo completo de pagos por cada miembro en cada render (Dashboard, Miembros, Asistencia, Alertas).
 function recalcPagosPorMiembro(){
   const porId=new Map();
   for(const p of pagos){
@@ -2017,25 +2009,6 @@ function recordatoriosPendientes(){
   return resultado;
 }
 
-function calcTasaRenovacion(){
-  const hoy=new Date();
-  const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1).getTime();
-  const finMesAnt=new Date(hoy.getFullYear(),hoy.getMonth(),0,23,59,59).getTime();
-  const inicioMesAnt=new Date(hoy.getFullYear(),hoy.getMonth()-1,1).getTime();
-  let totalVencieronMesAnt=0,totalRenovaron=0;
-  for(const m of miembros){
-    const psFin=pagosPorMiembroFin.get(m.id);
-    if(!psFin||!psFin.length)continue;
-    const pagoAnt=psFin.find(p=>p.fechaFin>=inicioMesAnt&&p.fechaFin<=finMesAnt);
-    if(!pagoAnt)continue;
-    totalVencieronMesAnt++;
-    const psPago=pagosPorMiembroPago.get(m.id);
-    if(psPago&&psPago.length&&psPago[0].fechaPago>=inicioMes)totalRenovaron++;
-  }
-  const tasa=totalVencieronMesAnt>0?Math.round((totalRenovaron/totalVencieronMesAnt)*100):null;
-  return{tasa,renovaron:totalRenovaron,total:totalVencieronMesAnt};
-}
-
 // DASHBOARD
 function renderDashboard(){
   document.getElementById('stat-total').textContent=miembros.length;
@@ -2362,7 +2335,7 @@ async function corregirFechasImportadasAuto(){
     }
     cambios.forEach(c=>_actualizarLocal(pagos,c.id,{fechaPago:c.fechaNueva,diasPlan:c.diasNuevo}));
     recalcPagosPorMiembro();
-    renderDashboard();renderPagos();renderEstadoCuenta();renderReportes();
+    renderDashboard();renderPagos();renderEstadoCuenta();
     toast(`Se corrigieron automáticamente ${cambios.length} fecha${cambios.length===1?'':'s'} de pago importado${cambios.length===1?'':'s'} ✓`);
   }catch(e){console.error('corregirFechasImportadasAuto error:',e);/* no bloquea el flujo principal si falla */}
 }
@@ -2961,38 +2934,6 @@ function renderEstadoCuenta(){
   crearGraficaPeriodo('semana',totalSemana,totalVentasSemana,pagosSemana,ventasSemana,inicioSemana);
   crearGraficaPeriodo('quincena',totalQuincena,totalVentasQuincena,pagosQuincena,ventasQuincena,inicioQuincena);
   crearGraficaPeriodo('mes',totalMes,totalVentasMes,pagosMes,ventasMes,inicioMes);
-}
-
-// REPORTES
-function renderReportes(){
-  const el=document.getElementById('reportes-content');
-  // FIX 8: usar PLANES correctamente
-  if(!userFunciones.includes('reportes')){el.innerHTML=lockedFeature('Reportes y Estadísticas','tu plan actual');return;}
-  const totalPagado=pagos.reduce((s,p)=>s+p.monto,0);
-  const hoy=new Date();
-  const pagosMes=pagos.filter(p=>{const d=new Date(p.fechaPago);return d.getMonth()===hoy.getMonth()&&d.getFullYear()===hoy.getFullYear();});
-  const ingresosMes=pagosMes.reduce((s,p)=>s+p.monto,0);
-  const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
-  const asist7=asistencias.filter(a=>a.fecha>Date.now()-7*86400000).length;
-  const {tasa,renovaron,total}=calcTasaRenovacion();
-  el.innerHTML=`<div class="ec-grid">
-    <div class="ec-card"><h3>💰 Ingresos</h3>
-      <div class="ec-row"><span>Total histórico</span><span class="ec-val" style="color:var(--green)">$${totalPagado.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Este mes</span><span class="ec-val" style="color:var(--accent)">$${ingresosMes.toLocaleString()}</span></div>
-      <div class="ec-row"><span>Pagos este mes</span><span class="ec-val">${pagosMes.length}</span></div>
-    </div>
-    <div class="ec-card"><h3>👥 Miembros</h3>
-      <div class="ec-row"><span>Total</span><span class="ec-val">${miembros.length}</span></div>
-      <div class="ec-row"><span>Al corriente</span><span class="ec-val" style="color:var(--green)">${miembros.filter(m=>getEstado(m.id)==='activo').length}</span></div>
-      <div class="ec-row"><span>Vencidos</span><span class="ec-val" style="color:var(--red)">${miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id))).length}</span></div>
-      <div class="ec-row"><span>Tasa de renovación</span><span class="ec-val" style="color:${tasa===null?'var(--muted)':tasa>=70?'var(--green)':tasa>=40?'var(--orange)':'var(--red)'}">${tasa===null?'—':tasa+'%'}</span></div>
-    </div>
-    <div class="ec-card"><h3>📅 Asistencia</h3>
-      <div class="ec-row"><span>Hoy</span><span class="ec-val">${asistHoy}</span></div>
-      <div class="ec-row"><span>Últimos 7 días</span><span class="ec-val">${asist7}</span></div>
-      <div class="ec-row"><span>Total histórico</span><span class="ec-val">${asistencias.length}</span></div>
-    </div>
-  </div>`;
 }
 
 // EMPLEADOS
@@ -3606,7 +3547,7 @@ async function delMiembro(id){
   pesoCorporal=pesoCorporal.filter(p=>p.miembroId!==id);
   _eliminarLocal(miembros,id);
   recalcMiembrosPorId();recalcPagosPorMiembro();
-  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderReportes();
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();
   toast('Miembro eliminado ✓');
 }
 function editMiembro(id){
@@ -3637,7 +3578,7 @@ async function savePago(){
   const promocionUsada=document.getElementById('p-promocion').value||null;
   if(!mid||!monto||!fechaStr)return alert('Completa todos los campos');
   // Inscripción (Parte 8, ver CHANGELOG.md): si el checkbox está marcado, su monto se SUMA al
-  // total del pago (monto) para que Finanzas/Reportes sigan sumando lo que de verdad se cobró
+  // total del pago (monto) para que Finanzas siga sumando lo que de verdad se cobró
   // sin tener que tocar esos cálculos — y se guarda aparte (inscripcion) solo como referencia de
   // cuánto de ese total era inscripción, para mostrarlo en la tabla de Pagos.
   const inscripcionMonto=document.getElementById('p-inscripcion-check').checked
@@ -3653,7 +3594,7 @@ async function savePago(){
   recalcPagosPorMiembro();
   sincronizarMiembroPublico(mid); // el vencimiento cambió — refleja el nuevo estado en el portal
   closeModal('modal-pago');
-  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();renderReportes();
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
   toast('Pago registrado ✓');
 }
 // FIX: openModal('modal-pago') resetea el buscador de miembro (populateMiembrosSelect sin
