@@ -33,6 +33,10 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'usuarios', 'uidA', 'inventario', 'maq1'), { nombre: 'Press de banca', cantidad: 1, estado: 'bueno' });
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { numero: 1, nombre: 'Juan', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
   await setDoc(doc(db, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#FF0000', colorFondo: null, colorTarjetas: null, logoUrl: null });
+  // Vista de Progreso del staff (Parte 14, ver CHANGELOG.md)
+  await setDoc(doc(db, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1'), { nombre: 'Carlos Staff', pinAcceso: '4821' });
+  await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm2'), { numero: 2, nombre: 'Otro Miembro', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
+  await setDoc(doc(db, 'usuarios', 'uidA', 'registrosProgreso', 'rOtro'), { miembroId: 'm2', ejercicioId: 'sentadilla', musculo: 'Pierna', tipo: 'Normal', peso: 80, repeticiones: 8, fecha: Date.now() });
 });
 
 const gymA = testEnv.authenticatedContext('uidA', { email: 'gymA@test.com' }).firestore();
@@ -162,6 +166,31 @@ await check('Gym B NO puede leer las sugerencias de Gym A (a diferencia de miemb
   });
   await getDoc(doc(gymB, 'usuarios', 'uidA', 'sugerencias', 's2'));
 })(), false);
+
+console.log('\n--- Vista de Progreso del staff (?gym=...&staff=1, empleado con PIN ve el progreso de TODOS los clientes) ---');
+await check('Cliente anónimo puede leer el espejo público de un empleado (nombre+pinAcceso, para identificarse)', getDoc(doc(cliente, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1')), true);
+await check('Cliente anónimo puede LISTAR empleadosPublicos sin filtro (necesita mostrar todos los nombres como botones)', (async()=>{
+  const snap = await getDocs(collection(cliente, 'usuarios', 'uidA', 'empleadosPublicos'));
+  if (snap.empty) throw new Error('no vio ningún empleado público');
+})(), true);
+await check('Cliente anónimo NO puede escribir/alterar el espejo público de empleados', setDoc(doc(cliente, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1'), { nombre: 'Hackeado', pinAcceso: '0000' }), false);
+await check('Cliente anónimo NO puede leer el documento completo de empleados/ (sueldo/teléfono)', getDoc(doc(cliente, 'usuarios', 'uidA', 'empleados', 'emp1')), false);
+// Confirma la premisa clave de esta parte: registrosProgreso YA era legible sin filtro por
+// cualquier anónimo desde antes (regla sin resource.data de por medio) — la Vista de Progreso
+// del staff no necesitó ABRIR más esta colección, solo construir la UI sobre lo que ya estaba
+// abierto. Aquí se ve un registro de OTRO miembro (m2, no el "propio" de ningún cliente en
+// sesión) para probarlo de verdad.
+await check('Cliente anónimo puede LISTAR registrosProgreso de TODO el gym sin filtrar por miembroId (ya era así, no es nuevo de esta parte)', (async()=>{
+  const snap = await getDocs(collection(cliente, 'usuarios', 'uidA', 'registrosProgreso'));
+  const ids = snap.docs.map(d=>d.id);
+  if (!ids.includes('rOtro')) throw new Error('no vio el registro de otro miembro');
+})(), true);
+await check('Cliente anónimo puede LISTAR miembrosPublicos de TODO el gym sin filtrar (ya era así)', (async()=>{
+  const snap = await getDocs(collection(cliente, 'usuarios', 'uidA', 'miembrosPublicos'));
+  if (snap.size < 2) throw new Error('no vio a todos los miembros públicos');
+})(), true);
+await check('El staff (dueño del gym) sigue pudiendo leer/escribir empleadosPublicos normalmente', setDoc(doc(gymA, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1'), { nombre: 'Carlos Staff', pinAcceso: '9999' }), true);
+await check('Gym B (otro gimnasio) también puede leer empleadosPublicos de Gym A (mismo criterio que miembrosPublicos, documentado en firestore.rules — el dato sensible real es el pinAcceso, aceptado como barrera de UI, no de datos)', getDoc(doc(gymB, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1')), true);
 
 console.log('\n--- Límite conocido: auto-elevación de plan ---');
 await check('(esperado que PASE hoy) Gym A puede reescribir su propio plan/funciones', updateDoc(doc(gymA, 'usuarios', 'uidA'), { plan: 'premium', funciones: ['dashboard','finanzas','empleados'] }), true);

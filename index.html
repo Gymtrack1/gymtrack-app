@@ -34,6 +34,12 @@
     // Buzón de sugerencias (?gym=...&sugerencia=1): modo del portal completamente aparte de la
     // identificación por número+nombre — sin miembro, sin registro de progreso, 100% anónimo.
     window._portalSugerencia=_portalParams.get('sugerencia')==='1';
+    // Vista de Progreso del staff (?gym=...&staff=1, Parte 14 ver CHANGELOG.md): otro modo
+    // completamente aparte — un empleado se identifica con su nombre+PIN (ver empleadosPublicos)
+    // y ve, de solo lectura, el progreso de TODOS los clientes del gym. Misma sesión anónima que
+    // el resto del portal, pero con más alcance de lectura (ver nota junto a la regla de
+    // registrosProgreso en firestore.rules).
+    window._portalStaff=_portalParams.get('staff')==='1';
     document.getElementById('login-screen').style.display='none';
     document.getElementById('portal-screen').style.display='block';
     signInAnonymously(auth).then(()=>{ window.dispatchEvent(new Event('portalReady')); }).catch((err)=>{
@@ -693,6 +699,9 @@ contenedor, igual que app-screen/admin-screen. -->
     <div class="form-row">
       <div class="form-group"><label>Teléfono</label><input type="text" id="e-tel" placeholder="812 000 0000"></div>
       <div class="form-group"><label>Sueldo ($)</label><input type="number" id="e-sueldo" placeholder="5000"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="grid-column:span 2"><label>PIN de acceso a la Vista de Progreso (4-6 dígitos, opcional)</label><input type="text" inputmode="numeric" maxlength="6" id="e-pin" placeholder="Ej. 4821"></div>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-empleado')">Cancelar</button>
@@ -2982,8 +2991,13 @@ function renderEmpleados(){
   // FIX 9: usar PLANES correctamente
   if(!userFunciones.includes('empleados')){el.innerHTML=lockedFeature('Gestión de Empleados','tu plan actual');return;}
   el.innerHTML=`<div class="header-row"><div class="page-title">Empleados</div><button class="btn btn-primary" onclick="openModal('modal-empleado')">+ Nuevo</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>Acciones</th></tr></thead>
-  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${escAttr(e.nombre)}</strong></td><td>${e.puesto?escAttr(e.puesto):'—'}</td><td>${e.telefono?escAttr(e.telefono):'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
+  <div class="ec-card" style="margin-bottom:16px">
+    <h3>📊 QR de Vista de Progreso (staff)</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Un QR/link aparte, de SOLO LECTURA, para que cualquier empleado con PIN consulte el progreso reciente de TODOS los clientes (qué entrenaron, con qué peso, y una sugerencia de peso para hoy) sin poder editar nada — ni siquiera necesita loguearse como tú. Asígnale un PIN a cada empleado en la tabla de abajo antes de compartirlo.</div>
+    <button class="btn btn-primary btn-sm" onclick="descargarQRStaff()">⬇️ Descargar QR de Vista de Progreso</button>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Sueldo</th><th>PIN de acceso</th><th>Acciones</th></tr></thead>
+  <tbody>${empleados.length?empleados.map(e=>`<tr><td><strong>${escAttr(e.nombre)}</strong></td><td>${e.puesto?escAttr(e.puesto):'—'}</td><td>${e.telefono?escAttr(e.telefono):'—'}</td><td>${e.sueldo?'$'+e.sueldo:'—'}</td><td>${e.pinAcceso?escAttr(e.pinAcceso):'<span style="color:var(--muted)">Sin PIN</span>'}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editEmpleado('${e.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delEmpleado('${e.id}')">✕</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">👔</div><div>No hay empleados</div></div></td></tr>'}</tbody></table></div>`;
 }
 
 // INVENTARIO
@@ -3739,23 +3753,45 @@ async function registrarAsistencia(mid){
 // EMPLEADOS
 async function saveEmpleado(){
   const nombre=document.getElementById('e-nombre').value.trim();if(!nombre)return alert('Nombre obligatorio');
-  const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0};
+  const pinAcceso=document.getElementById('e-pin').value.trim();
+  if(pinAcceso&&!/^\d{4,6}$/.test(pinAcceso))return alert('El PIN de acceso debe ser de 4 a 6 dígitos (o déjalo vacío)');
+  const data={nombre,puesto:document.getElementById('e-puesto').value.trim(),telefono:document.getElementById('e-tel').value.trim(),sueldo:parseFloat(document.getElementById('e-sueldo').value)||0,pinAcceso};
   const editId=document.getElementById('edit-emp-id').value;
   // FIX: creadoEn solo en empleados nuevos
   if(!editId) data.creadoEn=Date.now();
+  let savedId=editId;
   if(editId){
     await updateDoc(userDoc('empleados',editId),data);
     _actualizarLocal(empleados,editId,data);
   }else{
     const ref=await addDoc(userCol('empleados'),data);
     _agregarLocal(empleados,ref.id,data);
+    savedId=ref.id;
   }
+  sincronizarEmpleadoPublico(savedId); // espejo público para la Vista de Progreso (staff), ver nota junto a la función
   closeModal('modal-empleado');
   renderEmpleados();
   toast('Empleado guardado ✓');
 }
-async function delEmpleado(id){if(!confirm('¿Eliminar empleado?'))return;await deleteDoc(userDoc('empleados',id));_eliminarLocal(empleados,id);renderEmpleados();}
-function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';openModal('modal-empleado');}
+async function delEmpleado(id){
+  if(!confirm('¿Eliminar empleado?'))return;
+  await deleteDoc(userDoc('empleados',id));
+  try{await deleteDoc(userDoc('empleadosPublicos',id));}catch(e){/* espejo no crítico, ver sincronizarEmpleadoPublico */}
+  _eliminarLocal(empleados,id);
+  renderEmpleados();
+}
+function editEmpleado(id){const e=empleados.find(x=>x.id===id);if(!e)return;document.getElementById('modal-emp-title').textContent='Editar Empleado';document.getElementById('edit-emp-id').value=id;document.getElementById('e-nombre').value=e.nombre;document.getElementById('e-puesto').value=e.puesto||'';document.getElementById('e-tel').value=e.telefono||'';document.getElementById('e-sueldo').value=e.sueldo||'';document.getElementById('e-pin').value=e.pinAcceso||'';openModal('modal-empleado');}
+// Espejo público mínimo de cada empleado (Parte 14, ver CHANGELOG.md) — SOLO nombre y pinAcceso,
+// para la Vista de Progreso del staff (?gym=...&staff=1, portal público de solo lectura). El
+// pinAcceso queda expuesto a cualquier sesión anónima que lea este documento: es una barrera de
+// UI para filtrar acceso casual, NO una regla de seguridad a prueba de manipulación técnica
+// directa a Firestore (ver firestore.rules) — mismo nivel de confianza que el resto del portal
+// público de GymTrack, documentado ahí mismo.
+async function sincronizarEmpleadoPublico(empleadoId){
+  const e=empleados.find(x=>x.id===empleadoId);
+  if(!e)return;
+  try{await setDoc(userDoc('empleadosPublicos',empleadoId),{nombre:e.nombre,pinAcceso:e.pinAcceso||''});}catch(err){/* espejo no crítico si falla */}
+}
 
 // GASTOS
 async function saveGasto(){
@@ -4053,6 +4089,14 @@ function descargarQRAcceso(){
 function descargarQRSugerencias(){
   _generarYDescargarQR(`${location.origin}${location.pathname}?gym=${uid}&sugerencia=1`,'QR-sugerencias-GymTrack.gif');
 }
+// QR DE LA VISTA DE PROGRESO DEL STAFF (Parte 14, ver CHANGELOG.md): mismo mecanismo, pero
+// apunta al modo ?staff=1 del portal — un flujo completamente aparte, de solo lectura, donde
+// cualquier empleado con PIN ve el progreso de TODOS los clientes. Se descarga desde el panel de
+// Empleados (no desde la pestaña QR) porque solo tiene sentido una vez que hay empleados con PIN
+// asignado.
+function descargarQRStaff(){
+  _generarYDescargarQR(`${location.origin}${location.pathname}?gym=${uid}&staff=1`,'QR-staff-GymTrack.gif');
+}
 
 // PERSONALIZACIÓN — subida a Storage y guardado en usuarios/{uid}. Logo y fondos se suben y
 // se guardan de inmediato al elegir el archivo (no tiene sentido "deshacer" un upload ya
@@ -4258,7 +4302,7 @@ function abrirModalPersonalizacion(){
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
   if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
-  if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo'].forEach(x=>document.getElementById(x).value='');}
+  if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo','e-pin'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-inventario'){
     const dl=document.getElementById('zonas-inventario');
     if(dl)dl.innerHTML=[...new Set(inventario.map(i=>i.zona).filter(Boolean))].map(z=>`<option value="${z}"></option>`).join('');
@@ -4702,7 +4746,9 @@ window.addEventListener('portalReady',()=>{
   cargarPersonalizacionPortal();
   // Buzón de sugerencias (?sugerencia=1): modo completamente aparte, sin identificación de
   // miembro — nunca entra al flujo de portalIdentificar/renderPortalHome de más abajo.
-  if(window._portalSugerencia)renderPortalSugerenciasForm();
+  // Vista de Progreso del staff (?staff=1): también completamente aparte, ver nota arriba.
+  if(window._portalStaff)renderPortalStaffIdentify();
+  else if(window._portalSugerencia)renderPortalSugerenciasForm();
   else renderPortalIdentify();
 });
 
@@ -5264,6 +5310,177 @@ function sugerenciaEnviadaHoy(){
 }
 function guardarSugerenciaEnviadaHoy(){
   try{localStorage.setItem(_sugerenciaHoyKey(),new Date().toDateString());}catch(e){/* localStorage no disponible: es solo cortesía visual, no bloquea nada */}
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VISTA DE PROGRESO DEL STAFF (Parte 14, ver CHANGELOG.md) — modo COMPLETAMENTE APARTE del
+// resto del portal, activado por ?gym=...&staff=1 (QR/link propio, se descarga desde el panel
+// de Empleados). A diferencia de portalIdentificar (un cliente viendo SU PROPIO progreso), aquí
+// un empleado ve el progreso de TODOS los clientes del gym — de solo lectura, no edita nada.
+//
+// Identificación: elige su nombre de una lista (espejo público empleadosPublicos, ver
+// sincronizarEmpleadoPublico) y escribe su PIN. Sin intentos limitados ni bloqueo — es un filtro
+// de acceso casual, no una cuenta protegida (mismo criterio que pidió el dueño del gym). El PIN
+// se valida COMPARÁNDOLO CONTRA EL VALOR YA DESCARGADO en portalStaffEmpleados: no hace falta (ni
+// existe) una consulta aparte "¿este PIN es correcto?" a Firestore.
+let portalStaffEmpleados=[];       // [{id,nombre,pinAcceso}] — espejo público, se carga una sola vez
+let portalStaffEmpleadoSel=null;   // empleado elegido en la pantalla de identificación
+let portalStaffMiembros=[];        // miembrosPublicos de TODO el gym (no solo uno, a diferencia del portal normal)
+let portalStaffRegistros=[];       // registrosProgreso de TODO el gym
+let portalStaffBusqueda='';
+let portalStaffSoloAyer=false;
+
+async function renderPortalStaffIdentify(){
+  const el=document.getElementById('portal-content');
+  if(!el)return;
+  if(!portalStaffEmpleados.length){
+    try{
+      const s=await getDocs(gymCol(window._portalGym,'empleadosPublicos'));
+      portalStaffEmpleados=s.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.pinAcceso);
+    }catch(e){
+      const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
+      el.innerHTML=`<div class="ec-card"><div class="empty"><div class="empty-icon">⚠️</div><div>No se pudo conectar. Verifica tu internet e intenta de nuevo. (${detalle})</div></div></div>`;
+      return;
+    }
+  }
+  if(!portalStaffEmpleados.length){
+    el.innerHTML='<div class="ec-card"><div class="empty"><div class="empty-icon">👔</div><div>Todavía no hay empleados con PIN de acceso asignado. Pídele al dueño del gimnasio que te asigne uno desde el panel de Empleados.</div></div></div>';
+    return;
+  }
+  if(!portalStaffEmpleadoSel){
+    el.innerHTML=`<div class="ec-card">
+      <h3>¿Quién eres?</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${portalStaffEmpleados.map(e=>`<button type="button" class="btn btn-ghost btn-sm" onclick="portalStaffElegirEmpleado('${e.id}')">${escAttr(e.nombre)}</button>`).join('')}
+      </div>
+    </div>`;
+    return;
+  }
+  el.innerHTML=`<div class="ec-card">
+    <h3>Hola, ${escAttr(portalStaffEmpleadoSel.nombre)}</h3>
+    <div class="form-group"><label>Tu PIN</label><input type="password" inputmode="numeric" id="portal-staff-pin" placeholder="••••" onkeydown="if(event.key==='Enter')portalStaffVerificarPin()"></div>
+    <div id="portal-staff-error" class="login-error"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="portalStaffCambiarEmpleado()">‹ No soy yo</button>
+      <button class="btn btn-primary" onclick="portalStaffVerificarPin()">Entrar</button>
+    </div>
+  </div>`;
+  const pinEl=document.getElementById('portal-staff-pin');
+  if(pinEl)pinEl.focus();
+}
+function portalStaffElegirEmpleado(id){
+  portalStaffEmpleadoSel=portalStaffEmpleados.find(e=>e.id===id)||null;
+  renderPortalStaffIdentify();
+}
+function portalStaffCambiarEmpleado(){
+  portalStaffEmpleadoSel=null;
+  renderPortalStaffIdentify();
+}
+async function portalStaffVerificarPin(){
+  const errEl=document.getElementById('portal-staff-error');
+  errEl.style.display='none';
+  const pin=document.getElementById('portal-staff-pin').value.trim();
+  if(!pin||!portalStaffEmpleadoSel||pin!==portalStaffEmpleadoSel.pinAcceso){
+    errEl.textContent='PIN incorrecto. Intenta de nuevo.';
+    errEl.style.display='block';
+    return;
+  }
+  await portalStaffCargarDatos();
+  renderPortalStaffProgreso();
+}
+async function portalStaffCargarDatos(){
+  const gymId=window._portalGym;
+  try{const s=await getDocs(gymCol(gymId,'miembrosPublicos'));portalStaffMiembros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalStaffMiembros=[];}
+  try{const s=await getDocs(gymCol(gymId,'registrosProgreso'));portalStaffRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalStaffRegistros=[];}
+}
+
+// Sugerencia de peso para hoy (Parte 14) — regla fija de sobrecarga progresiva basada SOLO en el
+// registro más reciente de cada ejercicio: Normal/PR (sin fallo) sugiere subir 2.5-5% (todavía
+// hay margen); Al fallo/Dropset sugiere repetir el mismo peso (ya se llegó al límite, forzar más
+// no es seguro sin supervisión); Calentamiento/Súper serie no trae sugerencia (no reflejan la
+// carga real de trabajo del cliente en ese ejercicio, sugerir algo ahí sería ruido).
+function _sugerenciaPesoHoy(r){
+  if(!r||r.tipo==='Calentamiento'||r.tipo==='Súper serie')return null;
+  if(r.tipo==='Al fallo'||r.tipo==='Dropset')return{mismoPeso:true};
+  return{min:Math.round(r.peso*1.025*10)/10,max:Math.round(r.peso*1.05*10)/10};
+}
+function _sugerenciaPesoHoyTexto(r){
+  const sug=_sugerenciaPesoHoy(r);
+  if(!sug)return'—';
+  const unidad=r.unidadOriginal||'kg';
+  return sug.mismoPeso?`Mismo peso (${formatearPeso(r.peso,unidad)})`:`${formatearPeso(sug.min,unidad)} – ${formatearPeso(sug.max,unidad)}`;
+}
+// Rango [inicio de ayer, inicio de hoy) en la hora LOCAL del navegador — usado por el filtro
+// "Solo los que entrenaron ayer".
+function _rangoAyer(){
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  const inicioHoy=hoy.getTime();
+  return[inicioHoy-86400000,inicioHoy];
+}
+// El buscador vive FUERA de #portal-staff-resultados (mismo criterio que el buscador de
+// ejercicios del perfil/portal, ver _perfilProgresoResultadosHtml) para no perder el foco/cursor
+// del input en cada tecla si todo el bloque se reconstruyera junto con el <input>.
+function renderPortalStaffProgreso(){
+  const el=document.getElementById('portal-content');
+  if(!el)return;
+  el.innerHTML=`<div class="ec-card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h3 style="margin-bottom:0">Progreso de clientes</h3>
+        <button class="btn btn-ghost btn-sm" onclick="portalStaffSalir()">Salir</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:8px 0 12px">Viendo como ${escAttr(portalStaffEmpleadoSel.nombre)} · solo lectura</div>
+      <input type="text" placeholder="Buscar cliente..." value="${escAttr(portalStaffBusqueda)}" oninput="portalStaffBuscar(this.value)">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:10px;cursor:pointer">
+        <input type="checkbox" ${portalStaffSoloAyer?'checked':''} onchange="portalStaffToggleAyer(this.checked)"> Solo los que entrenaron ayer
+      </label>
+    </div>
+    <div id="portal-staff-resultados">${_portalStaffResultadosHtml()}</div>`;
+}
+function _portalStaffResultadosHtml(){
+  const[inicioAyer,inicioHoy]=_rangoAyer();
+  const porMiembro=new Map();
+  portalStaffRegistros.forEach(r=>{
+    if(!porMiembro.has(r.miembroId))porMiembro.set(r.miembroId,[]);
+    porMiembro.get(r.miembroId).push(r);
+  });
+  let lista=portalStaffMiembros.filter(m=>porMiembro.has(m.id));
+  if(portalStaffSoloAyer)lista=lista.filter(m=>porMiembro.get(m.id).some(r=>r.fecha>=inicioAyer&&r.fecha<inicioHoy));
+  if(portalStaffBusqueda)lista=lista.filter(m=>coincideBusquedaEjercicio(m.nombre,portalStaffBusqueda));
+  lista=[...lista].sort((a,b)=>Math.max(...porMiembro.get(b.id).map(r=>r.fecha))-Math.max(...porMiembro.get(a.id).map(r=>r.fecha)));
+  if(!lista.length)return'<div class="ec-card"><div class="empty"><div class="empty-icon">📈</div><div>Sin clientes que coincidan</div></div></div>';
+  return lista.map(m=>_portalStaffTarjetaMiembro(m,porMiembro.get(m.id))).join('');
+}
+function _portalStaffTarjetaMiembro(m,registros){
+  // Registro más reciente POR EJERCICIO (no todo el historial) — es lo que pidió el dueño del
+  // gym: "qué ejercicio hizo cada uno recientemente, con qué peso" para decidir qué ponerle hoy.
+  const masRecientePorEjercicio=new Map();
+  registros.forEach(r=>{
+    const actual=masRecientePorEjercicio.get(r.ejercicioId);
+    if(!actual||r.fecha>actual.fecha)masRecientePorEjercicio.set(r.ejercicioId,r);
+  });
+  const filas=[...masRecientePorEjercicio.values()].sort((a,b)=>b.fecha-a.fecha).map(r=>{
+    const info=buscarEjercicioInfo(r.ejercicioId);
+    const unidad=r.unidadOriginal||'kg';
+    return`<tr><td>${escAttr(info?info.nombre:'Ejercicio eliminado')}</td><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,unidad)}</td><td>${r.repeticiones}</td><td>${_sugerenciaPesoHoyTexto(r)}</td></tr>`;
+  }).join('');
+  return`<div class="ec-card" style="margin-bottom:12px">
+    <h3>${escAttr(m.nombre)} <span style="color:var(--muted);font-weight:400">#${fmtNum(m.numero||0)}</span></h3>
+    <div class="table-wrap"><table><thead><tr><th>Ejercicio</th><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th><th>Sugerencia hoy</th></tr></thead><tbody>${filas}</tbody></table></div>
+  </div>`;
+}
+function portalStaffBuscar(v){portalStaffBusqueda=v;_refrescarPortalStaffResultados();}
+function portalStaffToggleAyer(v){portalStaffSoloAyer=v;_refrescarPortalStaffResultados();}
+function _refrescarPortalStaffResultados(){
+  const cont=document.getElementById('portal-staff-resultados');
+  if(cont)cont.innerHTML=_portalStaffResultadosHtml();
+}
+function portalStaffSalir(){
+  portalStaffEmpleadoSel=null;
+  portalStaffMiembros=[];
+  portalStaffRegistros=[];
+  portalStaffBusqueda='';
+  portalStaffSoloAyer=false;
+  renderPortalStaffIdentify();
 }
 </script>
 </body>

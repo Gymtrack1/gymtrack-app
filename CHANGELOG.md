@@ -4,6 +4,51 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — Vista de Progreso del staff, de solo lectura (Parte 14)
+
+**Qué se hizo:**
+- Nueva vista pública, un QR/link aparte (`?gym=...&staff=1`), donde cualquier empleado se
+  identifica con su nombre + PIN y ve, de SOLO LECTURA, el progreso reciente de TODOS los
+  clientes del gym (registro más reciente por ejercicio, con fecha/peso/reps/tipo de serie, y una
+  sugerencia de peso para hoy) — buscador por nombre y filtro "Solo los que entrenaron ayer".
+  Nunca edita nada desde ahí.
+- Nuevo campo `pinAcceso` (4-6 dígitos, opcional) en el modal de Empleados, validado con
+  `/^\d{4,6}$/` antes de guardar. Nueva columna "PIN de acceso" en la tabla de Empleados
+  (muestra "Sin PIN" si no tiene) y nueva tarjeta arriba de la tabla con el botón para
+  descargar el QR de esta vista — mismo mecanismo (`_generarYDescargarQR`) que los otros dos QR.
+- Nuevo espejo público `usuarios/{gymId}/empleadosPublicos/{id}` (solo `nombre`+`pinAcceso`),
+  mantenido por `sincronizarEmpleadoPublico()` desde `saveEmpleado`/`delEmpleado` — mismo patrón
+  que `sincronizarMiembroPublico`. Necesario porque el cliente anónimo necesita listar los
+  nombres para mostrarlos como botones y comparar el PIN escrito, y Firestore no puede ocultar
+  campos dentro de un documento vía reglas (por eso el mirror en vez de abrir `empleados/` completo).
+- **Punto clave verificado antes de tocar reglas:** `registrosProgreso` y `miembrosPublicos` YA
+  eran legibles SIN FILTRO por cualquier sesión anónima desde antes de esta parte (la regla no
+  depende de `resource.data`) — la vista de staff no necesitó ampliar esas dos colecciones, solo
+  construir la UI sobre lo que ya estaba abierto. Lo único nuevo en `firestore.rules` es
+  `empleadosPublicos` (lectura pública, sin escritura pública). Documentado explícitamente en
+  `firestore.rules` el aviso de confianza que pidió el usuario: el PIN es una barrera de UI, no
+  una regla a prueba de manipulación técnica directa — mismo nivel que el resto del portal
+  público de GymTrack, aplicado aquí a un alcance de datos mayor (todos los clientes, no uno).
+- Sugerencia de peso (`_sugerenciaPesoHoy`): Normal/PR sugiere subir 2.5-5% sobre el último
+  peso registrado; Al fallo/Dropset sugiere repetir el mismo peso; Calentamiento/Súper serie no
+  trae sugerencia.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` de `index.html` — sintaxis válida.
+- Simulación en Node aislada (sin Firestore) de `_sugerenciaPesoHoy`/`_sugerenciaPesoHoyTexto`
+  (los 6 tipos de serie), del rango "ayer" en hora local, y de la regex de validación del PIN:
+  **20 OK / 0 FAIL**.
+- `rules-test/firestore.rules` sincronizado con la raíz; `rules-test/test.mjs` con 8 casos
+  nuevos — corrido contra el emulador real de Firestore: **66 OK / 0 FAIL**, incluyendo que un
+  cliente anónimo SÍ puede leer/listar `empleadosPublicos` pero NO escribirlo, que NO puede leer
+  el documento completo de `empleados/` (sueldo/teléfono), y la confirmación explícita (con un
+  registro de un miembro que no es "el propio" de nadie en sesión) de que `registrosProgreso`/
+  `miembrosPublicos` ya eran legibles sin filtro desde antes de esta parte.
+- `git diff` revisado: el portal del cliente (`portalIdentificar`/`renderPortalHome`) y el buzón
+  de sugerencias no se tocaron — la vista de staff vive en su propio bloque de funciones
+  (`portalStaff*`), activado solo por `?staff=1`, con su propio dispatch en el listener de
+  `portalReady`.
+
 ## 2026-09-09 — Se eliminan los botones manuales "Corregir Fechas Importadas" y "Sincronizar Portal QR"
 
 **Qué se hizo:**

@@ -17,6 +17,7 @@ rules_version = '2';
 //   usuarios/{gymId}/pesoCorporal/{id}      peso corporal (staff + portal QR, ver más abajo)
 //   usuarios/{gymId}/config/personalizacion espejo público de colores/logo (ver más abajo)
 //   usuarios/{gymId}/sugerencias/{id}       buzón anónimo del portal QR (ver más abajo)
+//   usuarios/{gymId}/empleadosPublicos/{id} espejo público mínimo por empleado (ver más abajo)
 //
 // Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
 // datos de otro gimnasio, sin importar que llame al SDK de Firestore
@@ -114,6 +115,34 @@ rules_version = '2';
 //     volver a leerla: eso sigue siendo solo del dueño del gimnasio (o
 //     admin), vía la regla genérica de más abajo, igual que el resto de las
 //     colecciones.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// VISTA DE PROGRESO DEL STAFF (?gym=...&staff=1, Parte 14, ver CHANGELOG.md) — otro modo
+// COMPLETAMENTE APARTE, activado por un tercer QR/link distinto (generado desde el panel de
+// Empleados). Un empleado se identifica con su nombre + un PIN de 4-6 dígitos (campo pinAcceso
+// en empleados/{id}) y ve, de SOLO LECTURA, el progreso de TODOS los clientes del gym — no solo
+// el suyo, a diferencia de registrosProgreso/pesoCorporal arriba (donde cada cliente ve/crea lo
+// propio, aunque la regla en sí no aísla por miembro).
+//
+//   usuarios/{gymId}/empleadosPublicos — espejo de SOLO nombre y pinAcceso de cada empleado
+//     (mismo id de documento que en empleados/{id}), mantenido por el propio staff
+//     (sincronizarEmpleadoPublico() en index.html, llamada desde saveEmpleado/delEmpleado).
+//     Lectura pública (get + list) — el cliente anónimo necesita poder listar los nombres para
+//     mostrarlos como botones, y comparar el PIN escrito contra pinAcceso del lado del cliente
+//     (no hay forma de "validar un PIN sin revelarlo" con reglas de Firestore: la única
+//     alternativa sería una Cloud Function, que este proyecto no tiene). Sin escritura pública —
+//     lo sigue manteniendo solo el staff, vía la regla genérica de más abajo.
+//
+//   AVISO DE CONFIANZA (documentado explícitamente porque aquí el "premio" de saltarse la
+//   barrera es mayor que en el resto del portal): el PIN es una barrera de UI para filtrar
+//   acceso casual — que un cliente cualquiera no vea por accidente el progreso de otros — NO una
+//   regla de seguridad a prueba de manipulación técnica directa a Firestore. Cualquiera que llame
+//   al SDK/API de Firestore directo (sin pasar por index.html) ya podía leer TODO
+//   registrosProgreso/pesoCorporal de un gym con solo autenticarse anónimo (ver nota junto a esas
+//   colecciones arriba, sin cambios en esta parte) — lo único que se abre aquí de más es
+//   empleadosPublicos (nombre + pinAcceso). Mismo nivel de confianza que ya tiene el resto de
+//   GymTrack sin backend propio, aplicado ahora a un alcance de datos mayor (todos los clientes,
+//   no uno).
 //
 // ─────────────────────────────────────────────────────────────────────────
 // AGENTE DE IA: META Y PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md) — NO es
@@ -245,6 +274,13 @@ service cloud.firestore {
           request.resource.data.texto.size() <= 500 &&
           request.resource.data.fecha is number &&
           request.resource.data.leida == false;
+      }
+
+      // Espejo público de empleados (Vista de Progreso del staff) — ver nota extensa arriba.
+      // Solo lectura pública (nombre + pinAcceso); la escritura la sigue haciendo únicamente el
+      // staff, vía la regla genérica de abajo.
+      match /empleadosPublicos/{docId} {
+        allow read: if isSignedIn();
       }
 
       // Datos operativos del gimnasio (miembros, pagos, asistencias, etc).
