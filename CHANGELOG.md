@@ -4,6 +4,34 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — FIX: checkbox "Solo los que entrenaron ayer" se desbordaba de la tarjeta
+
+**El bug (reportado por el usuario con captura desde WhatsApp/celular):** el texto "Solo los que
+entrenaron ayer" aparecía apilado palabra por palabra, saliéndose del borde derecho de la
+tarjeta, en vez de quedarse en una línea junto al checkbox dentro de la tarjeta.
+
+**Causa real:** hay una regla CSS global en `index.html`
+(`input,select,textarea{width:100%;...}`) que le pone `width:100%` a TODOS los `<input>` —
+pensada para los campos de texto de los formularios, pero que también afecta a
+`<input type="checkbox">` si no se le pone un estilo aparte que lo cancele. El checkbox de
+"Solo los que entrenaron ayer" (agregado en la Parte 14, Vista de Progreso del staff) era el
+único checkbox de todo el archivo al que se le olvidó ese estilo — la app ya tenía el patrón
+correcto en otros dos checkboxes (el de "Cobrar inscripción" en Pagos y el de marcar hábitos del
+plan de IA), solo faltaba aplicarlo aquí. Al estirarse el checkbox a 100% del ancho del `<label>`
+flex, el texto quedaba con casi nada de espacio y se apilaba palabra por palabra, desbordando la
+tarjeta (que no recorta contenido que se sale).
+
+**Qué se hizo:** se le agregó al checkbox el mismo estilo inline que ya usan los otros dos
+(`flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:
+none;border-radius:0`), que lo regresa a su tamaño nativo de checkbox.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Reproducción real con Playwright en viewport de celular (390px): se armó el mismo estado que
+  deja `portalStaffVerificarPin()` tras un PIN correcto (sin depender de Firebase) y se llamó a
+  `renderPortalStaffProgreso()` directo — la captura confirma que el checkbox ya se ve de tamaño
+  normal y el texto queda en una sola línea, dentro de la tarjeta.
+
 ## 2026-09-10 — El contenido de cada pestaña se centra en el espacio a la derecha del menú
 
 **Qué se hizo:** tras el cambio a barra lateral, el usuario notó que el contenido quedaba pegado

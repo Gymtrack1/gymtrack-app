@@ -5429,7 +5429,7 @@ function renderPortalStaffProgreso(){
       <div style="font-size:12px;color:var(--muted);margin:8px 0 12px">Viendo como ${escAttr(portalStaffEmpleadoSel.nombre)} · solo lectura</div>
       <input type="text" placeholder="Buscar cliente..." value="${escAttr(portalStaffBusqueda)}" oninput="portalStaffBuscar(this.value)">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:10px;cursor:pointer">
-        <input type="checkbox" ${portalStaffSoloAyer?'checked':''} onchange="portalStaffToggleAyer(this.checked)"> Solo los que entrenaron ayer
+        <input type="checkbox" ${portalStaffSoloAyer?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:none;border-radius:0" onchange="portalStaffToggleAyer(this.checked)"> Solo los que entrenaron ayer
       </label>
     </div>
     <div id="portal-staff-resultados">${_portalStaffResultadosHtml()}</div>`;
