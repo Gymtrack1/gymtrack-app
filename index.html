@@ -1990,7 +1990,11 @@ function calcularPatronCompra(mid){
 function _historialParaMeta(meta,pesos,registros){
   if(!meta)return null;
   if(meta.tipo==='pesoCorporal')return pesos.map(p=>({fecha:p.fecha,valor:p.peso}));
-  if(meta.tipo==='ejercicio'&&meta.ejercicioObjetivo)return registros.filter(r=>r.ejercicioId===meta.ejercicioObjetivo).map(r=>({fecha:r.fecha,valor:r.peso}));
+  // typeof r.peso==='number' descarta registros de cardio (sin peso) que hayan quedado mezclados
+  // con el ejercicio objetivo — el selector de meta ya no deja elegir un ejercicio de cardio
+  // (Parte 15), pero una meta vieja apuntando a uno sigue siendo posible si no se ha vuelto a
+  // guardar; sin este filtro, un registro de cardio metería un valor undefined en el historial.
+  if(meta.tipo==='ejercicio'&&meta.ejercicioObjetivo)return registros.filter(r=>r.ejercicioId===meta.ejercicioObjetivo&&typeof r.peso==='number').map(r=>({fecha:r.fecha,valor:r.peso}));
   return null;
 }
 function _tendenciaMetaDesdeHistorial(historial){
@@ -3370,17 +3374,20 @@ function _perfilProgresoResultadosHtml(miembroId){
   const ejercicioIds=todos.filter(id=>coincideBusquedaEjercicio(nombreEjercicio(id),perfilProgresoBusqueda));
   if(!ejercicioIds.length)return'<div class="empty"><div class="empty-icon">🔍</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>';
   if(!perfilProgresoEjercicioSel||!ejercicioIds.includes(perfilProgresoEjercicioSel))perfilProgresoEjercicioSel=ejercicioIds[0];
-  const tipos=[...new Set(registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel).map(r=>r.tipo))];
+  // Cardio (Parte 15): sin "Tipo de serie" (no aplica a una caminadora) — ni el selector de
+  // filtro, ni la columna, solo Fecha/Tiempo/Velocidad.
+  const esCardio=_esCardioEjercicio(perfilProgresoEjercicioSel);
+  const tipos=esCardio?[]:[...new Set(registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel).map(r=>r.tipo))];
   if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
-  const filtrados=registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  const filtrados=registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel&&(esCardio||!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
   return`
     <div class="form-row">
-      <div class="form-group"><label>Ejercicio</label><select onchange="perfilCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Tipo de serie</label><select onchange="perfilCambiarProgresoFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
+      <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select onchange="perfilCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
+      ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select onchange="perfilCambiarProgresoFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
-    <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
-      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
+    <div class="table-wrap" style="margin-top:10px"><table><thead>${_headerProgresoHtml(esCardio)}</thead><tbody>${
+      filtrados.length?filtrados.map(r=>_filaProgresoHtml(r,esCardio)).join(''):`<tr><td colspan="${_colspanProgreso(esCardio)}"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>`
     }</tbody></table></div>`;
 }
 function _refrescarPerfilProgresoResultados(miembroId){
@@ -3395,16 +3402,10 @@ function dibujarChartProgresoPerfil(miembroId){
   const canvas=document.getElementById('chart-progreso-perfil');
   if(!canvas||typeof Chart==='undefined')return;
   if(chartProgresoPerfil){chartProgresoPerfil.destroy();chartProgresoPerfil=null;}
-  const filtrados=registrosProgreso.filter(r=>r.miembroId===miembroId&&r.ejercicioId===perfilProgresoEjercicioSel&&(!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo));
+  const esCardio=_esCardioEjercicio(perfilProgresoEjercicioSel);
+  const filtrados=registrosProgreso.filter(r=>r.miembroId===miembroId&&r.ejercicioId===perfilProgresoEjercicioSel&&(esCardio||!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo));
   const asc=[...filtrados].sort((a,b)=>a.fecha-b.fecha);
-  // Misma lógica que dibujarChartPortalProgreso: una sola unidad para toda la línea, la del
-  // registro más reciente (siempre convertible sin pérdida porque `peso` es kg canónico).
-  const unidadChart=asc.length?(asc[asc.length-1].unidadOriginal||'kg'):'kg';
-  chartProgresoPerfil=new Chart(canvas,{
-    type:'line',
-    data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:asc.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
-  });
+  chartProgresoPerfil=new Chart(canvas,_chartConfigProgreso(asc,esCardio));
 }
 
 // META Y RECOMENDACIÓN IA (Parte 6/7, ver CHANGELOG.md): mismo patrón que peso corporal/notas de
@@ -4552,6 +4553,16 @@ const BIBLIOTECA_EJERCICIOS={
     {id:'sled-push',nombre:'Empuje de trineo (sled push)',parte:'Pierna / cuerpo completo'},
   ],
 };
+// Tipo de medición de cada ejercicio (Parte 15, ver CHANGELOG.md): 'fuerza' se registra con
+// peso/repeticiones/series; 'cardio' con tiempo/velocidad — formularios y vistas de progreso
+// completamente distintos, ver renderPortalRegistrarSerieSeccion/portalGuardarSerie más abajo.
+// Se deriva del músculo 'Cardio' de la propia biblioteca (ya agrupaba justo las máquinas
+// cardiovasculares) en vez de listarlo ejercicio por ejercicio — así una máquina de cardio que
+// se agregue a futuro a esa categoría ya queda bien clasificada sin tener que acordarse de
+// repetir el campo a mano.
+Object.entries(BIBLIOTECA_EJERCICIOS).forEach(([musculo,lista])=>{
+  lista.forEach(ex=>{ex.tipo=musculo==='Cardio'?'cardio':'fuerza';});
+});
 // Busca un ejercicio por id en toda la biblioteca (sin importar el músculo) — lo usan tanto
 // el portal como el perfil del miembro en el panel de staff para mostrar nombre/parte a partir
 // de lo guardado en registrosProgreso (ejercicioId). Devuelve null si ya no existe (ej. se
@@ -4563,13 +4574,58 @@ function buscarEjercicioInfo(id){
   }
   return null;
 }
+// Fuerza vs cardio en las vistas de progreso (Parte 15, ver CHANGELOG.md) — helpers COMPARTIDOS
+// entre el perfil del miembro (staff, chart-progreso-perfil) y "Mi progreso" del portal
+// (chart-portal-progreso), para que las dos vistas nunca diverjan en cómo deciden/muestran
+// cardio vs fuerza (antes eran dos implementaciones idénticas copiadas, ahora una sola fuente).
+function _esCardioEjercicio(ejercicioId){
+  const info=buscarEjercicioInfo(ejercicioId);
+  return!!(info&&info.tipo==='cardio');
+}
+function _filaProgresoHtml(r,esCardio){
+  if(esCardio)return`<tr><td>${fmtDate(r.fecha)}</td><td>${r.tiempoMinutos} min</td><td>${r.velocidad} km/h</td></tr>`;
+  return`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td><td>${r.series||1}</td></tr>`;
+}
+// Peso×reps×series o tiempo×velocidad en una sola celda — la usa la Vista de Progreso del staff
+// (_portalStaffTarjetaMiembro), donde una misma tabla puede mezclar varios ejercicios de un
+// mismo cliente (algunos de fuerza, otros de cardio) en vez de una tabla por ejercicio como en
+// el perfil/portal de arriba, así que ahí conviene una sola columna "Detalle" en vez de 5-6
+// columnas la mitad vacías según el tipo de cada fila.
+function _detalleRegistroTexto(r,esCardio){
+  if(esCardio)return`${r.tiempoMinutos} min · ${r.velocidad} km/h`;
+  const series=r.series||1;
+  return`${formatearPeso(r.peso,r.unidadOriginal||'kg')} × ${r.repeticiones} reps × ${series} serie${series===1?'':'s'}`;
+}
+function _headerProgresoHtml(esCardio){
+  return esCardio?'<tr><th>Fecha</th><th>Tiempo</th><th>Velocidad</th></tr>':'<tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th><th>Series</th></tr>';
+}
+function _colspanProgreso(esCardio){return esCardio?3:5;}
+function _opcionesChartProgreso(){
+  return{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}};
+}
+// Arma la config de Chart.js (type/data/options) para la línea de progreso — cardio grafica
+// velocidad (km/h), fuerza grafica peso (en la unidad del registro más reciente, siempre
+// convertible sin pérdida porque `peso` se guarda canónico en kg). Quien llama sigue siendo
+// dueño de su propia instancia de Chart (destroy/new), solo la CONFIG se comparte.
+function _chartConfigProgreso(asc,esCardio){
+  if(esCardio){
+    return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Velocidad (km/h)',data:asc.map(r=>r.velocidad),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
+  }
+  const unidadChart=asc.length?(asc[asc.length-1].unidadOriginal||'kg'):'kg';
+  return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:asc.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
+}
 // <option> de toda la biblioteca agrupados por músculo (<optgroup>) — usado por el selector de
 // "Ejercicio" de la meta de fitness (Parte 6), tanto en el perfil del miembro (staff) como en
-// el portal. Comparte la misma biblioteca fija que el registro de progreso.
+// el portal. Comparte la misma biblioteca fija que el registro de progreso. Solo ejercicios de
+// FUERZA (Parte 15): la meta de este tipo es "levantar X kg en el ejercicio Y" (ver worker.js),
+// algo que no aplica a una máquina de cardio (no tiene peso) — un músculo cuyos ejercicios sean
+// todos de cardio (ej. 'Cardio') simplemente no aparece en la lista.
 function _opcionesEjercicioSelectHtml(seleccionado){
-  return Object.entries(BIBLIOTECA_EJERCICIOS).map(([musculo,arr])=>
-    `<optgroup label="${escAttr(musculo)}">${arr.map(ex=>`<option value="${ex.id}" ${ex.id===seleccionado?'selected':''}>${escAttr(ex.nombre)}</option>`).join('')}</optgroup>`
-  ).join('');
+  return Object.entries(BIBLIOTECA_EJERCICIOS).map(([musculo,arr])=>{
+    const deFuerza=arr.filter(ex=>ex.tipo!=='cardio');
+    if(!deFuerza.length)return'';
+    return`<optgroup label="${escAttr(musculo)}">${deFuerza.map(ex=>`<option value="${ex.id}" ${ex.id===seleccionado?'selected':''}>${escAttr(ex.nombre)}</option>`).join('')}</optgroup>`;
+  }).join('');
 }
 
 // BUZÓN DE SUGERENCIAS (Parte 4, ver CHANGELOG.md): lista fija de categorías — la misma que
@@ -4912,13 +4968,16 @@ function portalVolverEjercicios(){portalEjercicioSel='';renderPortalHome();}
 
 // REGISTRAR SERIE (Parte 1d/3): mismo formulario de siempre, ahora encabezado por el ejercicio
 // elegido en la navegación de arriba en vez de por el nombre de una máquina escaneada.
+// Parte 15 (ver CHANGELOG.md): si el ejercicio es de tipo 'cardio', el formulario es
+// COMPLETAMENTE APARTE — tiempo/velocidad en vez de peso/repeticiones/series, y sin "Tipo de
+// serie" (Normal/PR/Dropset/etc. no tienen sentido en una caminadora).
 function renderPortalRegistrarSerieSeccion(ejercicio){
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverEjercicios()">‹ ${escAttr(portalMusculoSel)}</button>
-    </div>
-    <h3 style="margin-top:8px">🏋️ ${escAttr(ejercicio.nombre)}</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${escAttr(ejercicio.parte)}</div>
+  const esCardio=ejercicio.tipo==='cardio';
+  const camposHtml=esCardio?`
+    <div class="form-row">
+      <div class="form-group"><label>Duración (minutos)</label><input type="number" id="portal-serie-tiempo" placeholder="30"></div>
+      <div class="form-group"><label>Velocidad (km/h)</label><input type="number" step="0.1" id="portal-serie-velocidad" placeholder="8"></div>
+    </div>`:`
     <div class="form-group">
       <label>Tipo de serie</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap" id="portal-tipo-botones">
@@ -4935,7 +4994,15 @@ function renderPortalRegistrarSerieSeccion(ejercicio){
       </div>
       <div class="form-group"><label>Repeticiones</label><input type="number" id="portal-serie-reps" placeholder="10"></div>
     </div>
-    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarSerie()">Guardar serie</button>
+    <div class="form-group"><label>Series (opcional — déjalo vacío si es una sola)</label><input type="number" id="portal-serie-series" placeholder="1"></div>`;
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverEjercicios()">‹ ${escAttr(portalMusculoSel)}</button>
+    </div>
+    <h3 style="margin-top:8px">🏋️ ${escAttr(ejercicio.nombre)}</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${escAttr(ejercicio.parte)}</div>
+    ${camposHtml}
+    <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="portalGuardarSerie()">${esCardio?'Guardar registro':'Guardar serie'}</button>
   </div>`;
 }
 // Convierte el número YA ESCRITO en el input al cambiar de unidad (para no perder lo que el
@@ -4968,21 +5035,35 @@ function portalElegirTipo(t){
   if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[t]||(t==='__otro__'?'Escribe el nombre del tipo de serie.':'');
 }
 async function portalGuardarSerie(){
-  if(!portalTipoSel)return alert('Elige el tipo de serie');
-  const tipo=portalTipoSel==='__otro__'?document.getElementById('portal-tipo-otro').value.trim():portalTipoSel;
-  if(!tipo)return alert('Escribe el tipo de serie');
-  const pesoCapturado=parseFloat(document.getElementById('portal-serie-peso').value);
-  const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
-  if(!pesoCapturado||!repeticiones)return alert('Escribe el peso y las repeticiones');
-  // Siempre se guarda en kg (no rompe cálculos ni comparaciones históricas) — unidadOriginal
-  // guarda con qué unidad lo capturó el cliente, para poder mostrárselo tal cual después.
-  const peso=portalUnidadPeso==='lb'?lbAKg(pesoCapturado):pesoCapturado;
-  const data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tipo,peso,unidadOriginal:portalUnidadPeso,repeticiones,fecha:Date.now()};
+  const info=buscarEjercicioInfo(portalEjercicioSel);
+  const esCardio=info&&info.tipo==='cardio';
+  let data;
+  if(esCardio){
+    const tiempoMinutos=parseFloat(document.getElementById('portal-serie-tiempo').value);
+    const velocidad=parseFloat(document.getElementById('portal-serie-velocidad').value);
+    if(!tiempoMinutos||!velocidad)return alert('Escribe la duración y la velocidad');
+    data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tiempoMinutos,velocidad,fecha:Date.now()};
+  }else{
+    if(!portalTipoSel)return alert('Elige el tipo de serie');
+    const tipo=portalTipoSel==='__otro__'?document.getElementById('portal-tipo-otro').value.trim():portalTipoSel;
+    if(!tipo)return alert('Escribe el tipo de serie');
+    const pesoCapturado=parseFloat(document.getElementById('portal-serie-peso').value);
+    const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
+    if(!pesoCapturado||!repeticiones)return alert('Escribe el peso y las repeticiones');
+    // Series (Parte 15) es opcional — dejarlo vacío significa "una sola serie", igual que
+    // siempre se pudo registrar antes de que existiera este campo (no se vuelve obligatorio
+    // escribir "1" cada vez que el cliente solo hizo una serie).
+    const series=parseInt(document.getElementById('portal-serie-series').value)||1;
+    // Siempre se guarda en kg (no rompe cálculos ni comparaciones históricas) — unidadOriginal
+    // guarda con qué unidad lo capturó el cliente, para poder mostrárselo tal cual después.
+    const peso=portalUnidadPeso==='lb'?lbAKg(pesoCapturado):pesoCapturado;
+    data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tipo,peso,unidadOriginal:portalUnidadPeso,repeticiones,series,fecha:Date.now()};
+  }
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
     portalRegistros.push({id:ref.id,...data});
     portalTipoSel='';
-    toast('Serie guardada ✓');
+    toast(esCardio?'Registro guardado ✓':'Serie guardada ✓');
     renderPortalHome();
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
 }
@@ -5010,17 +5091,20 @@ function _portalProgresoResultadosHtml(){
     // puede cambiarlo desde el selector (o la búsqueda) para ver el progreso de otros ejercicios.
     portalProgresoEjercicioSel=(portalEjercicioSel&&ejercicioIds.includes(portalEjercicioSel))?portalEjercicioSel:ejercicioIds[0];
   }
-  const tipos=[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
+  // Cardio (Parte 15): sin "Tipo de serie" (no aplica a una caminadora) — ni el selector de
+  // filtro, ni la columna, solo Fecha/Tiempo/Velocidad.
+  const esCardio=_esCardioEjercicio(portalProgresoEjercicioSel);
+  const tipos=esCardio?[]:[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
-  const filtrados=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  const filtrados=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
   return`
     <div class="form-row">
-      <div class="form-group"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>
+      <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
+      ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
-    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th></tr></thead><tbody>${
-      filtrados.length?filtrados.map(r=>`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td></tr>`).join(''):'<tr><td colspan="4"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>'
+    <div class="table-wrap" style="margin-top:12px"><table><thead>${_headerProgresoHtml(esCardio)}</thead><tbody>${
+      filtrados.length?filtrados.map(r=>_filaProgresoHtml(r,esCardio)).join(''):`<tr><td colspan="${_colspanProgreso(esCardio)}"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>`
     }</tbody></table></div>`;
 }
 function _refrescarPortalProgresoResultados(){
@@ -5036,16 +5120,9 @@ function dibujarChartPortalProgreso(){
   if(!canvas)return;
   if(typeof Chart==='undefined')return;
   if(chartPortalProgreso){chartPortalProgreso.destroy();chartPortalProgreso=null;}
-  const datos=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
-  // La gráfica necesita UNA sola unidad consistente para toda la línea (no puede mezclar kg y
-  // lb en el mismo eje) — usa la unidad del registro MÁS RECIENTE, ya guardado siempre en kg,
-  // así que convertir a cualquier unidad para mostrarlo es directo y sin pérdida.
-  const unidadChart=datos.length?(datos[datos.length-1].unidadOriginal||'kg'):'kg';
-  chartPortalProgreso=new Chart(canvas,{
-    type:'line',
-    data:{labels:datos.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:datos.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
-  });
+  const esCardio=_esCardioEjercicio(portalProgresoEjercicioSel);
+  const datos=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
+  chartPortalProgreso=new Chart(canvas,_chartConfigProgreso(datos,esCardio));
 }
 
 function dibujarChartPortalPeso(){
@@ -5399,6 +5476,9 @@ async function portalStaffCargarDatos(){
 // carga real de trabajo del cliente en ese ejercicio, sugerir algo ahí sería ruido).
 function _sugerenciaPesoHoy(r){
   if(!r||r.tipo==='Calentamiento'||r.tipo==='Súper serie')return null;
+  // Registros de cardio (Parte 15) no tienen peso — la sobrecarga progresiva no aplica ahí,
+  // nunca sobre un número inexistente (undefined*1.025 = NaN, no "sin sentido" silencioso).
+  if(typeof r.peso!=='number')return null;
   if(r.tipo==='Al fallo'||r.tipo==='Dropset')return{mismoPeso:true};
   return{min:Math.round(r.peso*1.025*10)/10,max:Math.round(r.peso*1.05*10)/10};
 }
@@ -5468,14 +5548,14 @@ function _portalStaffTarjetaMiembro(m,registros){
   const filas=grupos.flatMap(g=>{
     const info=buscarEjercicioInfo(g.ejercicioId);
     const nombreEj=info?info.nombre:'Ejercicio eliminado';
+    const esCardio=!!(info&&info.tipo==='cardio');
     return g.seriesDelDia.map(r=>{
-      const unidad=r.unidadOriginal||'kg';
-      return`<tr><td>${escAttr(nombreEj)}</td><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,unidad)}</td><td>${r.repeticiones}</td><td>${_sugerenciaPesoHoyTexto(r)}</td></tr>`;
+      return`<tr><td>${escAttr(nombreEj)}</td><td>${fmtDate(r.fecha)}</td><td>${esCardio?'—':escAttr(r.tipo)}</td><td>${_detalleRegistroTexto(r,esCardio)}</td><td>${esCardio?'—':_sugerenciaPesoHoyTexto(r)}</td></tr>`;
     });
   }).join('');
   return`<div class="ec-card" style="margin-bottom:12px">
     <h3>${escAttr(m.nombre)} <span style="color:var(--muted);font-weight:400">#${fmtNum(m.numero||0)}</span></h3>
-    <div class="table-wrap"><table><thead><tr><th>Ejercicio</th><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th><th>Sugerencia hoy</th></tr></thead><tbody>${filas}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Ejercicio</th><th>Fecha</th><th>Tipo</th><th>Detalle</th><th>Sugerencia hoy</th></tr></thead><tbody>${filas}</tbody></table></div>
   </div>`;
 }
 function portalStaffBuscar(v){portalStaffBusqueda=v;_refrescarPortalStaffResultados();}

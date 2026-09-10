@@ -4,6 +4,72 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-10 — Series en registros de fuerza + registro de cardio aparte (Parte 15)
+
+**Qué se hizo:**
+1. **Número de series**: nuevo campo opcional `series` en el formulario de registro del portal
+   (`portalGuardarSerie`) — un solo registro puede representar "3 series de 10 reps a 80kg" en
+   vez de tener que mandar el formulario 3 veces. Opcional a propósito: dejarlo vacío sigue
+   significando "una sola serie" (default 1), igual que funcionaba antes de que existiera el
+   campo — no se vuelve obligatorio escribir "1" cada vez.
+2. **Cardio vs fuerza**: nuevo campo `tipo:'fuerza'|'cardio'` en cada entrada de
+   `BIBLIOTECA_EJERCICIOS`, derivado automáticamente del músculo `'Cardio'` que ya existía
+   (`Object.entries(...).forEach(...)` justo después de definir la biblioteca — no se listó
+   ejercicio por ejercicio a mano). El formulario de registro (`renderPortalRegistrarSerieSeccion`)
+   y el guardado (`portalGuardarSerie`) ahora son COMPLETAMENTE APARTES según el tipo:
+   - Fuerza: Tipo de serie + Peso + Repeticiones + Series (como antes, más series).
+   - Cardio: Duración (minutos) + Velocidad (km/h) — sin tipo de serie, sin peso, sin
+     repeticiones, sin series. El documento guardado refleja esto: `tiempoMinutos`/`velocidad` en
+     vez de `peso`/`repeticiones`/`series`.
+
+**Partes existentes revisadas para que cardio no las rompa (pedido explícito del usuario):**
+- **Meta de fitness IA** (`_opcionesEjercicioSelectHtml`): el selector de "ejercicio objetivo" ya
+  NO ofrece ejercicios de cardio — una meta de "levantar X kg" no aplica a una caminadora. Un
+  músculo cuyos ejercicios sean todos de cardio simplemente no aparece en la lista de optgroups.
+- **`_historialParaMeta`**: filtro defensivo adicional (`typeof r.peso==='number'`) por si una
+  meta vieja sigue apuntando a un ejercicio de cardio (ya no se puede crear una nueva así, pero
+  una existente de antes de esta parte sigue siendo posible) — sin el filtro, un registro de
+  cardio mezclado en el historial metería un `valor:undefined`.
+- **Sugerencia de sobrecarga progresiva** (`_sugerenciaPesoHoy`, Vista de Progreso del staff):
+  nuevo guard `typeof r.peso!=='number'` → `null` — nunca calcula `undefined*1.025` (NaN). La
+  columna "Sugerencia hoy" muestra `—` para filas de cardio en vez de un dato sin sentido.
+- **Vista de Progreso del staff** (`_portalStaffTarjetaMiembro`): la tabla puede mezclar
+  ejercicios de fuerza y cardio de un mismo cliente en la misma sesión, así que se cambiaron las
+  columnas "Peso"/"Reps" por una sola columna "Detalle" (`_detalleRegistroTexto`) que arma
+  "60kg × 10 reps × 3 series" o "30 min · 8 km/h" según corresponda; "Tipo" muestra `—` en cardio.
+- **Perfil del miembro (staff) y "Mi progreso" (portal)**: tabla, filtro "Tipo de serie" y
+  gráfica de línea (`_perfilProgresoResultadosHtml`/`_portalProgresoResultadosHtml`,
+  `dibujarChartProgresoPerfil`/`dibujarChartPortalProgreso`) ahora se ramifican por tipo del
+  ejercicio SELECCIONADO (constante para toda la tabla, ya que lo decide el ejercicio, no cada
+  registro): cardio muestra Fecha/Tiempo/Velocidad y grafica velocidad en vez de peso, sin
+  selector de "Tipo de serie". Se extrajeron 6 helpers COMPARTIDOS entre las dos vistas
+  (`_esCardioEjercicio`, `_filaProgresoHtml`, `_headerProgresoHtml`, `_colspanProgreso`,
+  `_chartConfigProgreso`, `_opcionesChartProgreso`) para que nunca diverjan — antes ya eran dos
+  implementaciones casi idénticas copiadas, ahora comparten una sola fuente para la parte cardio.
+- **`worker.js` (agente de IA)**: revisado, sin cambios necesarios — nunca recibe registros
+  crudos, solo `tendenciaSemanal` (un número ya calculado) y `meta`, así que queda cubierto por
+  los dos puntos de arriba.
+- **`firestore.rules`**: sin cambios — la regla de `registrosProgreso` (`allow read, create: if
+  isSignedIn()`) nunca validó campos por nombre, así que un documento con forma distinta
+  (cardio) ya pasaba igual que uno de fuerza.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Simulación con Playwright (Chromium) llamando a las funciones reales del script (no
+  reimplementadas aparte): clasificación de la biblioteca (todos los ejercicios quedan
+  `fuerza`/`cardio`, caminadora=cardio, press de banca=fuerza), selector de meta sin Cardio,
+  `_historialParaMeta` descarta el registro de cardio mezclado, `_sugerenciaPesoHoy(cardio)` es
+  `null` en vez de NaN, formulario del portal muestra los campos correctos según tipo, y guardado
+  real de un registro de cardio (tiempoMinutos/velocidad, sin peso/reps/series) y uno de fuerza
+  con series — **30 OK / 0 FAIL**.
+- Capturas de pantalla reales (Playwright) de: la Vista de Progreso del staff con un cliente que
+  tiene un registro de fuerza Y uno de cardio en la misma tabla (columna Detalle correcta en
+  ambos), y el perfil del staff mostrando solo cardio (Fecha/Tiempo/Velocidad, sin Tipo/Peso,
+  selector "Ejercicio" a ancho completo sin el de "Tipo de serie").
+- `rules-test/test.mjs`: nuevo caso — un registro de cardio (tiempoMinutos/velocidad, sin peso)
+  se crea igual que uno de fuerza — corrido contra el emulador real de Firestore: **67 OK / 0
+  FAIL** (antes 66).
+
 ## 2026-09-10 — FIX: checkbox "Solo los que entrenaron ayer" se desbordaba de la tarjeta
 
 **El bug (reportado por el usuario con captura desde WhatsApp/celular):** el texto "Solo los que
