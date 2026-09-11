@@ -4681,9 +4681,6 @@ let portalBuscarEjercicioTexto=''; // búsqueda de ejercicio en el menú "Regist
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
 let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
-// Parte 16 (ver CHANGELOG.md): mismo criterio que perfilProgresoVerTodo del lado staff — la
-// bitácora arranca mostrando solo ayer, se resetea a false al cambiar de ejercicio.
-let portalProgresoVerTodo=false;
 let chartPortalProgreso=null,chartPortalPeso=null;
 
 function normalizarNombreComparacion(s){
@@ -5138,25 +5135,16 @@ function _portalProgresoResultadosHtml(){
   const tipos=esCardio?[]:[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
   const delEjercicio=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
-  // Parte 16: por default solo AYER (resumen rápido); "Ver historial completo" expande a
-  // delEjercicio entero, con los mismos filtros (ejercicio/tipo/búsqueda) ya aplicados arriba.
-  const[inicioAyer,inicioHoy]=_rangoAyer();
-  const deAyer=delEjercicio.filter(r=>r.fecha>=inicioAyer&&r.fecha<inicioHoy);
-  const filtrados=portalProgresoVerTodo?delEjercicio:deAyer;
-  const listaHtml=filtrados.length
-    ?filtrados.map(r=>_tarjetaProgresoHtml(r,esCardio)).join('')
-    :`<div class="empty"><div class="empty-icon">${portalProgresoVerTodo?'📈':'📅'}</div><div>${portalProgresoVerTodo?'Sin registros con este filtro':'Sin registros de ayer'}</div></div>`;
-  const botonHtml=portalProgresoVerTodo
-    ?`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="portalToggleVerTodoProgreso(false)">‹ Ver solo ayer</button>`
-    :`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="portalToggleVerTodoProgreso(true)">Ver historial completo ›</button>`;
+  const listaHtml=delEjercicio.length
+    ?delEjercicio.map(r=>_tarjetaProgresoHtml(r,esCardio)).join('')
+    :'<div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div>';
   return`
     <div class="form-row">
       <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
-    <div style="margin-top:14px">${listaHtml}</div>
-    ${botonHtml}`;
+    <div style="margin-top:14px">${listaHtml}</div>`;
 }
 function _refrescarPortalProgresoResultados(){
   const cont=document.getElementById('portal-progreso-resultados');
@@ -5164,9 +5152,8 @@ function _refrescarPortalProgresoResultados(){
   dibujarChartPortalProgreso();
 }
 function portalBuscarProgreso(texto){portalProgresoBusqueda=texto;_refrescarPortalProgresoResultados();}
-function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';portalProgresoVerTodo=false;_refrescarPortalProgresoResultados();}
+function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';_refrescarPortalProgresoResultados();}
 function portalCambiarFiltroTipo(t){portalFiltroTipo=t;_refrescarPortalProgresoResultados();}
-function portalToggleVerTodoProgreso(v){portalProgresoVerTodo=v;_refrescarPortalProgresoResultados();}
 function dibujarChartPortalProgreso(){
   const canvas=document.getElementById('chart-portal-progreso');
   if(!canvas)return;
@@ -5456,6 +5443,11 @@ let portalStaffMiembros=[];        // miembrosPublicos de TODO el gym (no solo u
 let portalStaffRegistros=[];       // registrosProgreso de TODO el gym
 let portalStaffBusqueda='';
 let portalStaffSoloAyer=false;
+// Parte 17 (ver CHANGELOG.md): por default cada tarjeta de cliente solo muestra los ejercicios
+// entrenados AYER; "Ver historial completo" expande esa tarjeta puntual. Es un Set (no un solo
+// booleano) porque en esta vista hay VARIOS clientes en pantalla a la vez, cada uno con su propio
+// estado de expandido/resumido — a diferencia del perfil/portal donde solo hay un cliente.
+let portalStaffMiembrosExpandidos=new Set();
 
 async function renderPortalStaffIdentify(){
   const el=document.getElementById('portal-content');
@@ -5597,12 +5589,19 @@ function _portalStaffTarjetaMiembro(m,registros){
     const seriesDelDia=regs.filter(r=>r.fecha>=desde&&r.fecha<hasta).sort((a,b)=>a.fecha-b.fecha);
     return{ejercicioId,fechaMasReciente,seriesDelDia};
   }).sort((a,b)=>b.fechaMasReciente-a.fechaMasReciente);
+  // Parte 17 (ver CHANGELOG.md): por default, solo los ejercicios cuya última sesión fue AYER
+  // (resumen rápido para el staff); "Ver historial completo" expande esta tarjeta puntual a TODOS
+  // los ejercicios con progreso (la agrupación por sesión más reciente de Parte 16 sigue igual).
+  const[inicioAyer,inicioHoy]=_rangoAyer();
+  const expandido=portalStaffMiembrosExpandidos.has(m.id);
+  const gruposAyer=grupos.filter(g=>g.fechaMasReciente>=inicioAyer&&g.fechaMasReciente<inicioHoy);
+  const gruposMostrados=expandido?grupos:gruposAyer;
   // Parte 16 (ver CHANGELOG.md): tarjetas en vez de una tabla de 5 columnas — la columna
   // "Ejercicio" se cortaba en celular (nombres largos como "Extensión de tríceps a un brazo").
   // Ahora cada ejercicio es su propio bloque con encabezado completo, y cada serie/registro es
   // una tarjeta chica debajo — reusa _tarjetaProgresoHtml (misma que el perfil/portal de arriba)
   // con la sugerencia de sobrecarga como contenido extra, exclusiva de esta vista.
-  const gruposHtml=grupos.map(g=>{
+  const gruposHtml=gruposMostrados.length?gruposMostrados.map(g=>{
     const info=buscarEjercicioInfo(g.ejercicioId);
     const nombreEj=info?info.nombre:'Ejercicio eliminado';
     const esCardio=!!(info&&info.tipo==='cardio');
@@ -5614,11 +5613,19 @@ function _portalStaffTarjetaMiembro(m,registros){
       <div style="font-weight:700;font-size:14px;margin-bottom:8px">${escAttr(nombreEj)}</div>
       ${tarjetas}
     </div>`;
-  }).join('');
+  }).join(''):`<div class="empty"><div class="empty-icon">📅</div><div>Sin registros de ayer</div></div>`;
+  const botonHtml=expandido
+    ?`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="portalStaffToggleVerTodoMiembro('${m.id}',false)">‹ Ver solo ayer</button>`
+    :`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="portalStaffToggleVerTodoMiembro('${m.id}',true)">Ver historial completo ›</button>`;
   return`<div class="ec-card" style="margin-bottom:12px">
     <h3>${escAttr(m.nombre)} <span style="color:var(--muted);font-weight:400">#${fmtNum(m.numero||0)}</span></h3>
     ${gruposHtml}
+    ${botonHtml}
   </div>`;
+}
+function portalStaffToggleVerTodoMiembro(mid,v){
+  if(v)portalStaffMiembrosExpandidos.add(mid);else portalStaffMiembrosExpandidos.delete(mid);
+  _refrescarPortalStaffResultados();
 }
 function portalStaffBuscar(v){portalStaffBusqueda=v;_refrescarPortalStaffResultados();}
 function portalStaffToggleAyer(v){portalStaffSoloAyer=v;_refrescarPortalStaffResultados();}
@@ -5632,6 +5639,7 @@ function portalStaffSalir(){
   portalStaffRegistros=[];
   portalStaffBusqueda='';
   portalStaffSoloAyer=false;
+  portalStaffMiembrosExpandidos=new Set();
   renderPortalStaffIdentify();
 }
 </script>

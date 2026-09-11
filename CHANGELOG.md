@@ -4,6 +4,45 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-11 — Corrección: el resumen "ayer + expandir" era para el portal del staff, no el del cliente (Parte 17)
+
+**Qué se hizo:** el resumen "ayer + expandir" de la Parte 16 se había aplicado por error a "Mi
+progreso" del portal del **cliente** — el pedido original era para el portal del **coach**
+(Vista de Progreso del staff, el link con PIN, `?staff=1`). Se corrigió:
+
+1. **Revertido en "Mi progreso" (portal cliente)**: `_portalProgresoResultadosHtml` vuelve a
+   mostrar siempre el historial completo del ejercicio+filtro seleccionado, sin resumen de "ayer"
+   ni botón de expandir. Se quitó el estado `portalProgresoVerTodo` y la función
+   `portalToggleVerTodoProgreso`. El rediseño de tarjetas/badges de la Parte 16 se dejó intacto —
+   solo se revirtió el comportamiento de resumen, no el diseño visual.
+2. **Agregado en la Vista de Progreso del staff (PIN, `?staff=1`)**: `_portalStaffTarjetaMiembro`
+   ahora arranca mostrando, por cada cliente, solo los ejercicios cuya sesión más reciente fue
+   AYER, con un botón "Ver historial completo" que expande esa tarjeta puntual a todos los
+   ejercicios con progreso (sigue agrupando por sesión más reciente de cada ejercicio, igual que
+   antes) y "‹ Ver solo ayer" para volver a colapsar. Como en esta vista hay VARIOS clientes en
+   pantalla a la vez (a diferencia del perfil/portal, donde solo hay uno), el estado de
+   expandido/resumido es por cliente (`portalStaffMiembrosExpandidos`, un `Set` de ids), no un
+   solo booleano global — expandir un cliente no afecta a los demás. Sin registros de ayer para
+   un cliente, mensaje claro ("Sin registros de ayer") en vez de una tarjeta vacía. El checkbox
+   preexistente "Solo los que entrenaron ayer" (`portalStaffSoloAyer`) sigue siendo un filtro
+   aparte — decide qué CLIENTES aparecen en la lista, no qué se muestra dentro de la tarjeta de
+   cada uno. El estado de expandidos se limpia al salir (`portalStaffSalir`). Modelo de datos sin
+   cambios.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- Playwright (Chromium, viewport de celular 390px), llamando a las funciones reales: "Mi
+  progreso" del portal cliente ya muestra registros de ayer Y de anteayer juntos, sin botones de
+  expandir/colapsar ni el mensaje "Sin registros de ayer", y `portalProgresoVerTodo`/
+  `portalToggleVerTodoProgreso` ya no existen; en la Vista de Progreso del staff, con dos
+  clientes (uno con sesión de ayer y otro solo con sesión de anteayer), el resumen muestra el
+  registro de ayer del primero, oculta el de anteayer, y muestra "Sin registros de ayer" para el
+  segundo; expandir al primer cliente muestra ambos registros con el botón "‹ Ver solo ayer" sin
+  afectar al segundo (que sigue resumido); colapsar de nuevo vuelve al resumen — **15 OK / 0
+  FAIL**.
+- `rules-test/test.mjs` corrido contra el emulador real de Firestore sin cambios (cambio puramente
+  de UI/JS, sin tocar el modelo de datos ni las reglas): **67 OK / 0 FAIL**.
+
 ## 2026-09-11 — Bitácora de progreso: tarjetas + badges + resumen de "ayer" con expandir (Parte 16)
 
 **Qué se hizo:** las tablas de Fecha/Tipo/Peso/Reps/Series (perfil del miembro en staff, "Mi
