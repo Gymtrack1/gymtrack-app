@@ -4,6 +4,66 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-11 — Revisión de bugs + lecturas innecesarias de Firestore (Parte 18)
+
+**Qué se hizo:** revisión completa de `index.html` buscando bugs reales (no estilo) y lecturas de
+Firestore evitables, a pedido explícito del dueño ("revisa que no haya ningún bug y optimiza el
+código para que genere menores lecturas"). Se usó un sub-agente para el barrido de bugs en todo el
+archivo y una auditoría manual enfocada en lecturas (getDocs/getDoc/onSnapshot), cruzando ambos
+hallazgos antes de aplicar nada.
+
+1. **Bug real (el más grave): `doLogout()` no limpiaba el estado de sesión.** Solo llamaba a
+   `signOut()`. El listener del plan (`onSnapshot` sobre `usuarios/{uid}`) y el polling de
+   respaldo cada 20s seguían corriendo indefinidamente contra la cuenta que YA cerró sesión —
+   lecturas de Firestore para siempre mientras la pestaña siguiera abierta. Peor aún:
+   `sesionInicializada` nunca se reseteaba, así que si OTRA cuenta iniciaba sesión en la MISMA
+   pestaña después (ej. una computadora compartida de recepción, o alguien probando dos cuentas
+   de gym), el guard de `'firebaseReady'` bloqueaba `loadPlan()`/`loadAll()` para la cuenta nueva
+   — se quedaba viendo los miembros/pagos/plan de la cuenta ANTERIOR. `doLogout()` ahora
+   desuscribe el listener, limpia el intervalo, resetea `sesionInicializada` y vacía los 13
+   arrays de datos en memoria antes de cerrar sesión, para que la siguiente cuenta arranque
+   limpia y sin fugas de lecturas.
+2. **Bugs de escape (texto libre sin pasar por `escAttr`)**, encontrados por el sub-agente
+   comparando contra el patrón ya establecido en el resto del archivo:
+   - `corteCajaCard` (Finanzas → Corte de Caja): el `concepto` de un gasto manual se insertaba
+     crudo en el HTML.
+   - `populateCategoriaMembresiaSelect`: el nombre de la categoría de membresía (texto libre del
+     dueño vía `prompt()`) se insertaba crudo como texto visible del `<option>` (el atributo
+     `value` sí estaba escapado, el texto no).
+   - `desglosePorPlan` (Finanzas): `planNombre` de pagos importados desde Excel (columna "Plan
+     actual", texto arbitrario de la hoja de cálculo) se insertaba crudo.
+   Los tres ahora usan `escAttr`, igual que el resto de los ~40 sitios del archivo que ya
+   renderizan texto libre de esta forma.
+3. **Optimización de lecturas: polling de respaldo del plan de 20s → 2 minutos.** Ese
+   `setInterval` es solo una red de respaldo por si el `onSnapshot` deja de entregar cambios sin
+   disparar error (el listener ya se reconecta solo, con backoff exponencial, ante un error real)
+   — con una sesión de staff abierta todo el día, a 20s eso son ~1,440 lecturas/día de un solo
+   documento SOLO como respaldo. A 2 minutos sigue siendo detección rápida para el caso raro que
+   cubre, a 1/6 del costo.
+
+Se revisó también (sin encontrar más lecturas evitables ni bugs nuevos, ver comentarios ya
+existentes en el archivo): que ningún alta/edición/baja del panel de staff vuelva a leer su
+colección completa (todas parchean el array local, confirmado por el comentario "AUDITORÍA DE
+LECTURAS" ya existente); que ningún buscador (`oninput`) dispare una lectura por tecla (todos
+filtran en memoria); que `activarTab()` nunca dispare una lectura al cambiar de pestaña; que no
+haya lecturas dentro de loops (`for`/`forEach`/`.map(async...)`, patrón N+1); y que el portal del
+cliente y la Vista de Progreso del staff (PIN) solo carguen sus datos una vez por identificación/
+login, no en cada render. Quedan documentadas (sin implementar, por ser cambios de arquitectura
+mayores) las recomendaciones ya existentes sobre paginar `loadMiembros()` para gimnasios grandes.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida en cada paso.
+- Playwright (Chromium), llamando a las funciones reales: `doLogout()` desuscribe el listener del
+  plan, limpia el `setInterval`, resetea `sesionInicializada` a `false` y vacía los 13 arrays de
+  datos — **6 OK / 0 FAIL**; los tres sitios de escape corregidos ya no insertan HTML/script
+  crudo con nombres/conceptos que contienen `<`, `>`, `&` — **7 OK / 0 FAIL**.
+- Se re-corrieron todos los tests de Playwright de las Partes 15-17 (cardio/series, revertir+mover
+  el resumen "ayer") sin regresiones nuevas — el único FAIL que aparece es un test de scratch
+  desactualizado de antes del rename `velocidad`→`distancia` (Parte 15.1), no relacionado con esta
+  revisión.
+- `rules-test/test.mjs` contra el emulador real de Firestore: **67 OK / 0 FAIL** (sin tocar
+  reglas ni modelo de datos).
+
 ## 2026-09-11 — Corrección: el resumen "ayer + expandir" era para el portal del staff, no el del cliente (Parte 17)
 
 **Qué se hizo:** el resumen "ayer + expandir" de la Parte 16 se había aplicado por error a "Mi

@@ -1248,7 +1248,7 @@ function desglosePorPlan(pagosArr){
     grupos[key].monto+=p.monto;
     grupos[key].count++;
   });
-  return Object.entries(grupos).map(([nombre,g])=>`${nombre}: ${g.count} · $${g.monto.toLocaleString()}`).join('<br>');
+  return Object.entries(grupos).map(([nombre,g])=>`${escAttr(nombre)}: ${g.count} · $${g.monto.toLocaleString()}`).join('<br>');
 }
 function desglosePorForma(pagosArr,ventasArr){
   let efectivo=0,tarjeta=0,sinEspecificar=0;
@@ -1313,7 +1313,7 @@ function corteCajaCard(titulo,periodo,corte,gastosArr){
     <div class="ec-row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:11px"><span style="font-weight:700">Neto</span><span class="ec-val" style="color:${netoColor};font-size:15px">$${corte.neto.toLocaleString()}</span></div>
     ${abierto?`
     ${corte.nomina>0?`<div class="ec-row"><span>Nómina (empleados)</span><span class="ec-val" style="color:var(--red)">-$${corte.nomina.toLocaleString()}</span></div>`:''}
-    ${gastosOrdenados.length?gastosOrdenados.map(g=>`<div class="ec-row"><span>${g.concepto}</span><span style="display:flex;align-items:center;gap:8px"><span class="ec-val" style="color:var(--red)">-$${(g.monto||0).toLocaleString()}</span><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="delGasto('${g.id}')">✕</button></span></div>`).join(''):'<div style="color:var(--muted);font-size:12px;margin-top:8px">Sin gastos manuales en este período</div>'}
+    ${gastosOrdenados.length?gastosOrdenados.map(g=>`<div class="ec-row"><span>${escAttr(g.concepto)}</span><span style="display:flex;align-items:center;gap:8px"><span class="ec-val" style="color:var(--red)">-$${(g.monto||0).toLocaleString()}</span><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="delGasto('${g.id}')">✕</button></span></div>`).join(''):'<div style="color:var(--muted);font-size:12px;margin-top:8px">Sin gastos manuales en este período</div>'}
     `:''}
   </div>`;
 }
@@ -1370,7 +1370,12 @@ window.addEventListener('firebaseReady',async()=>{
   if(sesionInicializada)return;
   sesionInicializada=true;
   await loadPlan(); applyPlan(); await loadAll();
-  // Auto-sincronizar cada 20 segundos como respaldo por si onSnapshot falla
+  // Auto-sincronizar cada 2 minutos como respaldo por si onSnapshot falla (antes cada 20s: con
+  // una sesión de staff abierta todo el día, eso son ~1,440 lecturas/día de este único documento
+  // SOLO como red de respaldo — el listener onSnapshot de arriba ya se reconecta solo con backoff
+  // exponencial ante un error real, así que este polling solo cubre el caso raro de que
+  // onSnapshot deje de entregar cambios sin disparar error. 2 minutos sigue siendo detección
+  // rápida para ese caso, a una fracción del costo en lecturas).
   if(planPollInterval)clearInterval(planPollInterval);
   planPollInterval=setInterval(async()=>{
     try{
@@ -1384,7 +1389,7 @@ window.addEventListener('firebaseReady',async()=>{
         toast('Plan sincronizado: '+p+' ✓');
       }
     }catch(e){}
-  },20000);
+  },120000);
 });
 
 async function loadPlan(){
@@ -1643,7 +1648,25 @@ async function doLogin(){
   try{await window._signIn(window._auth,email,pass);}
   catch(e){document.getElementById('login-error').style.display='block';}
 }
-async function doLogout(){await window._signOut(window._auth);}
+// BUG REAL ENCONTRADO Y CORREGIDO: doLogout() solo llamaba a signOut() — el listener del plan
+// (onSnapshot) y el polling de respaldo cada 20s (ver planPollInterval en 'firebaseReady') seguían
+// corriendo indefinidamente contra la cuenta que YA cerró sesión (lecturas innecesarias para
+// siempre mientras la pestaña siga abierta). Peor: sesionInicializada nunca se reseteaba, así que
+// si OTRA cuenta iniciaba sesión en la MISMA pestaña después (ej. una computadora compartida de
+// recepción, o alguien probando dos cuentas de gym), el guard de 'firebaseReady' bloqueaba
+// loadPlan()/loadAll() para la cuenta nueva — se quedaba viendo los miembros/pagos/plan de la
+// cuenta ANTERIOR. Se corrige apagando el listener/intervalo y reseteando todo el estado de sesión
+// antes de cerrar sesión, para que la siguiente cuenta que inicie sesión en esta pestaña arranque
+// limpia.
+async function doLogout(){
+  if(planListener){try{planListener();}catch(e){}planListener=null;}
+  if(planPollInterval){clearInterval(planPollInterval);planPollInterval=null;}
+  listenerRetries=0;
+  sesionInicializada=false;
+  miembros=[];pagos=[];asistencias=[];empleados=[];inventario=[];productos=[];ventas=[];gastos=[];
+  categoriasMembresia=[];promociones=[];registrosProgreso=[];pesoCorporal=[];sugerencias=[];
+  await window._signOut(window._auth);
+}
 
 // AUDITORÍA DE LECTURAS (2026-08-20): loadAll() trae las 8 colecciones completas
 // (miembros, pagos, asistencias, empleados, inventario, productos, ventas, gastos) vía getDocs
@@ -3979,9 +4002,9 @@ function abrirModalCategorias(){renderCategoriasMembresiaModal();openModal('moda
 function populateCategoriaMembresiaSelect(seleccionada=''){
   const sel=document.getElementById('m-categoria-membresia');
   if(!sel)return;
-  let opts='<option value="">— Sin categoría —</option>'+categoriasMembresia.map(c=>`<option value="${escAttr(c.nombre)}">${c.nombre}</option>`).join('');
+  let opts='<option value="">— Sin categoría —</option>'+categoriasMembresia.map(c=>`<option value="${escAttr(c.nombre)}">${escAttr(c.nombre)}</option>`).join('');
   if(seleccionada&&!categoriasMembresia.some(c=>c.nombre===seleccionada)){
-    opts+=`<option value="${escAttr(seleccionada)}">${seleccionada} (ya no existe)</option>`;
+    opts+=`<option value="${escAttr(seleccionada)}">${escAttr(seleccionada)} (ya no existe)</option>`;
   }
   sel.innerHTML=opts;
   sel.value=seleccionada||'';
