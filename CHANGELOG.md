@@ -4,6 +4,49 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-11 — Bitácora de progreso: tarjetas + badges + resumen de "ayer" con expandir (Parte 16)
+
+**Qué se hizo:** las tablas de Fecha/Tipo/Peso/Reps/Series (perfil del miembro en staff, "Mi
+progreso" en el portal) y Ejercicio/Fecha/Tipo/Detalle/Sugerencia (Vista de Progreso del staff)
+se desbordaban y cortaban texto en celular — nombres largos como "Extensión de tríceps a un
+brazo" quedaban ilegibles. Las 3 se rediseñaron:
+
+1. **Tarjetas en vez de tabla**: cada registro es ahora una tarjeta (`_tarjetaProgresoHtml`,
+   helper compartido por las 3 vistas) con más espaciado y sin scroll horizontal ni columnas
+   apretadas — el nombre del ejercicio ya no depende de caber en una celda de tabla.
+2. **Badge de color por tipo de serie** (`_badgeTipoSerieHtml`, reusa las clases `.badge-*` que
+   ya existían en el archivo — sin paleta nueva): Calentamiento/Súper serie en gris (los dos
+   tipos que nunca traen sugerencia de sobrecarga), Normal en azul, PR en verde, Dropset en
+   naranja, Al fallo en rojo. Cardio no trae badge (no tiene "tipo de serie").
+3. **Resumen de "ayer" por default + expandir**: el perfil del miembro (staff) y "Mi progreso"
+   (portal) ahora arrancan mostrando SOLO los registros de ayer del ejercicio seleccionado, con
+   un botón "Ver historial completo" que expande a todo el historial (y "‹ Ver solo ayer" para
+   volver a colapsar) — reusa `_rangoAyer()`, la misma función que ya usaba la Vista de Progreso
+   del staff para su filtro "Solo los que entrenaron ayer". Sin registros de ayer, mensaje claro
+   ("Sin registros de ayer") en vez de dejar la sección vacía. Los filtros que ya existían
+   (selector de Ejercicio, Tipo de serie, buscador) se mantienen funcionando sobre la vista
+   expandida — se resetea a "solo ayer" al cambiar de ejercicio, para partir siempre del resumen.
+   La gráfica de Chart.js NO se filtra por esto (sigue mostrando el historial completo del
+   ejercicio+filtro de tipo) — una gráfica de un solo día no serviría para ver tendencia.
+
+Se quitaron `_filaProgresoHtml`/`_headerProgresoHtml`/`_colspanProgreso` (Parte 15) por quedar
+sin uso — sus 2 usos se reemplazaron por tarjetas; `_detalleRegistroTexto` se conservó (sigue
+compartido por las 3 vistas). Modelo de datos sin cambios — es solo la forma de mostrarlo.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- `grep` confirma cero referencias colgantes a los 3 helpers eliminados.
+- Playwright (Chromium, viewport de celular 390px), llamando a las funciones reales: la vista
+  resumida muestra solo el registro de ayer (no uno de anteayer) con badge azul "Normal" y el
+  botón "Ver historial completo"; al expandir aparecen AMBOS registros con sus badges correctos
+  (verde PR) y el botón cambia a "‹ Ver solo ayer"; sin registros de ayer muestra el mensaje
+  claro; el portal (cardio) muestra tarjetas sin badge y sin selector de Tipo de serie; la Vista
+  de Progreso del staff con fuerza+cardio mezclados usa tarjetas, ya no `<table>`, el nombre de
+  ejercicio largo se lee completo, badge rojo para "Al fallo" con su sugerencia "Mismo peso", y
+  cardio sin sección de sugerencia — **20 OK / 0 FAIL**.
+- Capturas de pantalla reales confirmando visualmente el resumen "ayer" → tarjetas expandidas →
+  colapsar, y la Vista de Progreso del staff con nombres de ejercicio completos y badges.
+
 ## 2026-09-11 — Cardio: distancia (km) en vez de velocidad (km/h)
 
 **Qué se hizo:** el usuario pidió el mismo feature de cardio de la Parte 15 pero especificando

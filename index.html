@@ -132,6 +132,14 @@
   tr:hover td{background:var(--surface2);}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
   .badge-green{background:rgba(31,157,85,0.12);color:var(--green);} .badge-orange{background:rgba(217,119,6,0.15);color:var(--orange);} .badge-red{background:rgba(220,59,48,0.15);color:var(--red);} .badge-gray{background:rgba(133,132,122,0.13);color:var(--muted);} .badge-blue{background:rgba(37,99,235,0.12);color:var(--blue);}
+  /* Tarjetas de la bitácora de progreso (Parte 16, ver CHANGELOG.md) — reemplaza la tabla de
+     Fecha/Tipo/Peso/Reps/Series (se desbordaba y cortaba texto en celular) por una tarjeta por
+     registro, más espaciada y legible. Comparte .badge-* de arriba para el tipo de serie. */
+  .registro-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px;}
+  .registro-card:last-child{margin-bottom:0;}
+  .registro-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+  .registro-fecha{font-size:12px;color:var(--muted);}
+  .registro-card-detalle{font-size:15px;font-weight:600;}
   .btn{border:none;border-radius:8px;padding:10px 20px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s;}
   .btn-primary{background:var(--accent);color:var(--text-accent);} .btn-primary:hover{background:#B0D400;}
   .btn-ghost{background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);} .btn-ghost:hover{border-color:var(--text-surface);}
@@ -3354,6 +3362,10 @@ async function agregarPesoCorporalPerfil(){
 // criterio que Beneficios/Seguimiento/Compras). Muestra lo mismo que ve el propio miembro en
 // el portal: selector de ejercicio + filtro por tipo de serie + historial + gráfica de peso.
 let perfilProgresoEjercicioSel='',perfilProgresoFiltroTipo='',perfilProgresoBusqueda='';
+// Parte 16 (ver CHANGELOG.md): la bitácora arranca mostrando SOLO los registros de ayer — se
+// vuelve a poner en false cada vez que se cambia de ejercicio, para que la vista resumida sea
+// siempre el punto de partida al entrar a un ejercicio nuevo.
+let perfilProgresoVerTodo=false;
 // El buscador vive FUERA de #p-progreso-resultados (que sí se reemplaza en cada cambio de
 // selector/búsqueda) para no perder el foco/cursor del input cada vez que se escribe una letra
 // — si todo el bloque se reconstruyera junto con el <input>, el teclado se cerraría en cada tecla.
@@ -3379,16 +3391,26 @@ function _perfilProgresoResultadosHtml(miembroId){
   const esCardio=_esCardioEjercicio(perfilProgresoEjercicioSel);
   const tipos=esCardio?[]:[...new Set(registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel).map(r=>r.tipo))];
   if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
-  const filtrados=registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel&&(esCardio||!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  const delEjercicio=registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel&&(esCardio||!perfilProgresoFiltroTipo||r.tipo===perfilProgresoFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  // Parte 16: por default solo AYER (resumen rápido); "Ver historial completo" expande a
+  // delEjercicio entero, con los mismos filtros (ejercicio/tipo/búsqueda) ya aplicados arriba.
+  const[inicioAyer,inicioHoy]=_rangoAyer();
+  const deAyer=delEjercicio.filter(r=>r.fecha>=inicioAyer&&r.fecha<inicioHoy);
+  const filtrados=perfilProgresoVerTodo?delEjercicio:deAyer;
+  const listaHtml=filtrados.length
+    ?filtrados.map(r=>_tarjetaProgresoHtml(r,esCardio)).join('')
+    :`<div class="empty"><div class="empty-icon">${perfilProgresoVerTodo?'📈':'📅'}</div><div>${perfilProgresoVerTodo?'Sin registros con este filtro':'Sin registros de ayer'}</div></div>`;
+  const botonHtml=perfilProgresoVerTodo
+    ?`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="perfilToggleVerTodoProgreso(false)">‹ Ver solo ayer</button>`
+    :`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="perfilToggleVerTodoProgreso(true)">Ver historial completo ›</button>`;
   return`
     <div class="form-row">
       <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select onchange="perfilCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select onchange="perfilCambiarProgresoFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
-    <div class="table-wrap" style="margin-top:10px"><table><thead>${_headerProgresoHtml(esCardio)}</thead><tbody>${
-      filtrados.length?filtrados.map(r=>_filaProgresoHtml(r,esCardio)).join(''):`<tr><td colspan="${_colspanProgreso(esCardio)}"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>`
-    }</tbody></table></div>`;
+    <div style="margin-top:14px">${listaHtml}</div>
+    ${botonHtml}`;
 }
 function _refrescarPerfilProgresoResultados(miembroId){
   const cont=document.getElementById('p-progreso-resultados');
@@ -3396,8 +3418,9 @@ function _refrescarPerfilProgresoResultados(miembroId){
   dibujarChartProgresoPerfil(miembroId);
 }
 function perfilBuscarProgreso(texto){perfilProgresoBusqueda=texto;_refrescarPerfilProgresoResultados(perfilActualId);}
-function perfilCambiarProgresoEjercicioSel(id){perfilProgresoEjercicioSel=id;perfilProgresoFiltroTipo='';_refrescarPerfilProgresoResultados(perfilActualId);}
+function perfilCambiarProgresoEjercicioSel(id){perfilProgresoEjercicioSel=id;perfilProgresoFiltroTipo='';perfilProgresoVerTodo=false;_refrescarPerfilProgresoResultados(perfilActualId);}
 function perfilCambiarProgresoFiltroTipo(t){perfilProgresoFiltroTipo=t;_refrescarPerfilProgresoResultados(perfilActualId);}
+function perfilToggleVerTodoProgreso(v){perfilProgresoVerTodo=v;_refrescarPerfilProgresoResultados(perfilActualId);}
 function dibujarChartProgresoPerfil(miembroId){
   const canvas=document.getElementById('chart-progreso-perfil');
   if(!canvas||typeof Chart==='undefined')return;
@@ -4582,24 +4605,39 @@ function _esCardioEjercicio(ejercicioId){
   const info=buscarEjercicioInfo(ejercicioId);
   return!!(info&&info.tipo==='cardio');
 }
-function _filaProgresoHtml(r,esCardio){
-  if(esCardio)return`<tr><td>${fmtDate(r.fecha)}</td><td>${r.tiempoMinutos} min</td><td>${r.distancia} km</td></tr>`;
-  return`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td><td>${r.series||1}</td></tr>`;
-}
-// Peso×reps×series o tiempo×distancia en una sola celda — la usa la Vista de Progreso del staff
-// (_portalStaffTarjetaMiembro), donde una misma tabla puede mezclar varios ejercicios de un
-// mismo cliente (algunos de fuerza, otros de cardio) en vez de una tabla por ejercicio como en
-// el perfil/portal de arriba, así que ahí conviene una sola columna "Detalle" en vez de 5-6
-// columnas la mitad vacías según el tipo de cada fila.
+// Peso×reps×series o tiempo×distancia en una sola celda/línea — comparte SIEMPRE el mismo texto
+// entre la Vista de Progreso del staff (_portalStaffTarjetaMiembro) y las tarjetas de bitácora
+// de abajo (_tarjetaProgresoHtml), para que "cuánto hizo" se lea igual en cualquier vista.
 function _detalleRegistroTexto(r,esCardio){
   if(esCardio)return`${r.tiempoMinutos} min · ${r.distancia} km`;
   const series=r.series||1;
   return`${formatearPeso(r.peso,r.unidadOriginal||'kg')} × ${r.repeticiones} reps × ${series} serie${series===1?'':'s'}`;
 }
-function _headerProgresoHtml(esCardio){
-  return esCardio?'<tr><th>Fecha</th><th>Tiempo</th><th>Distancia</th></tr>':'<tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th><th>Series</th></tr>';
+// Color del badge de "Tipo de serie" (Parte 16, ver CHANGELOG.md) — reusa las clases .badge-*
+// que ya existen en el archivo (mismas que Estado de membresía, etc.), no se inventó paleta
+// nueva. Semántica: Calentamiento/Súper serie en gris (son justo los dos tipos que
+// _sugerenciaPesoHoy nunca convierte en sugerencia — "informativos", no de esfuerzo máximo);
+// Normal en azul (línea base); PR en verde (logro); Dropset en naranja (técnica más intensa);
+// Al fallo en rojo (esfuerzo máximo). "Otro" (texto libre del cliente) y cualquier tipo no
+// reconocido caen en gris por default — nunca truena con un tipo inesperado.
+const COLOR_BADGE_TIPO_SERIE={'Calentamiento':'gray','Normal':'blue','PR':'green','Dropset':'orange','Al fallo':'red','Súper serie':'gray'};
+function _badgeTipoSerieHtml(tipo){
+  return`<span class="badge badge-${COLOR_BADGE_TIPO_SERIE[tipo]||'gray'}">${escAttr(tipo)}</span>`;
 }
-function _colspanProgreso(esCardio){return esCardio?3:5;}
+// Una tarjeta por registro (Parte 16) — reemplaza las tablas que antes usaban el perfil del
+// miembro (staff), "Mi progreso" (portal) y la Vista de Progreso del staff: en celular esas
+// 4-5 columnas se desbordaban y cortaban texto (ver CHANGELOG.md). Cardio no trae badge de tipo
+// (no tiene "tipo de serie"). `extraHtml` es contenido opcional debajo del detalle — lo usa
+// SOLO la Vista de Progreso del staff para la sugerencia de sobrecarga progresiva, que no
+// aplica en el perfil/portal (ahí el miembro ve su propio historial, no una recomendación).
+function _tarjetaProgresoHtml(r,esCardio,extraHtml=''){
+  const tipoHtml=esCardio?'':_badgeTipoSerieHtml(r.tipo);
+  return`<div class="registro-card">
+    <div class="registro-card-top">${tipoHtml}<span class="registro-fecha">${fmtDate(r.fecha)}</span></div>
+    <div class="registro-card-detalle">${_detalleRegistroTexto(r,esCardio)}</div>
+    ${extraHtml}
+  </div>`;
+}
 function _opcionesChartProgreso(){
   return{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}};
 }
@@ -4643,6 +4681,9 @@ let portalBuscarEjercicioTexto=''; // búsqueda de ejercicio en el menú "Regist
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
 let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
+// Parte 16 (ver CHANGELOG.md): mismo criterio que perfilProgresoVerTodo del lado staff — la
+// bitácora arranca mostrando solo ayer, se resetea a false al cambiar de ejercicio.
+let portalProgresoVerTodo=false;
 let chartPortalProgreso=null,chartPortalPeso=null;
 
 function normalizarNombreComparacion(s){
@@ -5096,16 +5137,26 @@ function _portalProgresoResultadosHtml(){
   const esCardio=_esCardioEjercicio(portalProgresoEjercicioSel);
   const tipos=esCardio?[]:[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
-  const filtrados=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  const delEjercicio=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
+  // Parte 16: por default solo AYER (resumen rápido); "Ver historial completo" expande a
+  // delEjercicio entero, con los mismos filtros (ejercicio/tipo/búsqueda) ya aplicados arriba.
+  const[inicioAyer,inicioHoy]=_rangoAyer();
+  const deAyer=delEjercicio.filter(r=>r.fecha>=inicioAyer&&r.fecha<inicioHoy);
+  const filtrados=portalProgresoVerTodo?delEjercicio:deAyer;
+  const listaHtml=filtrados.length
+    ?filtrados.map(r=>_tarjetaProgresoHtml(r,esCardio)).join('')
+    :`<div class="empty"><div class="empty-icon">${portalProgresoVerTodo?'📈':'📅'}</div><div>${portalProgresoVerTodo?'Sin registros con este filtro':'Sin registros de ayer'}</div></div>`;
+  const botonHtml=portalProgresoVerTodo
+    ?`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="portalToggleVerTodoProgreso(false)">‹ Ver solo ayer</button>`
+    :`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="portalToggleVerTodoProgreso(true)">Ver historial completo ›</button>`;
   return`
     <div class="form-row">
       <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
-    <div class="table-wrap" style="margin-top:12px"><table><thead>${_headerProgresoHtml(esCardio)}</thead><tbody>${
-      filtrados.length?filtrados.map(r=>_filaProgresoHtml(r,esCardio)).join(''):`<tr><td colspan="${_colspanProgreso(esCardio)}"><div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div></td></tr>`
-    }</tbody></table></div>`;
+    <div style="margin-top:14px">${listaHtml}</div>
+    ${botonHtml}`;
 }
 function _refrescarPortalProgresoResultados(){
   const cont=document.getElementById('portal-progreso-resultados');
@@ -5113,8 +5164,9 @@ function _refrescarPortalProgresoResultados(){
   dibujarChartPortalProgreso();
 }
 function portalBuscarProgreso(texto){portalProgresoBusqueda=texto;_refrescarPortalProgresoResultados();}
-function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';_refrescarPortalProgresoResultados();}
+function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';portalProgresoVerTodo=false;_refrescarPortalProgresoResultados();}
 function portalCambiarFiltroTipo(t){portalFiltroTipo=t;_refrescarPortalProgresoResultados();}
+function portalToggleVerTodoProgreso(v){portalProgresoVerTodo=v;_refrescarPortalProgresoResultados();}
 function dibujarChartPortalProgreso(){
   const canvas=document.getElementById('chart-portal-progreso');
   if(!canvas)return;
@@ -5545,17 +5597,27 @@ function _portalStaffTarjetaMiembro(m,registros){
     const seriesDelDia=regs.filter(r=>r.fecha>=desde&&r.fecha<hasta).sort((a,b)=>a.fecha-b.fecha);
     return{ejercicioId,fechaMasReciente,seriesDelDia};
   }).sort((a,b)=>b.fechaMasReciente-a.fechaMasReciente);
-  const filas=grupos.flatMap(g=>{
+  // Parte 16 (ver CHANGELOG.md): tarjetas en vez de una tabla de 5 columnas — la columna
+  // "Ejercicio" se cortaba en celular (nombres largos como "Extensión de tríceps a un brazo").
+  // Ahora cada ejercicio es su propio bloque con encabezado completo, y cada serie/registro es
+  // una tarjeta chica debajo — reusa _tarjetaProgresoHtml (misma que el perfil/portal de arriba)
+  // con la sugerencia de sobrecarga como contenido extra, exclusiva de esta vista.
+  const gruposHtml=grupos.map(g=>{
     const info=buscarEjercicioInfo(g.ejercicioId);
     const nombreEj=info?info.nombre:'Ejercicio eliminado';
     const esCardio=!!(info&&info.tipo==='cardio');
-    return g.seriesDelDia.map(r=>{
-      return`<tr><td>${escAttr(nombreEj)}</td><td>${fmtDate(r.fecha)}</td><td>${esCardio?'—':escAttr(r.tipo)}</td><td>${_detalleRegistroTexto(r,esCardio)}</td><td>${esCardio?'—':_sugerenciaPesoHoyTexto(r)}</td></tr>`;
-    });
+    const tarjetas=g.seriesDelDia.map(r=>{
+      const sugerenciaHtml=esCardio?'':`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sugerencia hoy: ${_sugerenciaPesoHoyTexto(r)}</div>`;
+      return _tarjetaProgresoHtml(r,esCardio,sugerenciaHtml);
+    }).join('');
+    return`<div style="margin-bottom:16px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">${escAttr(nombreEj)}</div>
+      ${tarjetas}
+    </div>`;
   }).join('');
   return`<div class="ec-card" style="margin-bottom:12px">
     <h3>${escAttr(m.nombre)} <span style="color:var(--muted);font-weight:400">#${fmtNum(m.numero||0)}</span></h3>
-    <div class="table-wrap"><table><thead><tr><th>Ejercicio</th><th>Fecha</th><th>Tipo</th><th>Detalle</th><th>Sugerencia hoy</th></tr></thead><tbody>${filas}</tbody></table></div>
+    ${gruposHtml}
   </div>`;
 }
 function portalStaffBuscar(v){portalStaffBusqueda=v;_refrescarPortalStaffResultados();}
