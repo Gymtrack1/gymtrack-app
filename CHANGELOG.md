@@ -4,6 +4,29 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-11 — Cardio: distancia (km) en vez de velocidad (km/h)
+
+**Qué se hizo:** el usuario pidió el mismo feature de cardio de la Parte 15 pero especificando
+"tiempo y distancia" en vez de "tiempo y velocidad" — se renombró el campo en todo el flujo:
+formulario del portal (`portal-serie-distancia`, label "Distancia (km)"), `portalGuardarSerie`
+(guarda `distancia` en vez de `velocidad`), `_filaProgresoHtml`/`_detalleRegistroTexto` ("5 km" en
+vez de "5 km/h"), y `_chartConfigProgreso` (grafica "Distancia (km)"). Mismo campo compartido
+entre las 3 vistas (Vista de Progreso del staff, perfil del miembro, "Mi progreso" del portal) —
+al vivir en los helpers comunes de la Parte 15, un solo cambio los actualiza a los tres.
+
+**Qué se verificó:**
+- `node --check` sobre el bloque `<script type="module">` — sintaxis válida.
+- `grep -i velocidad` sobre todo `index.html`: cero referencias restantes.
+- Playwright (Chromium), llamando a las funciones reales: el formulario de cardio ya no
+  menciona "velocidad" en ningún lado y sí trae el campo `portal-serie-distancia`; un guardado
+  real de un registro de cardio (mock de `addDoc`) confirma que el documento queda con
+  `distancia` y sin `velocidad`; `_filaProgresoHtml`/`_detalleRegistroTexto`/
+  `_chartConfigProgreso` para cardio usan y muestran `distancia` correctamente — **10 OK / 0
+  FAIL**.
+- `rules-test/test.mjs` actualizado (mismo campo en el documento de prueba) — corrido contra el
+  emulador real de Firestore: **67 OK / 0 FAIL** (sin cambio en el total, solo se actualizó el
+  nombre del campo en el caso ya existente).
+
 ## 2026-09-10 — Series en registros de fuerza + registro de cardio aparte (Parte 15)
 
 **Qué se hizo:**

@@ -129,10 +129,10 @@ await check('Cliente anónimo SÍ puede guardar planFitnessIA en el espejo miemb
 await check('Cliente anónimo NO puede colar numero junto con metaFitness en miembrosPublicos', updateDoc(doc(cliente, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { metaFitness: { tipo: 'pesoCorporal', valorObjetivo: 65, ejercicioObjetivo: null, fechaObjetivo: null, creadaEn: Date.now() }, numero: 999 }), false);
 
 await check('Cliente anónimo puede crear un registro de progreso (ejercicioId/musculo, ya no maquinaId)', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10, series: 3, fecha: Date.now() }), true);
-// Cardio (Parte 15, ver CHANGELOG.md): mismo documento base pero con tiempoMinutos/velocidad en
+// Cardio (Parte 15, ver CHANGELOG.md): mismo documento base pero con tiempoMinutos/distancia en
 // vez de peso/repeticiones/series/tipo — la regla no valida campos por nombre (a diferencia de
 // sugerencias/miembrosPublicos), así que un registro con esta forma distinta debe pasar igual.
-await check('Cliente anónimo puede crear un registro de progreso de CARDIO (tiempoMinutos/velocidad, sin peso)', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'rCardio1'), { miembroId: 'm1', ejercicioId: 'caminadora', musculo: 'Cardio', tiempoMinutos: 30, velocidad: 8, fecha: Date.now() }), true);
+await check('Cliente anónimo puede crear un registro de progreso de CARDIO (tiempoMinutos/distancia, sin peso)', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'rCardio1'), { miembroId: 'm1', ejercicioId: 'caminadora', musculo: 'Cardio', tiempoMinutos: 30, distancia: 5, fecha: Date.now() }), true);
 await check('Cliente anónimo puede leer los registros de progreso que acaba de crear', getDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1')), true);
 await check('Cliente anónimo puede crear un registro de peso corporal', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'p1'), { miembroId: 'm1', peso: 70.5, fecha: Date.now() }), true);
 await check('Cliente anónimo NO puede escribir en pagos/ (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'pagos', 'pFalso'), { monto: 999999 }), false);

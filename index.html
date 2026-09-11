@@ -3375,7 +3375,7 @@ function _perfilProgresoResultadosHtml(miembroId){
   if(!ejercicioIds.length)return'<div class="empty"><div class="empty-icon">🔍</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>';
   if(!perfilProgresoEjercicioSel||!ejercicioIds.includes(perfilProgresoEjercicioSel))perfilProgresoEjercicioSel=ejercicioIds[0];
   // Cardio (Parte 15): sin "Tipo de serie" (no aplica a una caminadora) — ni el selector de
-  // filtro, ni la columna, solo Fecha/Tiempo/Velocidad.
+  // filtro, ni la columna, solo Fecha/Tiempo/Distancia.
   const esCardio=_esCardioEjercicio(perfilProgresoEjercicioSel);
   const tipos=esCardio?[]:[...new Set(registros.filter(r=>r.ejercicioId===perfilProgresoEjercicioSel).map(r=>r.tipo))];
   if(perfilProgresoFiltroTipo&&!tipos.includes(perfilProgresoFiltroTipo))perfilProgresoFiltroTipo='';
@@ -4554,7 +4554,7 @@ const BIBLIOTECA_EJERCICIOS={
   ],
 };
 // Tipo de medición de cada ejercicio (Parte 15, ver CHANGELOG.md): 'fuerza' se registra con
-// peso/repeticiones/series; 'cardio' con tiempo/velocidad — formularios y vistas de progreso
+// peso/repeticiones/series; 'cardio' con tiempo/distancia — formularios y vistas de progreso
 // completamente distintos, ver renderPortalRegistrarSerieSeccion/portalGuardarSerie más abajo.
 // Se deriva del músculo 'Cardio' de la propia biblioteca (ya agrupaba justo las máquinas
 // cardiovasculares) en vez de listarlo ejercicio por ejercicio — así una máquina de cardio que
@@ -4583,33 +4583,33 @@ function _esCardioEjercicio(ejercicioId){
   return!!(info&&info.tipo==='cardio');
 }
 function _filaProgresoHtml(r,esCardio){
-  if(esCardio)return`<tr><td>${fmtDate(r.fecha)}</td><td>${r.tiempoMinutos} min</td><td>${r.velocidad} km/h</td></tr>`;
+  if(esCardio)return`<tr><td>${fmtDate(r.fecha)}</td><td>${r.tiempoMinutos} min</td><td>${r.distancia} km</td></tr>`;
   return`<tr><td>${fmtDate(r.fecha)}</td><td>${escAttr(r.tipo)}</td><td>${formatearPeso(r.peso,r.unidadOriginal||'kg')}</td><td>${r.repeticiones}</td><td>${r.series||1}</td></tr>`;
 }
-// Peso×reps×series o tiempo×velocidad en una sola celda — la usa la Vista de Progreso del staff
+// Peso×reps×series o tiempo×distancia en una sola celda — la usa la Vista de Progreso del staff
 // (_portalStaffTarjetaMiembro), donde una misma tabla puede mezclar varios ejercicios de un
 // mismo cliente (algunos de fuerza, otros de cardio) en vez de una tabla por ejercicio como en
 // el perfil/portal de arriba, así que ahí conviene una sola columna "Detalle" en vez de 5-6
 // columnas la mitad vacías según el tipo de cada fila.
 function _detalleRegistroTexto(r,esCardio){
-  if(esCardio)return`${r.tiempoMinutos} min · ${r.velocidad} km/h`;
+  if(esCardio)return`${r.tiempoMinutos} min · ${r.distancia} km`;
   const series=r.series||1;
   return`${formatearPeso(r.peso,r.unidadOriginal||'kg')} × ${r.repeticiones} reps × ${series} serie${series===1?'':'s'}`;
 }
 function _headerProgresoHtml(esCardio){
-  return esCardio?'<tr><th>Fecha</th><th>Tiempo</th><th>Velocidad</th></tr>':'<tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th><th>Series</th></tr>';
+  return esCardio?'<tr><th>Fecha</th><th>Tiempo</th><th>Distancia</th></tr>':'<tr><th>Fecha</th><th>Tipo</th><th>Peso</th><th>Reps</th><th>Series</th></tr>';
 }
 function _colspanProgreso(esCardio){return esCardio?3:5;}
 function _opcionesChartProgreso(){
   return{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}};
 }
 // Arma la config de Chart.js (type/data/options) para la línea de progreso — cardio grafica
-// velocidad (km/h), fuerza grafica peso (en la unidad del registro más reciente, siempre
+// distancia (km), fuerza grafica peso (en la unidad del registro más reciente, siempre
 // convertible sin pérdida porque `peso` se guarda canónico en kg). Quien llama sigue siendo
 // dueño de su propia instancia de Chart (destroy/new), solo la CONFIG se comparte.
 function _chartConfigProgreso(asc,esCardio){
   if(esCardio){
-    return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Velocidad (km/h)',data:asc.map(r=>r.velocidad),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
+    return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Distancia (km)',data:asc.map(r=>r.distancia),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
   }
   const unidadChart=asc.length?(asc[asc.length-1].unidadOriginal||'kg'):'kg';
   return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:`Peso (${unidadChart})`,data:asc.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
@@ -4969,14 +4969,14 @@ function portalVolverEjercicios(){portalEjercicioSel='';renderPortalHome();}
 // REGISTRAR SERIE (Parte 1d/3): mismo formulario de siempre, ahora encabezado por el ejercicio
 // elegido en la navegación de arriba en vez de por el nombre de una máquina escaneada.
 // Parte 15 (ver CHANGELOG.md): si el ejercicio es de tipo 'cardio', el formulario es
-// COMPLETAMENTE APARTE — tiempo/velocidad en vez de peso/repeticiones/series, y sin "Tipo de
+// COMPLETAMENTE APARTE — tiempo/distancia en vez de peso/repeticiones/series, y sin "Tipo de
 // serie" (Normal/PR/Dropset/etc. no tienen sentido en una caminadora).
 function renderPortalRegistrarSerieSeccion(ejercicio){
   const esCardio=ejercicio.tipo==='cardio';
   const camposHtml=esCardio?`
     <div class="form-row">
       <div class="form-group"><label>Duración (minutos)</label><input type="number" id="portal-serie-tiempo" placeholder="30"></div>
-      <div class="form-group"><label>Velocidad (km/h)</label><input type="number" step="0.1" id="portal-serie-velocidad" placeholder="8"></div>
+      <div class="form-group"><label>Distancia (km)</label><input type="number" step="0.1" id="portal-serie-distancia" placeholder="5"></div>
     </div>`:`
     <div class="form-group">
       <label>Tipo de serie</label>
@@ -5040,9 +5040,9 @@ async function portalGuardarSerie(){
   let data;
   if(esCardio){
     const tiempoMinutos=parseFloat(document.getElementById('portal-serie-tiempo').value);
-    const velocidad=parseFloat(document.getElementById('portal-serie-velocidad').value);
-    if(!tiempoMinutos||!velocidad)return alert('Escribe la duración y la velocidad');
-    data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tiempoMinutos,velocidad,fecha:Date.now()};
+    const distancia=parseFloat(document.getElementById('portal-serie-distancia').value);
+    if(!tiempoMinutos||!distancia)return alert('Escribe la duración y la distancia');
+    data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tiempoMinutos,distancia,fecha:Date.now()};
   }else{
     if(!portalTipoSel)return alert('Elige el tipo de serie');
     const tipo=portalTipoSel==='__otro__'?document.getElementById('portal-tipo-otro').value.trim():portalTipoSel;
@@ -5092,7 +5092,7 @@ function _portalProgresoResultadosHtml(){
     portalProgresoEjercicioSel=(portalEjercicioSel&&ejercicioIds.includes(portalEjercicioSel))?portalEjercicioSel:ejercicioIds[0];
   }
   // Cardio (Parte 15): sin "Tipo de serie" (no aplica a una caminadora) — ni el selector de
-  // filtro, ni la columna, solo Fecha/Tiempo/Velocidad.
+  // filtro, ni la columna, solo Fecha/Tiempo/Distancia.
   const esCardio=_esCardioEjercicio(portalProgresoEjercicioSel);
   const tipos=esCardio?[]:[...new Set(portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel).map(r=>r.tipo))];
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
