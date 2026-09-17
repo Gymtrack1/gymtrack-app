@@ -4,6 +4,82 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-19 — "Fuerza por músculo" en el portal del cliente (Parte 19)
+
+**Qué se hizo:** nueva sección "💪 Fuerza por músculo" en el portal del cliente por QR, junto a
+"Mi progreso" (`renderPortalProgresoSeccion`). Para el cliente identificado en la sesión actual
+(`portalMiembro`), calcula su fuerza estimada por cada grupo muscular que ya haya trabajado, a
+partir de TODOS sus registros de `registrosProgreso` (colección real ya existente, campos reales:
+`miembroId`, `ejercicioId`, `musculo`, `tipo`, `peso` — canónico en kg —, `unidadOriginal`,
+`repeticiones`, `series`, `fecha`; cardio usa `tiempoMinutos`/`distancia` en vez de
+`peso`/`repeticiones`/`series` — se distingue por `buscarEjercicioInfo(ejercicioId).tipo`, no por
+un campo `esCardio` separado, que no existe). Reusa `buscarEjercicioInfo()` para obtener el
+`musculo` de cada ejercicio directo de `BIBLIOTECA_EJERCICIOS` (el catálogo estático ya existente,
+organizado por músculo) — sin mapeo paralelo.
+
+- `estimar1RM(peso,reps)`: fórmula de Epley (`peso*(1+reps/30)` si `reps>1`, si no el peso tal
+  cual) — nueva, no existía una función de 1RM en el archivo.
+- `_fuerzaPorMusculo(registros)`: agrupa por `musculo`, se queda con el registro de MAYOR 1RM
+  estimado de cada uno (junto con el ejercicio/fecha que lo generó). Excluye cardio y cualquier
+  registro cuyo `ejercicioId` ya no exista en el catálogo (sin músculo del que colgarlo — se
+  excluye en vez de adivinar, como pidió el dueño).
+- Vista: radar de Chart.js (ya cargado en el archivo, `type:'radar'`) con un eje por músculo
+  trabajado — SIEMPRE en kg (unidad canónica de `peso`), necesario para que los ejes sean
+  comparables entre sí sin importar en qué unidad se capturó cada serie. Debajo, una lista
+  (reusa `.ec-row`/`.ec-val`, mismas clases que ya usa el resto del portal) con
+  músculo — fuerza estimada (1 decimal, en la unidad ORIGINAL de ese registro vía
+  `formatearPeso`, igual que el resto de las vistas de progreso) — ejercicio — fecha. Sin
+  registros de fuerza (o sin registros en absoluto), muestra un mensaje vacío en vez del gráfico;
+  sin registros en absoluto, la tarjeta completa no aparece (mismo criterio que "Mi progreso").
+  Se recalcula solo con volver a entrar a `renderPortalHome()` — ya se dispara después de cada
+  `portalGuardarSerie()`, así que un registro recién guardado aparece sin recargar la página.
+- Sin lecturas nuevas a Firestore: opera sobre `portalRegistros`, el array que `portalCargarDatos()`
+  ya carga una vez por identificación — ni una llamada nueva a Firestore, ni cambios al flujo de
+  identificación/bloqueo por vencimiento/registro de series (fuera de alcance, sin tocar).
+
+**Nombres reales confirmados antes de tocar nada** (respuesta a lo pedido en el prompt):
+colección `registrosProgreso` (no `registros` ni ningún otro nombre); campos `miembroId`,
+`ejercicioId`, `musculo`, `tipo`, `peso`, `unidadOriginal`, `repeticiones`, `series`, `fecha`
+(fuerza) / `tiempoMinutos`, `distancia` (cardio, sin `esCardio` como campo — se deriva del
+catálogo); catálogo `BIBLIOTECA_EJERCICIOS` (objeto estático embebido en `index.html`, agrupado
+por músculo, NO una colección de Firestore — no existe una colección `maquinas`). **No existe
+"nombre libre" para ejercicios fuera del catálogo** — a diferencia de lo que asumía el contexto
+del prompt, cada registro SIEMPRE viene de un `ejercicioId` elegido del catálogo fijo
+(`portalElegirEjercicio`); no hay ninguna pantalla para dar de alta una máquina/ejercicio con
+texto libre. Por eso "excluir del cálculo si viene de una máquina con nombre libre" se tradujo a
+"excluir si `ejercicioId` ya no existe en el catálogo" — el único caso real donde no hay músculo
+del que colgar el registro.
+
+**Ejercicios del catálogo sin grupo muscular:** ninguno. Los 9 grupos de fuerza (Pecho, Espalda,
+Hombro, Bíceps, Tríceps, Pierna, Glúteo, Abdomen, Funcional) tienen `musculo` asignado en TODOS
+sus ejercicios — se deriva automáticamente de la clave del objeto `BIBLIOTECA_EJERCICIOS`, así que
+es estructuralmente imposible que falte. Nota aparte: "Funcional" (kettlebell swing, battle ropes,
+burpees, TRX, box jump, sled push) no es un grupo muscular anatómico, pero SÍ tiene `tipo:'fuerza'`
+y `musculo:'Funcional'` como cualquier otro — por instrucción explícita de reusar el campo tal
+cual sin mapeo paralelo, esos ejercicios SÍ aparecen como su propio eje "Funcional" en el radar.
+
+**Qué se verificó:**
+- `node --check` sobre el `<script>` principal (5,016 líneas) — sintaxis válida.
+- Playwright (Chromium), llamando a las funciones reales — **23 OK / 0 FAIL**: `estimar1RM`
+  reproduce la fórmula de Epley exacta (con 1 rep o sin reps, no extrapola); `_fuerzaPorMusculo`
+  excluye cardio y un `ejercicioId` inexistente, y se queda con el registro de mayor 1RM por
+  músculo (probado con dos registros de Pecho de distinto 1RM); la sección no aparece si el
+  cliente nunca ha registrado nada, y muestra el mensaje vacío (sin canvas) si solo tiene cardio;
+  un flujo real de identificarse + registrar una serie de fuerza (sentadilla) confirma que la
+  sección aparece con el músculo/ejercicio correctos SIN recargar la página, disparado por el
+  mismo `renderPortalHome()` que ya corre tras guardar; los valores que alimentarían el radar
+  (siempre en kg) coinciden con la fórmula de Epley aplicada a cada músculo.
+- Nota sobre el radar: Chart.js se carga desde un CDN externo (jsdelivr) que este entorno de
+  pruebas bloquea por política de red — se verificó que `dibujarChartPortalFuerza()` no truena sin
+  esa librería (mismo guard `typeof Chart==='undefined'` que ya usan `dibujarChartPortalProgreso`/
+  `Peso`) y que el canvas queda listo en el DOM; la instanciación real del `Chart` con esa
+  librería no se pudo probar en este sandbox — mismo límite que ya aplicaba a los otros gráficos
+  del portal, no es nuevo de esta parte.
+- Se re-corrió toda la suite de Playwright de partes anteriores (Portal de Empleados, doLogout,
+  revertir/mover el resumen "ayer", escapes XSS) sin regresiones.
+- Sin cambios a `firestore.rules` ni a `rules-test/`: esta parte solo LEE `registrosProgreso`
+  (ya legible por cualquier autenticado), no agrega escrituras ni colecciones nuevas.
+
 ## 2026-09-17 — "Registrar mi peso" del Portal de Empleados: solo su propio progreso (Parte 18.1)
 
 **Qué se hizo:** la Parte 18 dejaba que un empleado, desde "Registrar mi peso", eligiera si el

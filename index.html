@@ -4747,7 +4747,7 @@ let portalBuscarEjercicioTexto=''; // búsqueda de ejercicio en el menú "Regist
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
 let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
-let chartPortalProgreso=null,chartPortalPeso=null;
+let chartPortalProgreso=null,chartPortalPeso=null,chartPortalFuerza=null;
 
 function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
@@ -5000,6 +5000,7 @@ function renderPortalHome(){
   let html=`<div class="portal-hello">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
   html+=renderPortalNavegacionSeccion();
   html+=renderPortalProgresoSeccion();
+  html+=renderPortalFuerzaSeccion();
   html+=renderPortalMetaSeccion();
   html+=renderPortalPerfilFisicoSeccion();
   el.innerHTML=html;
@@ -5009,6 +5010,7 @@ function renderPortalHome(){
   if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':'');
   dibujarChartPortalPeso();
   dibujarChartPortalProgreso();
+  dibujarChartPortalFuerza();
   renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
 }
 
@@ -5228,6 +5230,71 @@ function dibujarChartPortalProgreso(){
   const esCardio=_esCardioEjercicio(portalProgresoEjercicioSel);
   const datos=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
   chartPortalProgreso=new Chart(canvas,_chartConfigProgreso(datos,esCardio));
+}
+
+// FUERZA POR MÚSCULO (petición del dueño, ver CHANGELOG.md): junto a "Mi progreso" (que muestra
+// el historial ejercicio por ejercicio), esta sección resume la fuerza estimada del cliente POR
+// GRUPO MUSCULAR, para comparar de un vistazo en qué músculos está más fuerte. Usa el mismo campo
+// `musculo` que ya trae cada ejercicio de BIBLIOTECA_EJERCICIOS (vía buscarEjercicioInfo) — no se
+// inventó un mapeo aparte.
+// Fórmula de Epley para estimar el 1RM (una repetición máxima) a partir de cualquier serie —
+// permite comparar esfuerzo entre series con distinto peso/reps en un solo número. Con 1 rep (o
+// sin reps, ej. datos viejos) extrapolar no tiene sentido: se usa el peso tal cual.
+function estimar1RM(peso,reps){
+  return reps&&reps>1?peso*(1+reps/30):peso;
+}
+// Recorre TODOS los registros de fuerza del cliente (excluye cardio, y cualquier registro cuyo
+// ejercicioId ya no exista en el catálogo — buscarEjercicioInfo devuelve null ahí, y sin músculo
+// no hay dónde clasificarlo; se excluye en vez de adivinar) y se queda, por músculo, con el de
+// MAYOR 1RM estimado — junto con el ejercicio y la fecha que lo generó, para mostrarlo como
+// detalle. Devuelve un Map musculo -> {valor,registro,info}.
+function _fuerzaPorMusculo(registros){
+  const porMusculo=new Map();
+  registros.forEach(r=>{
+    const info=buscarEjercicioInfo(r.ejercicioId);
+    if(!info||info.tipo==='cardio')return;
+    if(typeof r.peso!=='number')return; // defensivo, mismo criterio que _sugerenciaPesoHoy
+    const valor=estimar1RM(r.peso,r.repeticiones);
+    const actual=porMusculo.get(info.musculo);
+    if(!actual||valor>actual.valor)porMusculo.set(info.musculo,{valor,registro:r,info});
+  });
+  return porMusculo;
+}
+function renderPortalFuerzaSeccion(){
+  if(!portalRegistros.length)return''; // nunca ha registrado nada: cero cambio, no se muestra nada (mismo criterio que "Mi progreso")
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>💪 Fuerza por músculo</h3>
+    <div id="portal-fuerza-resultados">${_portalFuerzaResultadosHtml()}</div>
+  </div>`;
+}
+function _portalFuerzaResultadosHtml(){
+  const porMusculo=_fuerzaPorMusculo(portalRegistros);
+  if(!porMusculo.size)return'<div class="empty"><div class="empty-icon">💪</div><div>Todavía no tienes registros de fuerza</div></div>';
+  const filas=[...porMusculo.entries()].sort((a,b)=>b[1].valor-a[1].valor);
+  const listaHtml=filas.map(([musculo,d])=>`<div class="ec-row">
+      <span><strong>${escAttr(musculo)}</strong><div style="font-size:11px;color:var(--muted)">${escAttr(d.info.nombre)} · ${fmtDate(d.registro.fecha)}</div></span>
+      <span class="ec-val">${formatearPeso(Math.round(d.valor*10)/10,d.registro.unidadOriginal||'kg')}</span>
+    </div>`).join('');
+  return`<div class="chart-wrap"><canvas id="chart-portal-fuerza"></canvas></div>
+    <div style="margin-top:14px">${listaHtml}</div>`;
+}
+// El radar necesita el MISMO número por eje para poder compararlos entre sí — siempre en kg
+// (unidad canónica de `peso`, ver nota junto a _chartConfigProgreso), sin importar en qué unidad
+// se capturó cada serie. La lista de arriba sí respeta la unidad de cada registro (unidadOriginal)
+// — igual que el resto de las vistas de progreso — porque ahí cada fila es independiente.
+function dibujarChartPortalFuerza(){
+  const canvas=document.getElementById('chart-portal-fuerza');
+  if(!canvas)return;
+  if(typeof Chart==='undefined')return;
+  if(chartPortalFuerza){chartPortalFuerza.destroy();chartPortalFuerza=null;}
+  const porMusculo=_fuerzaPorMusculo(portalRegistros);
+  if(!porMusculo.size)return;
+  const entradas=[...porMusculo.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  chartPortalFuerza=new Chart(canvas,{
+    type:'radar',
+    data:{labels:entradas.map(([musculo])=>musculo),datasets:[{label:'1RM estimado (kg)',data:entradas.map(([,d])=>Math.round(d.valor*10)/10),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.25)',pointBackgroundColor:'#C6E600'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{r:{beginAtZero:true,ticks:{display:false},pointLabels:{font:{size:10}}}}}
+  });
 }
 
 function dibujarChartPortalPeso(){
