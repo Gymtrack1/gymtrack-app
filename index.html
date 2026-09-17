@@ -5518,8 +5518,6 @@ let portalStaffMiembrosExpandidos=new Set();
 // propio espacio de nombres (portalStaffReg*) para no compartir estado con "Registrar serie" del
 // portal del cliente (portalMusculoSel/portalEjercicioSel/etc.) — son pantallas y flujos
 // independientes aunque reusen la misma biblioteca de ejercicios y el mismo formulario.
-let portalStaffRegPersonaTipo='empleado'; // 'empleado' (él mismo) | 'miembro' (un cliente elegido)
-let portalStaffRegPersonaId='';           // solo aplica si personaTipo==='miembro': id del miembro
 let portalStaffRegMusculoSel='';
 let portalStaffRegEjercicioSel='';
 let portalStaffRegBusqueda='';
@@ -5623,7 +5621,6 @@ function renderPortalStaffMenu(){
   </div>`;
 }
 function portalStaffIrARegistrar(){
-  portalStaffRegPersonaTipo='empleado';portalStaffRegPersonaId='';
   portalStaffRegMusculoSel='';portalStaffRegEjercicioSel='';portalStaffRegBusqueda='';portalStaffRegTipoSel='';
   renderPortalStaffRegistrar();
 }
@@ -5766,7 +5763,6 @@ function portalStaffSalir(){
   portalStaffBusqueda='';
   portalStaffSoloAyer=false;
   portalStaffMiembrosExpandidos=new Set();
-  portalStaffRegPersonaTipo='empleado';portalStaffRegPersonaId='';
   portalStaffRegMusculoSel='';portalStaffRegEjercicioSel='';portalStaffRegBusqueda='';portalStaffRegTipoSel='';
   renderPortalStaffIdentify();
 }
@@ -5774,32 +5770,23 @@ function portalStaffSalir(){
 // PORTAL DE EMPLEADOS — "Registrar mi peso" (ver CHANGELOG.md): mismo formulario que ya usa el
 // portal del cliente para registrar una serie (músculo -> ejercicio -> peso/reps/series o
 // tiempo/distancia si es cardio, ver renderPortalRegistrarSerieSeccion/portalGuardarSerie más
-// arriba), con un selector de "persona" agregado arriba (el propio empleado, u otro cliente del
-// gym) — así un instructor puede registrar tanto su propio entrenamiento como el de un cliente
-// que esté supervisando en ese momento, sin que el cliente tenga que identificarse aparte.
+// arriba). SOLO para su propio peso/fuerza — el dueño del gym pidió explícitamente que un
+// empleado NO pueda registrar a nombre de un cliente (se quitó el selector de "persona" que
+// existía en la primera versión de esta parte, ver CHANGELOG.md). portalStaffGuardarSerie ya no
+// necesita distinguir personaTipo por selección: siempre es 'empleado', el propio identificado
+// por PIN.
 function renderPortalStaffRegistrar(){
   const el=document.getElementById('portal-content');
   if(!el)return;
-  const personaValor=portalStaffRegPersonaTipo==='empleado'?'__yo__':portalStaffRegPersonaId;
   el.innerHTML=`<div class="ec-card" style="margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <button class="btn btn-ghost btn-sm" onclick="renderPortalStaffMenu()">‹ Menú</button>
         <button class="btn btn-ghost btn-sm" onclick="portalStaffSalir()">Salir</button>
       </div>
-      <h3 style="margin:8px 0 12px">🏋️ Registrar peso</h3>
-      <div class="form-group">
-        <label>¿Para quién es este registro?</label>
-        <select id="portal-staff-reg-persona" onchange="portalStaffCambiarPersona(this.value)">
-          <option value="__yo__" ${personaValor==='__yo__'?'selected':''}>Yo mismo (${escAttr(portalStaffEmpleadoSel.nombre)})</option>
-          ${portalStaffMiembros.map(m=>`<option value="${m.id}" ${personaValor===m.id?'selected':''}>${escAttr(m.nombre)}</option>`).join('')}
-        </select>
-      </div>
+      <h3 style="margin:8px 0 4px">🏋️ Registrar mi peso</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo tu propio progreso — ${escAttr(portalStaffEmpleadoSel.nombre)}</div>
     </div>
     <div id="portal-staff-reg-ejercicio">${_portalStaffRegNavegacionHtml()}</div>`;
-}
-function portalStaffCambiarPersona(v){
-  if(v==='__yo__'){portalStaffRegPersonaTipo='empleado';portalStaffRegPersonaId='';}
-  else{portalStaffRegPersonaTipo='miembro';portalStaffRegPersonaId=v;}
 }
 function _portalStaffRegNavegacionHtml(){
   if(!portalStaffRegMusculoSel)return _portalStaffRegMusculosMenuHtml();
@@ -5914,22 +5901,20 @@ function portalStaffRegElegirTipo(t){
 // la Vista de Progreso (ver CHANGELOG.md) — sin colección nueva que sincronizar. personaTipo/
 // personaNombre/registradoPor son los únicos campos nuevos: identifican que este registro lo
 // escribió un empleado (a nombre propio o de un cliente) y quién fue, sin tocar el modelo que ya
-// usan las otras vistas (miembroId sigue siendo el id de la "persona" del registro, sea cliente o
-// empleado — _portalStaffResultadosHtml excluye personaTipo==='empleado' de "Progreso de
-// clientes", ver arriba).
+// usan las otras vistas (miembroId sigue siendo el id de la "persona" del registro — aquí SIEMPRE
+// el propio empleado identificado por PIN, nunca un cliente elegido — ver nota arriba;
+// _portalStaffResultadosHtml excluye personaTipo==='empleado' de "Progreso de clientes").
 async function portalStaffGuardarSerie(){
   const info=buscarEjercicioInfo(portalStaffRegEjercicioSel);
   const esCardio=info&&info.tipo==='cardio';
-  const esUnoMismo=portalStaffRegPersonaTipo==='empleado';
-  const personaId=esUnoMismo?portalStaffEmpleadoSel.id:portalStaffRegPersonaId;
-  if(!esUnoMismo&&!personaId)return alert('Elige para quién es este registro');
-  const personaNombre=esUnoMismo?portalStaffEmpleadoSel.nombre:((portalStaffMiembros.find(m=>m.id===personaId)||{}).nombre||'');
+  const personaId=portalStaffEmpleadoSel.id;
+  const personaNombre=portalStaffEmpleadoSel.nombre;
   let data;
   if(esCardio){
     const tiempoMinutos=parseFloat(document.getElementById('portal-staff-serie-tiempo').value);
     const distancia=parseFloat(document.getElementById('portal-staff-serie-distancia').value);
     if(!tiempoMinutos||!distancia)return alert('Escribe la duración y la distancia');
-    data={miembroId:personaId,personaTipo:esUnoMismo?'empleado':'miembro',personaNombre,ejercicioId:portalStaffRegEjercicioSel,musculo:portalStaffRegMusculoSel,tiempoMinutos,distancia,fecha:Date.now(),registradoPor:portalStaffEmpleadoSel.nombre};
+    data={miembroId:personaId,personaTipo:'empleado',personaNombre,ejercicioId:portalStaffRegEjercicioSel,musculo:portalStaffRegMusculoSel,tiempoMinutos,distancia,fecha:Date.now(),registradoPor:portalStaffEmpleadoSel.nombre};
   }else{
     if(!portalStaffRegTipoSel)return alert('Elige el tipo de serie');
     const tipo=portalStaffRegTipoSel==='__otro__'?document.getElementById('portal-staff-tipo-otro').value.trim():portalStaffRegTipoSel;
@@ -5939,7 +5924,7 @@ async function portalStaffGuardarSerie(){
     if(!pesoCapturado||!repeticiones)return alert('Escribe el peso y las repeticiones');
     const series=parseInt(document.getElementById('portal-staff-serie-series').value)||1;
     const peso=portalStaffRegUnidadPeso==='lb'?lbAKg(pesoCapturado):pesoCapturado;
-    data={miembroId:personaId,personaTipo:esUnoMismo?'empleado':'miembro',personaNombre,ejercicioId:portalStaffRegEjercicioSel,musculo:portalStaffRegMusculoSel,tipo,peso,unidadOriginal:portalStaffRegUnidadPeso,repeticiones,series,fecha:Date.now(),registradoPor:portalStaffEmpleadoSel.nombre};
+    data={miembroId:personaId,personaTipo:'empleado',personaNombre,ejercicioId:portalStaffRegEjercicioSel,musculo:portalStaffRegMusculoSel,tipo,peso,unidadOriginal:portalStaffRegUnidadPeso,repeticiones,series,fecha:Date.now(),registradoPor:portalStaffEmpleadoSel.nombre};
   }
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);

@@ -4,6 +4,31 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-17 — "Registrar mi peso" del Portal de Empleados: solo su propio progreso (Parte 18.1)
+
+**Qué se hizo:** la Parte 18 dejaba que un empleado, desde "Registrar mi peso", eligiera si el
+registro era para él mismo o para un cliente (selector "¿Para quién es este registro?"). El dueño
+pidió explícitamente que un coach NO pueda registrar el peso de otros clientes — solo el propio.
+Se quitó por completo el selector de persona: `renderPortalStaffRegistrar` ya no lo muestra,
+`portalStaffCambiarPersona` se eliminó, y `portalStaffGuardarSerie` ya no recibe qué persona
+elegir — siempre guarda `personaTipo:'empleado'` con `miembroId`/`personaNombre` del propio
+empleado identificado por PIN. `_portalStaffResultadosHtml` sigue excluyendo
+`personaTipo==='empleado'` de "Ver progreso de clientes" (sin cambio ahí, sigue siendo necesario).
+Los estados `portalStaffRegPersonaTipo`/`portalStaffRegPersonaId` (ya sin uso) se quitaron junto
+con sus resets en `portalStaffIrARegistrar`/`portalStaffSalir`.
+
+**Qué se verificó:**
+- `node --check` sobre el `<script>` principal (4,949 líneas) — sintaxis válida.
+- Playwright (Chromium), llamando a las funciones reales — **29 OK / 0 FAIL**: la pantalla de
+  "Registrar mi peso" ya NO trae el selector de persona ni el elemento `#portal-staff-reg-persona`
+  en el DOM, y aclara en texto "Solo tu propio progreso"; `portalStaffCambiarPersona` ya no existe;
+  guardar una serie (fuerza o cardio) siempre queda con `personaTipo:'empleado'` y el
+  `miembroId`/`personaNombre` del propio empleado, sin manera de elegir otro; "Ver progreso de
+  clientes" sigue excluyendo esos autorregistros. Se re-corrieron los tests de partes anteriores
+  (doLogout, revertir/mover el resumen "ayer", escapes XSS) sin regresiones.
+- `rules-test/test.mjs` contra el emulador real de Firestore, sin cambios de reglas ni de modelo
+  de datos: **67 OK / 0 FAIL**.
+
 ## 2026-09-17 — "Registrar mi peso" en el Portal de Empleados + PINs hasheados (Parte 18)
 
 **Qué se hizo:** se pidió un "Portal de Empleados" nuevo y separado (link `?portal=empleados`,
