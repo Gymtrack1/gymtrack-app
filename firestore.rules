@@ -117,12 +117,14 @@ rules_version = '2';
 //     colecciones.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// VISTA DE PROGRESO DEL STAFF (?gym=...&staff=1, Parte 14, ver CHANGELOG.md) — otro modo
+// PORTAL DE EMPLEADOS (?gym=...&staff=1, Parte 14 + Parte 18, ver CHANGELOG.md) — otro modo
 // COMPLETAMENTE APARTE, activado por un tercer QR/link distinto (generado desde el panel de
 // Empleados). Un empleado se identifica con su nombre + un PIN de 4-6 dígitos (campo pinAcceso
-// en empleados/{id}) y ve, de SOLO LECTURA, el progreso de TODOS los clientes del gym — no solo
-// el suyo, a diferencia de registrosProgreso/pesoCorporal arriba (donde cada cliente ve/crea lo
-// propio, aunque la regla en sí no aísla por miembro).
+// en empleados/{id}) y, tras el PIN, elige entre (a) registrar SU PROPIO peso/fuerza en un
+// ejercicio (o el de un cliente que esté supervisando), igual que puede hacerlo un cliente desde
+// su propio portal, o (b) ver, de SOLO LECTURA, el progreso de TODOS los clientes del gym — no
+// solo el suyo, a diferencia de registrosProgreso/pesoCorporal arriba (donde cada cliente ve/crea
+// lo propio, aunque la regla en sí no aísla por miembro).
 //
 //   usuarios/{gymId}/empleadosPublicos — espejo de SOLO nombre y pinAcceso de cada empleado
 //     (mismo id de documento que en empleados/{id}), mantenido por el propio staff
@@ -131,7 +133,17 @@ rules_version = '2';
 //     mostrarlos como botones, y comparar el PIN escrito contra pinAcceso del lado del cliente
 //     (no hay forma de "validar un PIN sin revelarlo" con reglas de Firestore: la única
 //     alternativa sería una Cloud Function, que este proyecto no tiene). Sin escritura pública —
-//     lo sigue manteniendo solo el staff, vía la regla genérica de más abajo.
+//     lo sigue manteniendo solo el staff, vía la regla genérica de más abajo. Desde la Parte 18,
+//     pinAcceso se guarda HASHEADO (SHA-256) para los PINs nuevos o recién cambiados — PINs
+//     viejos siguen en texto plano hasta que se editen (ver _pinEmpleadoValido en index.html,
+//     acepta ambos formatos). Esto NO cambia la regla en sí: sigue siendo lectura pública de un
+//     valor (hash o texto plano, según el caso), la comparación pasa del lado del cliente.
+//
+//   Registros que un empleado crea desde "Registrar mi peso" (Parte 18) se guardan en la MISMA
+//   colección registrosProgreso de arriba — sin colección nueva ni regla nueva. Le agregan 3
+//   campos más al documento (personaTipo:'miembro'|'empleado', personaNombre, registradoPor), que
+//   la regla de registrosProgreso no necesita validar (ya es create abierta sin checar forma del
+//   documento, igual que el resto de los campos que ya guarda el portal del cliente).
 //
 //   AVISO DE CONFIANZA (documentado explícitamente porque aquí el "premio" de saltarse la
 //   barrera es mayor que en el resto del portal): el PIN es una barrera de UI para filtrar
@@ -140,9 +152,9 @@ rules_version = '2';
 //   al SDK/API de Firestore directo (sin pasar por index.html) ya podía leer TODO
 //   registrosProgreso/pesoCorporal de un gym con solo autenticarse anónimo (ver nota junto a esas
 //   colecciones arriba, sin cambios en esta parte) — lo único que se abre aquí de más es
-//   empleadosPublicos (nombre + pinAcceso). Mismo nivel de confianza que ya tiene el resto de
-//   GymTrack sin backend propio, aplicado ahora a un alcance de datos mayor (todos los clientes,
-//   no uno).
+//   empleadosPublicos (nombre + pinAcceso/pinHash). Mismo nivel de confianza que ya tiene el
+//   resto de GymTrack sin backend propio, aplicado ahora a un alcance de datos mayor (todos los
+//   clientes, no uno).
 //
 // ─────────────────────────────────────────────────────────────────────────
 // AGENTE DE IA: META Y PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md) — NO es

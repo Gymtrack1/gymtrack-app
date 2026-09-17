@@ -4,6 +4,74 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-17 — "Registrar mi peso" en el Portal de Empleados + PINs hasheados (Parte 18)
+
+**Qué se hizo:** se pidió un "Portal de Empleados" nuevo y separado (link `?portal=empleados`,
+colecciones espejo `portalEmpleados`/`portalMiembros` nuevas, `registrosFuerza` aparte) para que
+un empleado sin cuenta real registre su propio peso/fuerza o vea el progreso de clientes. Antes de
+construirlo se encontró que ~90% de eso YA EXISTÍA como la Vista de Progreso del staff (Parte 14,
+`?gym=...&staff=1`): Anonymous Auth ya habilitado y en uso, identificación por nombre + PIN, y las
+colecciones espejo `empleadosPublicos`/`miembrosPublicos` ya sincronizadas automáticamente. Se
+confirmó con el dueño y se decidió EXTENDER ese portal en vez de construir un sistema paralelo
+completo — mismo link, mismas colecciones, sin duplicar nada.
+
+1. **"Registrar mi peso" (nuevo)**: tras el PIN, el empleado ahora ve un menú con dos opciones —
+   "Registrar mi peso" (nuevo) y "Ver progreso de clientes" (lo que ya existía, sin cambios de
+   comportamiento). El registro reusa el mismo formulario que ya usa el portal del cliente
+   (músculo → ejercicio → peso/reps/tipo de serie, o tiempo/distancia si es cardio — mismos
+   ejercicios de BIBLIOTECA_EJERCICIOS, mismos TIPOS_SERIE), con un selector de "¿Para quién es
+   este registro?" agregado arriba (el propio empleado, o un cliente del gym — para que un
+   instructor pueda registrar también lo que ve hacer a un cliente). Se guarda en la MISMA
+   colección `registrosProgreso` de siempre — sin colección nueva — con 3 campos más:
+   `personaTipo` ('miembro'|'empleado'), `personaNombre` y `registradoPor` (el nombre del
+   empleado que hizo el registro, sea a nombre propio o de un cliente). `_portalStaffResultadosHtml`
+   ("Ver progreso de clientes") excluye explícitamente `personaTipo==='empleado'` para que los
+   autorregistros de los empleados no se cuelen ahí — los registros viejos (sin este campo) se
+   siguen tratando como de cliente, sin cambio de comportamiento.
+2. **PIN de empleado hasheado (SHA-256)**: hasta ahora `pinAcceso` se guardaba en texto plano en
+   `empleados/{id}` y su espejo `empleadosPublicos/{id}`. Ahora se hashea con la misma función
+   `sha256Hex` que ya usa `pinFinanzas` — `_pinEmpleadoValido()` acepta AMBOS formatos (hash o
+   texto plano) para no romper PINs ya asignados antes de esta parte; se migran solos a hash la
+   próxima vez que se editen (no hay forma de migrarlos automáticamente al verificar, a diferencia
+   de `pinFinanzas`: esa verificación corre desde una sesión ANÓNIMA sin permiso de escritura
+   sobre `empleados`/`empleadosPublicos`). El campo del modal de empleado ya NO se prellena al
+   editar (no se puede "deshashear" para mostrarlo) — dejarlo vacío conserva el PIN existente tal
+   cual, escribir uno nuevo lo reemplaza. Efecto en cascada: la tabla de Empleados ya no muestra el
+   PIN en texto plano (columna cambia a "✓ Configurado"/"Sin PIN"), y el botón de WhatsApp
+   (`enviarLinkStaffWhatsApp`) solo puede mandar el PIN en texto plano si se acaba de
+   crear/cambiar en esta misma sesión del navegador (`_pinesRecienEstablecidos`, solo en memoria,
+   nunca se persiste) — si no, avisa que hay que poner un PIN nuevo para poder reenviarlo, mismo
+   criterio que ya usa `pinFinanzas` (un PIN hasheado nunca se puede "mostrar" después).
+
+**Fuera del código (le corresponde al dueño, no a este cambio):**
+- **Reglas de Firestore: NO se necesita agregar nada.** `registrosProgreso` ya permite
+  `read, create: if isSignedIn()` sin validar la forma del documento (ver firestore.rules) — los
+  3 campos nuevos (`personaTipo`/`personaNombre`/`registradoPor`) entran sin tocar la regla.
+  `empleadosPublicos` ya es de solo lectura pública; que `pinAcceso` ahora sea un hash en vez de
+  texto plano no cambia la regla, solo el valor que guarda. Se actualizó el comentario descriptivo
+  en firestore.rules (y su copia en rules-test/) para documentar esto — sin cambiar ninguna regla.
+- **Anonymous Authentication: ya está habilitado.** Lo usa desde la Parte 14 tanto el portal del
+  cliente como la Vista de Progreso del staff — no hace falta hacer nada nuevo en la consola de
+  Firebase para esta parte.
+
+**Qué se verificó:**
+- Corrección de metodología: el `node --check` de sesiones anteriores solo validaba el
+  `<script type="module">` chico (bootstrap de Firebase, ~60 líneas) — NO el `<script>` grande
+  (~4,700 líneas) donde vive toda la lógica de la app, que es el que de verdad se edita. Se
+  corrigió la extracción para checar el script correcto de aquí en adelante.
+- `node --check` sobre el `<script>` principal (4,964 líneas) — sintaxis válida.
+- Playwright (Chromium), llamando a las funciones reales — **31 OK / 0 FAIL**: el PIN se guarda
+  hasheado (nunca en texto plano) y `_pinEmpleadoValido` acepta hash y texto plano legado;
+  editar sin tocar el campo PIN conserva el existente; el flujo completo PIN → menú → "Registrar
+  mi peso" → elegir músculo/ejercicio → guardar, tanto a nombre propio como de un cliente elegido
+  del dropdown, guarda `personaTipo`/`miembroId`/`personaNombre`/`registradoPor` correctos;
+  cardio guarda tiempo/distancia sin peso; "Ver progreso de clientes" muestra al cliente real y
+  excluye el autorregistro del empleado.
+- Se re-corrieron los tests de Playwright de partes anteriores (doLogout, revertir/mover el
+  resumen "ayer", escapes XSS) sin regresiones.
+- `rules-test/test.mjs` contra el emulador real de Firestore, sin cambios de reglas: **67 OK / 0
+  FAIL**.
+
 ## 2026-09-11 — Revisión de bugs + lecturas innecesarias de Firestore (Parte 18)
 
 **Qué se hizo:** revisión completa de `index.html` buscando bugs reales (no estilo) y lecturas de
