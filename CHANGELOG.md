@@ -4,6 +4,47 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — Auditoría de lecturas: "Portal de Empleados" ya no trae TODO el historial en cada entrada de PIN
+
+**Qué se hizo:** revisión completa de todas las lecturas/escrituras de Firestore de la app,
+buscando fugas. Conclusión: no hay bugs de listeners olvidados, polling descontrolado ni patrones
+N+1 (una lectura por elemento de una lista) — pero sí una lectura desproporcionadamente cara:
+`portalStaffCargarDatos()` traía la colección **completa** de `registrosProgreso` (todas las
+series de TODOS los clientes desde siempre) cada vez que un coach entraba con su PIN al Portal de
+Empleados, sin ningún filtro ni caché entre entradas. Con historial acumulado y una tablet
+compartida donde varios coaches entran/salen varias veces al día, esto podía ser cientos de miles
+de lecturas diarias — muy por encima de cualquier otra cosa en la app (`loadAll()` del dueño, por
+comparación, pasa una sola vez al día).
+
+1. **`portalStaffCargarDatos()` ahora filtra `registrosProgreso` por fecha** (`where('fecha','>=',
+   corte)`, `DIAS_HISTORIAL_STAFF_DEFAULT=60`) en vez de traer la colección entera. "Progreso de
+   clientes" por default solo muestra lo de AYER por cliente, así que 60 días de margen cubre eso
+   sobrado sin acercarse al costo de traer todo el historial de siempre.
+2. **"Ver historial completo" de un cliente puntual sigue funcionando igual de completo**: al
+   expandir la tarjeta de un cliente (`portalStaffToggleVerTodoMiembro`), si es la primera vez en
+   esa sesión, se trae aparte SU historial completo (filtrado por `miembroId`, sin límite de
+   fecha) y se mezcla con lo ya cargado sin duplicar; queda cacheado (`portalStaffRegistrosCompletoCache`)
+   para que colapsar/re-expandir esa misma tarjeta no vuelva a leer nada. `portalStaffSalir()`
+   limpia esa caché al cerrar sesión.
+3. **Efecto colateral aceptado, documentado en el código**: un cliente sin ningún registro en los
+   últimos 60 días ya no aparece en la lista de "Progreso de clientes" ni al buscarlo por nombre
+   desde esa pantalla (antes sí aparecía, con la tarjeta vacía). Sigue siendo visible desde el
+   panel del dueño (pestaña Miembros), que no cambió.
+
+**No se tocó `loadAll()`** (las 13 colecciones que trae el dueño al iniciar sesión, una vez al
+día) — ya estaba documentado en una auditoría anterior con recomendaciones de paginación/
+aggregation queries no implementadas; sigue siendo la siguiente mejora pendiente si el gym crece
+mucho, pero no es la fuga urgente.
+
+**Verificado:** `node --check` sobre el script principal (5299 líneas). Prueba nueva de Playwright
+(`test_lecturas_staff.mjs`, 13/13 OK): `portalStaffCargarDatos` hace exactamente 2 lecturas
+(miembros + registros filtrados por fecha, con el corte real de ~60 días); la primera vez que se
+expande "Ver historial completo" de un cliente dispara exactamente 1 lectura extra filtrada por
+`miembroId`, mezcla sin duplicar los registros que ya estaban cargados, y queda cacheada — colapsar
+y volver a expandir esa misma tarjeta NO dispara una segunda lectura; `portalStaffSalir` limpia la
+caché. Se re-corrieron las suites de Recomendaciones/Meta (25/25), Editar hábitos (23/23), Mi Meta
+(17/17), Portal de Empleados (29/29) y Fuerza (23/23) sin regresiones.
+
 ## 2026-09-18 — El coach puede escribir/editar los hábitos del plan de un cliente, no solo marcarlos (Parte 20.4)
 
 **Qué se hizo:** en la Parte 20.3 el coach ya podía marcar/desmarcar los hábitos del plan de un

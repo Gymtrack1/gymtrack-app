@@ -5781,10 +5781,26 @@ async function portalStaffVerificarPin(){
   await portalStaffCargarDatos();
   renderPortalStaffMenu();
 }
+// AUDITORÍA DE LECTURAS (2026-09-18): esta era, con diferencia, la lectura más cara de toda la
+// app — traía TODO registrosProgreso (todas las series de TODOS los clientes desde siempre, una
+// colección que solo crece) cada vez que CUALQUIER coach entraba con su PIN, sin caché entre
+// entradas. En un gym con historial acumulado, eso son decenas de miles de lecturas por cada
+// entrada de PIN, varias veces al día en una tablet compartida. "Progreso de clientes" por
+// default solo muestra lo de AYER por cliente (_rangoAyer) — no hacía falta el historial
+// completo para eso. Ahora se trae solo lo de los últimos DIAS_HISTORIAL_STAFF_DEFAULT días; el
+// historial COMPLETO de un cliente puntual se trae aparte, solo si alguien pulsa "Ver historial
+// completo" en su tarjeta (portalStaffToggleVerTodoMiembro), y se cachea para no repetirlo.
+// Efecto colateral aceptado: un cliente sin NINGÚN registro en esa ventana (ej. dejó de venir
+// hace más de dos meses) ya no aparece en la lista ni al buscarlo por nombre desde esta pantalla
+// — antes sí aparecía, con la tarjeta vacía. Sigue viéndose desde el panel del dueño (Miembros).
+const DIAS_HISTORIAL_STAFF_DEFAULT=60;
+let portalStaffRegistrosCompletoCache=new Set(); // miembroIds cuyo historial COMPLETO ya se trajo
 async function portalStaffCargarDatos(){
   const gymId=window._portalGym;
   try{const s=await getDocs(gymCol(gymId,'miembrosPublicos'));portalStaffMiembros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalStaffMiembros=[];}
-  try{const s=await getDocs(gymCol(gymId,'registrosProgreso'));portalStaffRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalStaffRegistros=[];}
+  const cortePorFecha=Date.now()-DIAS_HISTORIAL_STAFF_DEFAULT*86400000;
+  try{const s=await getDocs(queryFn(gymCol(gymId,'registrosProgreso'),whereFn('fecha','>=',cortePorFecha)));portalStaffRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalStaffRegistros=[];}
+  portalStaffRegistrosCompletoCache=new Set();
 }
 
 // PORTAL DE EMPLEADOS — menú (ver CHANGELOG.md): tras el PIN, el empleado elige entre registrar
@@ -5938,7 +5954,20 @@ function _portalStaffTarjetaMiembro(m,registros){
     ${botonHtml}
   </div>`;
 }
-function portalStaffToggleVerTodoMiembro(mid,v){
+// "Ver historial completo" de UN cliente puntual: portalStaffRegistros ya no trae todo el
+// historial de siempre (ver AUDITORÍA DE LECTURAS junto a portalStaffCargarDatos), así que la
+// primera vez que se expande a este cliente se trae su historial completo aparte (filtrado por
+// miembroId, sin límite de fecha) y se mezcla con lo ya cargado sin duplicar — las siguientes
+// veces que se expanda/colapse la MISMA tarjeta en esta sesión no vuelven a leer nada.
+async function portalStaffToggleVerTodoMiembro(mid,v){
+  if(v&&!portalStaffRegistrosCompletoCache.has(mid)){
+    try{
+      const s=await getDocs(queryFn(gymCol(window._portalGym,'registrosProgreso'),whereFn('miembroId','==',mid)));
+      const idsYaCargados=new Set(portalStaffRegistros.map(r=>r.id));
+      s.docs.forEach(d=>{if(!idsYaCargados.has(d.id))portalStaffRegistros.push({id:d.id,...d.data()});});
+    }catch(e){/* si falla, se muestra con lo que ya había cargado — no bloquea la pantalla */}
+    portalStaffRegistrosCompletoCache.add(mid);
+  }
   if(v)portalStaffMiembrosExpandidos.add(mid);else portalStaffMiembrosExpandidos.delete(mid);
   _refrescarPortalStaffResultados();
 }
@@ -5952,6 +5981,7 @@ function portalStaffSalir(){
   portalStaffEmpleadoSel=null;
   portalStaffMiembros=[];
   portalStaffRegistros=[];
+  portalStaffRegistrosCompletoCache=new Set();
   portalStaffBusqueda='';
   portalStaffSoloAyer=false;
   portalStaffMiembrosExpandidos=new Set();
