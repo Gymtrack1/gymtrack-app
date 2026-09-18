@@ -4,6 +4,49 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — "Ver recomendaciones IA" del coach ahora es el plan de Meta, editable, con notas visibles para el cliente (Parte 20.3)
+
+**Qué se hizo:** tras quitar la tarjeta de Fuerza (Parte 20.2), "Ver recomendaciones IA" en el
+Portal de Empleados se quedó vacía para siempre (nada volvía a escribir en esa colección). El
+dueño aclaró qué quería ahí en realidad: que aparezca la recomendación que se generó desde la
+meta del cliente (Parte 6, `planFitnessIA` — el mismo plan que el cliente ve en su "Mi Meta"),
+que el coach pueda poner notas y marcar/desmarcar los hábitos con checkbox, que esos cambios se
+reflejen en la vista del cliente, y que el cliente vea las notas que se le hayan escrito.
+
+1. **La lista del coach ahora se arma con `planFitnessIA`**, no con la colección `recomendacionesIA`
+   (que ya no recibía escrituras nuevas). El dato ya vive en `portalStaffMiembros` (espejo
+   `miembrosPublicos`, que desde la Parte 6 incluye `planFitnessIA`) — cero lecturas nuevas a
+   Firestore para mostrar la lista. Solo aparecen los clientes que ya tienen un plan generado
+   (`_portalStaffClientesConPlan`), ordenados por más reciente.
+2. **El coach puede marcar/desmarcar los hábitos** de cualquier cliente expandido
+   (`portalStaffToggleHabito`) — mismo helper compartido `_marcarHabitoEnPlan` y las mismas dos
+   escrituras (`miembros/` + espejo `miembrosPublicos`) que ya usa el cliente desde su propio
+   portal (`portalToggleHabito`), con `origen:'staff'` para distinguir quién lo marcó. Como no
+   hizo falta ningún permiso nuevo (la regla de Firestore ya dejaba a cualquier autenticado
+   actualizar `planFitnessIA` de cualquier miembro — mismo criterio de confianza documentado en
+   `firestore.rules`), **no se tocaron `firestore.rules` ni `rules-test/`**.
+3. **Notas bidireccionales, reusando el mismo cajón que ya existía**
+   (`recomendacionesIA/{miembroId}/notas`, con su forma y reglas sin cambios — antes solo guardaba
+   comentarios sobre la recomendación de Fuerza que ya no se genera): el coach agrega notas desde
+   "Ver recomendaciones IA" (`portalStaffAgregarNotaRecomendacion`, ya existía, ahora escribe sobre
+   el plan de Meta en vez de la recomendación de Fuerza) y **el cliente ahora las ve dentro de su
+   modal "Mi Meta"** (nueva sección de notas, `portalMetaNotas`/`portalAgregarNotaMeta`/
+   `abrirModalPortalMeta` actualizado para cargarlas al abrir) — y puede responder desde ahí mismo.
+   Como ambos lados escriben en el mismo lugar y leen el mismo `planFitnessIA` del miembro, los
+   cambios de un lado aparecen del otro la próxima vez que se abre esa pantalla — sin
+   sincronización aparte que mantener.
+
+**Verificado:** `node --check` sobre el script principal (5205 líneas). Prueba nueva de Playwright
+(`test_recomendaciones_meta.mjs`, 25/25 OK): la lista del coach solo muestra clientes con plan;
+expandir pinta el resumen + hito + checkbox reales en el DOM + las notas ya existentes; clickear
+el checkbox dispara las 2 escrituras esperadas (`miembros`+`miembrosPublicos`), deja
+`completadoPor:'staff'` y el checkbox sigue marcado tras repintar; agregar una nota desde el coach
+llama a `addDoc` sobre `recomendacionesIA/{id}/notas` con `autorTipo:'coach'` y aparece de
+inmediato; del lado cliente, `abrirModalPortalMeta()` carga y muestra el hábito ya marcado por el
+coach y la nota que le escribió, y `portalAgregarNotaMeta()` guarda una respuesta con
+`autorTipo:'cliente'` en el mismo lugar. Se re-corrieron las suites existentes de Mi Meta (17/17),
+Portal de Empleados (29/29) y Fuerza (23/23) sin regresiones.
+
 ## 2026-09-18 — Portal del cliente: se quita la tarjeta "Recomendación IA" y "Mi Meta" pasa a un modal (Parte 20.2)
 
 **Qué se hizo:** el dueño vio el portal en su teléfono y pidió dos ajustes de layout sobre lo
