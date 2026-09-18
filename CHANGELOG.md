@@ -4,6 +4,69 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — Corrección: Recomendación IA pasa a usar el Worker de Gemini existente (Parte 20.1)
+
+**Qué se hizo:** la Parte 20 había construido una Cloud Function de Firebase nueva con Claude/
+Anthropic (infraestructura y proveedor de IA completamente nuevos). El dueño aclaró que NO quiere
+un proveedor de IA aparte — ya tiene Gemini funcionando vía `cloudflare-worker-ia/` para "Mi Meta
+y Recomendación IA" (Parte 6) y quiere reusar exactamente eso. También pidió que el coach vea
+TODAS las recomendaciones ya generadas de un jalón, no una por una eligiendo cliente de un
+selector. Se revirtió la Cloud Function por completo y se reconstruyó sobre el Worker existente:
+
+1. **Se eliminó `functions/`** (Cloud Function, Claude/Anthropic, Secret Manager, plan Blaze) y se
+   revirtió `firebase.json` — cero infraestructura nueva de Firebase.
+2. **`cloudflare-worker-ia/worker.js` ahora atiende DOS tipos de petición**, distinguidos por
+   `datos.tipo` (si no viene, se comporta exactamente igual que antes — el caller original nunca
+   mandó ese campo, así que el plan de meta sigue funcionando idéntico, verificado con pruebas de
+   regresión): el plan de meta de siempre, y el nuevo `'recomendacionFuerza'` — mismo Gemini, mismo
+   secreto `GEMINI_API_KEY` ya configurado, sin ningún paso nuevo que hacer en Cloudflare.
+3. **`index.html` vuelve al patrón `fetch()` directo** (`_solicitarRecomendacionFuerzaIA`, mismo
+   criterio que `_solicitarPlanFitnessIA`): arma el payload con `_fuerzaPorMusculo` (ya existía,
+   Parte 19) + `edadMostrar(portalMiembro)` + `categoriaMembresia`/`metaSemanal` (se agregaron al
+   espejo `miembrosPublicos`, antes no estaban ahí) + los grupos musculares sin registro (calculado
+   directo de `BIBLIOTECA_EJERCICIOS`, sin duplicar nada), llama al Worker, y GUARDA el resultado
+   él mismo en Firestore (`setDoc` en `recomendacionesIA/{miembroId}`) — igual que ya hace
+   `planFitnessIA`. Ya no hay "control de costo server-side" (no hay servidor propio): la UI ya lo
+   resuelve sola (el botón es "Recomendar" cuando no hay ninguna, "Actualizar recomendación" cuando
+   sí — nunca se regenera sin que el cliente lo pida a propósito).
+4. **`firestore.rules`**: `recomendacionesIA/{miembroId}` pasa de "solo lectura, solo la Cloud
+   Function escribe" a `create`/`update` abiertos para cualquier autenticado (mismo nivel de
+   confianza que `registrosProgreso`/`miembrosPublicos`/`planFitnessIA`), validando la forma exacta
+   del documento. Sin cambios en la subcolección `notas` (ya funcionaba igual).
+5. **Portal de Empleados — "Ver recomendaciones IA" ahora es una LISTA**, no un selector de
+   cliente: `portalStaffIrARecomendaciones()` lee TODA la colección `recomendacionesIA` del gym de
+   una vez (una sola lectura, no una por cliente) y muestra una tarjeta por cliente, más reciente
+   primero, con nombre + fecha; cada tarjeta se expande para ver el texto completo + notas (las
+   notas se cargan solo al expandir esa tarjeta puntual — lazy, para no leer de más con muchos
+   clientes). Varias tarjetas pueden estar expandidas a la vez, cada una con su propio textarea
+   (`nota-recomendacion-texto-{miembroId}`, antes un solo id fijo que hubiera chocado). Sigue sin
+   botón de actualizar de este lado — el coach nunca regenera, solo lee y comenta.
+
+**Qué se verificó:**
+- `node --check` sobre el `<script>` principal de `index.html` (5,253 líneas) y sobre
+  `cloudflare-worker-ia/worker.js` (como ES module) — sintaxis válida en ambos.
+- Lógica del Worker aislada en Node (mismo criterio que la Parte 20 original, sin desplegar ni
+  llamar a Gemini de verdad, `fetch` global mockeado) — **16 OK / 0 FAIL**: `recomendacionFuerza`
+  sin `fuerzaPorMusculo` se rechaza con 400 sin llamar a Gemini; con datos válidos arma el prompt
+  correcto (edad, categoría, músculos con 1RM, músculos "sin registros todavía") y devuelve
+  `{texto}`; una respuesta mal formada de Gemini da 502; y — regresión — el plan de meta original
+  (sin `tipo`) sigue devolviendo `{resumenTexto,hitos}` exactamente igual que antes, incluyendo el
+  caso de "falta la meta" con 400.
+- Playwright (Chromium), llamando a las funciones reales de `index.html` — **24 OK / 0 FAIL**:
+  portal cliente llama al `IA_WORKER_URL` real (no a ninguna Cloud Function) con el payload
+  correcto (tipo, edad, categoría, meta semanal, fuerza solo de músculos con registros de FUERZA
+  —cardio excluido—, y los músculos sin registro sin incluir Cardio), guarda el resultado directo
+  en `recomendacionesIA/{miembroId}`, y agregar una nota funciona igual que antes. Lado coach: sin
+  recomendaciones aún muestra el mensaje claro; con dos clientes muestra ambos nombres con el más
+  reciente primero, colapsados por default (sin filtrar el texto completo); expandir uno carga y
+  muestra sus notas (lazy); nunca aparece un botón de actualizar; dos tarjetas expandidas a la vez
+  tienen textareas con ids distintos y una nota agregada en la tarjeta de un cliente va exactamente
+  a su subcolección, no a la de otro.
+- Se re-corrió toda la suite de Playwright de partes anteriores (Fuerza, Portal de Empleados,
+  doLogout, revertir/mover el resumen "ayer", escapes XSS) sin regresiones.
+- `rules-test/test.mjs` contra el emulador real de Firestore, con los casos de `recomendacionesIA`
+  actualizados a "el cliente SÍ puede crear/actualizar directo" — **85 OK / 0 FAIL**.
+
 ## 2026-09-18 — Recomendación IA (basada en Fuerza) + notas, con Cloud Function nueva (Parte 20)
 
 **Qué se hizo:** nueva "Recomendación IA" en dos lugares, cada uno en su propia sección —

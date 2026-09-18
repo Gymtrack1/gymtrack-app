@@ -1,9 +1,16 @@
-# Worker de recomendación IA (Meta y Recomendación IA — Parte 6)
+# Worker de recomendación IA (Meta y Recomendación IA — Parte 6, + Recomendación por Fuerza — Parte 20)
 
 Esto es un proyecto APARTE de `index.html` — un pequeño programa que corre en los
 servidores de Cloudflare (no en GitHub Pages, no en tu navegador) y es el único
 lugar donde vive tu API key de Gemini. `index.html` solo le manda un `fetch()` con
 los datos del cliente y recibe de vuelta el texto de la recomendación.
+
+Este MISMO Worker atiende dos cosas distintas — no hace falta desplegar nada aparte
+ni configurar una segunda API key para la Recomendación IA basada en Fuerza (Parte
+20, el botón "Recomendar" junto a la sección Fuerza del portal, y "Ver
+recomendaciones IA" en el Portal de Empleados): si ya lo tienes desplegado y
+funcionando para "Mi Meta y Recomendación IA", ya está listo para lo nuevo también.
+Si es la primera vez que lo configuras, sigue los pasos de abajo normal.
 
 No necesitas saber programar para desplegarlo — son pasos de copiar/pegar en dos
 páginas web. Tiempo estimado: 10-15 minutos.

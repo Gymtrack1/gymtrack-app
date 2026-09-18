@@ -227,14 +227,17 @@ service cloud.firestore {
       // ── PORTAL PÚBLICO DEL CLIENTE — ver nota extensa arriba ──
 
       // Espejo público mínimo de miembros (numero, nombre, vencimientoTs,
-      // estatura, fechaNacimiento, metaFitness, planFitnessIA — NUNCA
-      // teléfono/dirección/notas/etc). Lectura pública; escritura pública
-      // acotada solo a esos campos editables desde el portal (estatura/
-      // fechaNacimiento del perfil físico, metaFitness de la meta,
-      // planFitnessIA como el plan que devolvió la IA — incluye marcar/
-      // desmarcar hábitos, misma escritura del campo completo — ver Parte
-      // 6/7, CHANGELOG.md). El resto de los campos del espejo los mantiene
-      // el staff vía la regla genérica de más abajo.
+      // estatura, fechaNacimiento, metaFitness, planFitnessIA,
+      // categoriaMembresia, metaSemanal — NUNCA teléfono/dirección/notas/
+      // etc). Lectura pública; escritura pública acotada solo a esos campos
+      // editables desde el portal (estatura/fechaNacimiento del perfil
+      // físico, metaFitness de la meta, planFitnessIA como el plan que
+      // devolvió la IA — incluye marcar/desmarcar hábitos, misma escritura
+      // del campo completo — ver Parte 6/7, CHANGELOG.md). categoriaMembresia
+      // y metaSemanal (Parte 20) son de solo lectura desde el portal —
+      // contexto para la Recomendación IA, el cliente nunca los edita. El
+      // resto de los campos del espejo los mantiene el staff vía la regla
+      // genérica de más abajo.
       match /miembrosPublicos/{docId} {
         allow read: if isSignedIn();
         allow update: if isSignedIn() &&
@@ -297,16 +300,23 @@ service cloud.firestore {
 
       // RECOMENDACIÓN IA (Parte 20, ver CHANGELOG.md) — {texto, generadoEn, basadoEnRegistros}
       // por miembro, la lee tanto el propio cliente (portal) como el coach (Vista de Progreso del
-      // staff, eligiendo cliente de un selector). Lectura pública para cualquier autenticado,
-      // MISMO nivel de confianza que registrosProgreso/miembrosPublicos arriba (no hay forma de
-      // aislar "solo el propio cliente" con auth anónima). SIN creación/edición/borrado aquí a
-      // propósito: el documento SOLO lo escribe la Cloud Function generarRecomendacionIA (Admin
-      // SDK, que pasa por encima de estas reglas) — así ningún cliente puede escribirse su propia
-      // recomendación ni inflar basadoEnRegistros para forzar un resultado. La regla genérica de
-      // abajo sigue dando lectura/escritura completa al dueño del gimnasio (o admin) por si algún
-      // día necesita corregir/borrar un documento a mano.
+      // staff — ve TODAS las que ya se generaron, no una por una). Se genera llamando al mismo
+      // Worker de Cloudflare que ya usa la Parte 6/7 (cloudflare-worker-ia/, con Gemini) — el
+      // cliente arma el payload (fuerza por músculo, ya calculada del lado cliente, más
+      // categoría/meta/edad del espejo público) y GUARDA el resultado él mismo, igual que ya hace
+      // planFitnessIA con miembros/miembrosPublicos. Mismo nivel de confianza que el resto del
+      // portal (registrosProgreso/miembrosPublicos arriba): no hay forma de aislar "solo el
+      // propio cliente" con auth anónima, y no hay nada más sensible aquí que en esas colecciones
+      // — se valida la FORMA del documento (nunca campos extra) para que quede acotado a lo que
+      // esta pantalla necesita.
       match /recomendacionesIA/{miembroId} {
         allow read: if isSignedIn();
+        allow create, update: if isSignedIn() &&
+          request.resource.data.keys().hasOnly(['texto', 'generadoEn', 'basadoEnRegistros']) &&
+          request.resource.data.texto is string &&
+          request.resource.data.texto.size() > 0 &&
+          request.resource.data.generadoEn is number &&
+          request.resource.data.basadoEnRegistros is number;
 
         // Notas tipo bitácora debajo de la recomendación — cualquiera de los dos lados (cliente
         // o coach) puede agregar una, nunca editarla ni borrarla (mantenerlo simple, ver

@@ -196,15 +196,18 @@ await check('Cliente anónimo puede LISTAR miembrosPublicos de TODO el gym sin f
 await check('El staff (dueño del gym) sigue pudiendo leer/escribir empleadosPublicos normalmente', setDoc(doc(gymA, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1'), { nombre: 'Carlos Staff', pinAcceso: '9999' }), true);
 await check('Gym B (otro gimnasio) también puede leer empleadosPublicos de Gym A (mismo criterio que miembrosPublicos, documentado en firestore.rules — el dato sensible real es el pinAcceso, aceptado como barrera de UI, no de datos)', getDoc(doc(gymB, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1')), true);
 
-console.log('\n--- Recomendación IA (Parte 20, generarRecomendacionIA + notas) ---');
+console.log('\n--- Recomendación IA (Parte 20, Worker de Cloudflare existente + notas) ---');
 await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(ctx.firestore(), 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'Prioriza pierna esta semana.', generadoEn: Date.now(), basadoEnRegistros: 5 });
 });
 await check('Cliente anónimo puede LEER la recomendación de un miembro (portal cliente y Vista de Progreso del staff)', getDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), true);
-await check('Cliente anónimo NO puede CREAR una recomendación directo (solo la Cloud Function, vía Admin SDK)', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'inventada', generadoEn: Date.now(), basadoEnRegistros: 999 }), false);
-await check('Cliente anónimo NO puede EDITAR una recomendación existente', updateDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'hackeada' }), false);
-await check('Cliente anónimo NO puede BORRAR una recomendación', deleteDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), false);
-await check('El staff (dueño del gym) SÍ puede escribir directo en recomendacionesIA (para corregir/borrar a mano si hace falta)', setDoc(doc(gymA, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'Prioriza pierna esta semana.', generadoEn: Date.now(), basadoEnRegistros: 5 }), true);
+await check('Cliente anónimo puede CREAR su propia recomendación (guarda directo lo que le devolvió el Worker de IA, igual que planFitnessIA)', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm2'), { texto: 'Recomendación nueva de m2', generadoEn: Date.now(), basadoEnRegistros: 0 }), true);
+await check('Cliente anónimo puede ACTUALIZAR una recomendación existente ("Actualizar recomendación")', updateDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'Recomendación actualizada', generadoEn: Date.now(), basadoEnRegistros: 6 }), true);
+await check('Recomendación con campo extra se rechaza (forma exacta del documento)', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm3'), { texto: 'x', generadoEn: Date.now(), basadoEnRegistros: 0, miembroId: 'm3' }), false);
+await check('Recomendación con texto vacío se rechaza', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm4'), { texto: '', generadoEn: Date.now(), basadoEnRegistros: 0 }), false);
+await check('Recomendación con basadoEnRegistros como texto (no number) se rechaza', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm5'), { texto: 'x', generadoEn: Date.now(), basadoEnRegistros: 'cinco' }), false);
+await check('Cliente anónimo NO puede BORRAR una recomendación (sin borrado desde el cliente)', deleteDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), false);
+await check('El staff (dueño del gym) SÍ puede escribir/borrar directo en recomendacionesIA (corregir a mano si hace falta)', deleteDoc(doc(gymA, 'usuarios', 'uidA', 'recomendacionesIA', 'm2')), true);
 await check('Gym B también puede leer la recomendación de un miembro de Gym A (mismo criterio que miembrosPublicos/registrosProgreso — dato no aislado por gym, aceptado como el resto del portal sin backend propio)', getDoc(doc(gymB, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), true);
 
 await check('Cliente anónimo puede CREAR una nota válida (autorTipo:"cliente")', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1'), { texto: 'Me costó la sentadilla', autorNombre: 'Juan (#001)', autorTipo: 'cliente', fecha: Date.now() }), true);
