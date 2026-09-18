@@ -302,6 +302,20 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 </div>
 
+<!-- MODAL MI META (portal del cliente): la sección "Mi Meta" vivía siempre visible en el
+     scroll principal del portal; ahora vive aquí, oculta hasta que el cliente pulsa el botón
+     "🎯 Mi Meta" (ver abrirModalPortalMeta más abajo), que rellena #portal-meta-modal-contenido
+     con exactamente el mismo contenido que antes se mostraba inline. -->
+<div class="modal-overlay" id="modal-portal-meta">
+  <div class="modal">
+    <h2>🎯 Mi Meta</h2>
+    <div id="portal-meta-modal-contenido"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-portal-meta')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-box">
@@ -4752,8 +4766,6 @@ let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
 let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
 let chartPortalProgreso=null,chartPortalPeso=null,chartPortalFuerza=null;
-// Recomendación IA (Parte 20, ver CHANGELOG.md) — ver _cargarRecomendacionIA/renderPortalRecomendacionSeccion.
-let portalRecomendacion=null,portalRecomendacionNotas=[],portalRecomendacionCargando=false;
 
 function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
@@ -4982,29 +4994,6 @@ async function portalCargarDatos(){
   const gymId=window._portalGym;
   try{const s=await getDocs(queryFn(gymCol(gymId,'registrosProgreso'),whereFn('miembroId','==',portalMiembro.id)));portalRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalRegistros=[];}
   try{const s=await getDocs(queryFn(gymCol(gymId,'pesoCorporal'),whereFn('miembroId','==',portalMiembro.id)));portalPesos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalPesos=[];}
-  const{recomendacion,notas}=await _cargarRecomendacionIA(gymId,portalMiembro.id);
-  portalRecomendacion=recomendacion;portalRecomendacionNotas=notas;
-}
-// Recomendación IA (Parte 20, ver CHANGELOG.md) — lectura DIRECTA a Firestore (gratis, sin llamar
-// al Worker de IA): solo GENERAR/actualizar cuesta dinero (llama a Gemini), así que simplemente
-// MOSTRAR lo que ya existe nunca debe disparar una consulta a la IA. La usa el portal del cliente
-// (un solo miembro, el propio portalMiembro.id) para cargar su recomendación + notas al
-// identificarse — la Vista de Progreso del staff NO la usa: el coach ve TODAS las recomendaciones
-// de una vez (portalStaffIrARecomendaciones, lee la colección completa), y cada tarjeta carga sus
-// notas aparte solo al expandirla (portalStaffToggleRecomendacion).
-async function _cargarRecomendacionIA(gymId,miembroId){
-  let recomendacion=null,notas=[];
-  try{
-    const snap=await getDoc(gymDoc(gymId,'recomendacionesIA',miembroId));
-    recomendacion=snap.exists()?{id:snap.id,...snap.data()}:null;
-  }catch(e){recomendacion=null;}
-  if(recomendacion){
-    try{
-      const s=await getDocs(gymCol(gymId,`recomendacionesIA/${miembroId}/notas`));
-      notas=s.docs.map(d=>({id:d.id,...d.data()}));
-    }catch(e){notas=[];}
-  }
-  return{recomendacion,notas};
 }
 
 function portalUltimoPeso(){
@@ -5030,7 +5019,6 @@ function renderPortalHome(){
   html+=renderPortalNavegacionSeccion();
   html+=renderPortalProgresoSeccion();
   html+=renderPortalFuerzaSeccion();
-  html+=renderPortalRecomendacionSeccion();
   html+=renderPortalMetaSeccion();
   html+=renderPortalPerfilFisicoSeccion();
   el.innerHTML=html;
@@ -5327,50 +5315,12 @@ function dibujarChartPortalFuerza(){
   });
 }
 
-// RECOMENDACIÓN IA (Parte 20, ver CHANGELOG.md) — botón junto a Fuerza que genera una
-// recomendación de rutina basada en la fuerza por músculo del cliente, llamando al MISMO Worker
-// de Cloudflare que ya usa "Mi Meta y Recomendación IA" (Parte 6/7, cloudflare-worker-ia/,
-// _solicitarPlanFitnessIA más arriba) — mismo patrón, sin backend nuevo: index.html arma el
-// payload, llama por fetch(), y guarda el resultado directo en Firestore
-// (usuarios/{gym}/recomendacionesIA/{miembroId}). Se guarda una sola vez y se relee tal cual —
-// esta sección NUNCA recalcula el texto localmente, solo lo muestra y ofrece regenerarlo.
-async function _solicitarRecomendacionFuerzaIA(payload){
-  if(IA_WORKER_URL.includes('REEMPLAZA-CON-TU-WORKER'))throw new Error('El gym todavía no configuró el Worker de recomendaciones (ver cloudflare-worker-ia/README.md)');
-  const resp=await fetch(IA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!resp.ok){
-    let cuerpo=null;
-    try{cuerpo=await resp.json();}catch(e){/* el cuerpo no era JSON, se ignora */}
-    const detalle=cuerpo&&(cuerpo.detalle||cuerpo.error)?`: ${cuerpo.detalle||cuerpo.error}`:'';
-    throw new Error(`El servicio de IA respondió con error (${resp.status})${detalle}`);
-  }
-  const data=await resp.json();
-  if(!data||typeof data.texto!=='string'||!data.texto.trim())throw new Error('Respuesta inválida del servicio de IA (formato inesperado)');
-  return data.texto.trim();
-}
-function renderPortalRecomendacionSeccion(){
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>🤖 Recomendación IA</h3>
-    <div id="portal-recomendacion-contenido">${_portalRecomendacionHtml()}</div>
-  </div>`;
-}
-function _portalRecomendacionHtml(){
-  if(portalRecomendacionCargando)return'<div style="font-size:13px;color:var(--muted)">Generando tu recomendación… puede tardar unos segundos.</div>';
-  if(!portalRecomendacion)return`<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Aún no has pedido tu recomendación.</div>
-    <button class="btn btn-primary" style="width:100%" onclick="portalPedirRecomendacionFuerzaIA(false)">Recomendar</button>`;
-  return`<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escAttr(portalRecomendacion.texto)}</div>
-    <div style="font-size:11px;color:var(--muted);margin:8px 0 14px">${fmtDate(portalRecomendacion.generadoEn)} · basada en ${portalRecomendacion.basadoEnRegistros||0} registro${portalRecomendacion.basadoEnRegistros===1?'':'s'} de fuerza</div>
-    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:16px" onclick="portalPedirRecomendacionFuerzaIA(true)">🔄 Actualizar recomendación</button>
-    ${_notasRecomendacionHtml(portalRecomendacionNotas,'portalAgregarNotaRecomendacion()','')}`;
-}
-// Compartido por el portal del cliente y la Vista de Progreso del staff — misma forma de tarjeta
-// de notas en ambos lados, solo cambia qué función de guardado dispara el botón (cada lado
-// persiste con su propio autorNombre/autorTipo, ver portalAgregarNotaRecomendacion/
-// portalStaffAgregarNotaRecomendacion).
-// `onclickGuardar` es la llamada COMPLETA (con sus propios paréntesis/argumentos) — el portal
-// del cliente solo tiene una recomendación en pantalla a la vez, pero el coach puede tener varias
-// tarjetas expandidas simultáneamente (Parte 20), así que cada botón necesita saber a cuál
-// recomendación pertenece. `idSufijo` (vacío en el portal del cliente, el miembroId del lado
-// coach) evita que dos textareas compartan el mismo id si hay más de una tarjeta expandida.
+// Tarjeta de notas de una Recomendación IA — la usa la Vista de Progreso del staff
+// (portalStaffAgregarNotaRecomendacion) para que el coach comente cada recomendación ya generada.
+// `onclickGuardar` es la llamada COMPLETA (con sus propios paréntesis/argumentos) porque el coach
+// puede tener varias tarjetas expandidas a la vez (Parte 20), así que cada botón necesita saber a
+// cuál recomendación pertenece. `idSufijo` (el miembroId) evita que dos textareas compartan el
+// mismo id si hay más de una tarjeta expandida.
 function _notasRecomendacionHtml(notas,onclickGuardar,idSufijo){
   const textareaId=idSufijo?`nota-recomendacion-texto-${idSufijo}`:'nota-recomendacion-texto';
   const lista=[...notas].sort((a,b)=>b.fecha-a.fecha);
@@ -5385,64 +5335,6 @@ function _notasRecomendacionHtml(notas,onclickGuardar,idSufijo){
     <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="${onclickGuardar}">Agregar nota</button>
   </div>`;
 }
-function _refrescarPortalRecomendacion(){
-  const cont=document.getElementById('portal-recomendacion-contenido');
-  if(cont)cont.innerHTML=_portalRecomendacionHtml();
-}
-// Arma el payload que el Worker espera para tipo:'recomendacionFuerza' — reusa _fuerzaPorMusculo
-// (mismo cálculo que ya pinta el radar de Fuerza) y calcula qué grupos musculares el cliente
-// TODAVÍA NO ha trabajado directo de BIBLIOTECA_EJERCICIOS (sin Cardio) — así el Worker no
-// necesita conocer el catálogo de ejercicios para nada, solo recibe listas ya armadas.
-function _payloadRecomendacionFuerza(miembro,registros){
-  const porMusculo=_fuerzaPorMusculo(registros);
-  const gruposFuerza=Object.keys(BIBLIOTECA_EJERCICIOS).filter(m=>m!=='Cardio');
-  return{
-    tipo:'recomendacionFuerza',
-    edad:edadMostrar(miembro),
-    categoriaMembresia:miembro.categoriaMembresia||null,
-    metaSemanal:miembro.metaSemanal||null,
-    totalRegistrosFuerza:registros.filter(r=>typeof r.peso==='number').length,
-    fuerzaPorMusculo:[...porMusculo.entries()].map(([musculo,d])=>({musculo,valor:d.valor})),
-    gruposSinRegistro:gruposFuerza.filter(m=>!porMusculo.has(m)),
-  };
-}
-// forzar=false: primera vez (no hay recomendación todavía). forzar=true: botón "Actualizar
-// recomendación" — ambos casos generan una nueva (a diferencia de una function con estado, este
-// Worker es sin memoria: siempre que se le llama, genera; "no regenerar de más" ya lo resuelve la
-// propia UI, que solo ofrece "Recomendar" cuando no hay ninguna y "Actualizar" cuando sí).
-async function portalPedirRecomendacionFuerzaIA(forzar){
-  if(portalRecomendacionCargando)return;
-  portalRecomendacionCargando=true;
-  _refrescarPortalRecomendacion();
-  try{
-    const payload=_payloadRecomendacionFuerza(portalMiembro,portalRegistros);
-    toast('Consultando a la IA...');
-    const texto=await _solicitarRecomendacionFuerzaIA(payload);
-    const data={texto,generadoEn:Date.now(),basadoEnRegistros:payload.totalRegistrosFuerza};
-    await setDoc(gymDoc(window._portalGym,'recomendacionesIA',portalMiembro.id),data);
-    portalRecomendacion={id:portalMiembro.id,...data};
-    toast('Recomendación lista ✓');
-  }catch(e){
-    alert(`No se pudo generar la recomendación. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
-  }finally{
-    portalRecomendacionCargando=false;
-    _refrescarPortalRecomendacion();
-  }
-}
-async function portalAgregarNotaRecomendacion(){
-  const input=document.getElementById('nota-recomendacion-texto');
-  const texto=input?input.value.trim():'';
-  if(!texto)return alert('Escribe una nota');
-  if(!portalRecomendacion)return;
-  const data={texto,autorNombre:`${portalMiembro.nombre} (#${fmtNum(portalMiembro.numero||0)})`,autorTipo:'cliente',fecha:Date.now()};
-  try{
-    const ref=await addDoc(gymCol(window._portalGym,`recomendacionesIA/${portalRecomendacion.id}/notas`),data);
-    portalRecomendacionNotas.push({id:ref.id,...data});
-    toast('Nota agregada ✓');
-    _refrescarPortalRecomendacion();
-  }catch(e){alert('No se pudo guardar la nota. Intenta de nuevo.');}
-}
-
 function dibujarChartPortalPeso(){
   const canvas=document.getElementById('chart-portal-peso');
   if(!canvas)return;
@@ -5460,11 +5352,17 @@ function dibujarChartPortalPeso(){
 // Físico de abajo (formulario simple + botón Guardar), más el botón que dispara la consulta al
 // Worker de Cloudflare/Gemini. Va justo después de Mi progreso porque la recomendación depende
 // de ese historial (calcularTendenciaMeta/portalCalcularTendenciaMeta, más arriba).
+// Antes esta tarjeta se mostraba siempre completa en el scroll principal del portal; ahora es
+// solo el botón que abre el modal "Mi Meta" (ver abrirModalPortalMeta/_portalMetaModalHtml más
+// abajo), que arma exactamente el mismo contenido que antes vivía aquí.
 function renderPortalMetaSeccion(){
-  const meta=portalMiembro.metaFitness||null;
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>🎯 Mi Meta</h3>
-    <div class="form-row">
+    <button class="btn btn-ghost" style="width:100%" onclick="abrirModalPortalMeta()">🎯 Mi Meta</button>
+  </div>`;
+}
+function _portalMetaModalHtml(){
+  const meta=portalMiembro.metaFitness||null;
+  return`<div class="form-row">
       <div class="form-group"><label>Tipo de meta</label><select id="portal-meta-tipo" onchange="portalToggleMetaEjercicio()">
         <option value="">— Sin meta —</option>
         <option value="pesoCorporal" ${meta&&meta.tipo==='pesoCorporal'?'selected':''}>Peso corporal</option>
@@ -5480,8 +5378,12 @@ function renderPortalMetaSeccion(){
     <button class="btn btn-primary" style="width:100%" onclick="portalGuardarMeta()">💾 Guardar meta</button>
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
     <div id="portal-meta-recomendacion-contenido"></div>
-    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA(this)">🤖 Actualizar recomendación</button>
-  </div>`;
+    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA(this)">🤖 Actualizar recomendación</button>`;
+}
+function abrirModalPortalMeta(){
+  document.getElementById('portal-meta-modal-contenido').innerHTML=_portalMetaModalHtml();
+  openModal('modal-portal-meta');
+  renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
 }
 function portalToggleMetaEjercicio(){
   const tipo=document.getElementById('portal-meta-tipo').value;

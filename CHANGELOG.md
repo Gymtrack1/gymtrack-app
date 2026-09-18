@@ -4,6 +4,45 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — Portal del cliente: se quita la tarjeta "Recomendación IA" y "Mi Meta" pasa a un modal (Parte 20.2)
+
+**Qué se hizo:** el dueño vio el portal en su teléfono y pidió dos ajustes de layout sobre lo
+recién construido en la Parte 20/20.1:
+
+1. **Se eliminó la tarjeta "🤖 Recomendación IA"** (la de Fuerza, con el botón "Recomendar") del
+   scroll principal del portal del cliente — quedaba justo debajo de "Fuerza por músculo" y el
+   dueño la consideró de más ahí. Se borró por completo el código que solo servía a esa tarjeta
+   (`renderPortalRecomendacionSeccion`, `_portalRecomendacionHtml`, `_refrescarPortalRecomendacion`,
+   `_payloadRecomendacionFuerza`, `_solicitarRecomendacionFuerzaIA`,
+   `portalPedirRecomendacionFuerzaIA`, `portalAgregarNotaRecomendacion`, `_cargarRecomendacionIA` y
+   los 3 estados `portalRecomendacion*`) — no queda código muerto. `_notasRecomendacionHtml` se
+   conservó porque la Vista de Progreso del staff la sigue usando (`portalStaffAgregarNotaRecomendacion`).
+   **Efecto colateral a tener presente:** "Ver recomendaciones IA" en el Portal de Empleados
+   (Parte 20.1) es de solo lectura — con esto ya no queda ningún botón en el portal del cliente
+   que genere una recomendación nueva, así que esa lista del coach se queda fija con lo que ya
+   existiera en Firestore y no va a crecer sola. No se tocó esa parte porque no fue lo que se pidió;
+   si se quiere seguir generando recomendaciones para que el coach las vea, hace falta decidir desde
+   dónde (¿el propio coach, un botón en otro lugar?).
+2. **"🎯 Mi Meta" pasa de tarjeta siempre visible a un modal.** El scroll principal ahora solo
+   tiene un botón "🎯 Mi Meta"; al pulsarlo se abre una ventana modal (mismo componente
+   `.modal-overlay`/`.modal` que ya usa el resto de la app, ej. "Categorías de Membresía") con
+   EXACTAMENTE el mismo contenido que antes vivía inline: el formulario de meta (tipo/valor/fecha),
+   "💾 Guardar meta", y debajo el texto de la recomendación de meta ya generada (Parte 6, sin
+   tocar) con su botón "🤖 Actualizar recomendación". El modal es un `<div>` estático nuevo en el
+   HTML (`#modal-portal-meta`), fuera de `#portal-content`, así que sobrevive a los re-renders de
+   `renderPortalHome()` (por eso guardar una meta con el modal abierto no lo cierra ni le borra el
+   contenido).
+
+**Verificado:** `node --check` sobre el script principal (5141 líneas). Prueba nueva de Playwright
+(`test_mi_meta_modal.mjs`, 17/17 OK): la tarjeta "Recomendación IA" ya no aparece en el scroll
+principal, el botón "Recomendar" tampoco, el botón "🎯 Mi Meta" sí; el modal existe en el DOM y
+empieza cerrado; `abrirModalPortalMeta()` lo abre y rellena con el form + el texto de la
+recomendación de meta ya generada (igual que antes se veía inline); `closeModal` lo cierra sin
+perder su contenido; las funciones/variables eliminadas ya no existen como globals. Se re-corrieron
+las suites existentes de Fuerza (23/23), Portal de Empleados (29/29) y Cardio/Fuerza (28/29 — el
+único FAIL es sobre el campo "velocidad" del registro de cardio, sin relación con este cambio ni
+tocado por este diff).
+
 ## 2026-09-18 — Corrección: Recomendación IA pasa a usar el Worker de Gemini existente (Parte 20.1)
 
 **Qué se hizo:** la Parte 20 había construido una Cloud Function de Firebase nueva con Claude/
