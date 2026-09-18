@@ -4,6 +4,37 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — Bug real: "WhatsApp a todos" de Alertas no mandaba nada (bloqueado por el navegador)
+
+**Qué se hizo:** el dueño preguntó si el botón "📱 WhatsApp a todos" de Alertas y el "🚀 Enviar a
+todos" de Promociones funcionaban. El de Promociones sí (ver Parte de esa sección: manda UN
+WhatsApp por clic, directo del clic, con el botón cambiando a "Siguiente" — ese patrón ya existe
+justo porque el propio código documenta que los navegadores bloquean abrir varias pestañas de
+golpe). El de Alertas (`enviarWhatsAppTodos`) NO seguía ese patrón: abría todas las pestañas con
+`setTimeout` escalonado (una cada 800ms) — como ninguna de esas aperturas es resultado DIRECTO de
+un clic (pasan por un timer), el navegador las bloquea casi todas, a veces incluso la primera. En
+la práctica, el botón parecía "no hacer nada" para la mayoría de los miembros de la lista.
+
+**Se corrigió reusando el mismo patrón que ya funciona en Promociones:**
+1. `enviarWhatsAppTodos()` ahora manda solo al SIGUIENTE miembro pendiente (vencido o por vencer
+   en 7 días o menos, con teléfono, que todavía no esté en `whatsappEnviadoAlerta` — el mismo Set
+   que ya usa el botón individual de cada tarjeta) — un clic, un WhatsApp, siempre síncrono.
+2. El botón (`id="alertas-btn-todos"`, nuevo) ahora refleja el progreso real:
+   "📱 WhatsApp a todos" → "▶ Siguiente (2/8 enviados)" → "✅ Enviado a todos (8/8)" (deshabilitado
+   al terminar) — se actualiza en `_refrescarBotonAlertasTodos()`, llamada desde `renderAlertas()`
+   para que quede en sync cada vez que se manda uno o cambian las alertas activas.
+3. Se deshabilita solo si el plan del gym no incluye "alertas" (antes el botón quedaba activo
+   aunque la sección estuviera bloqueada por plan).
+
+**Verificado:** `node --check` sobre el script principal (5389 líneas). Prueba nueva de Playwright
+(`test_alertas_whatsapp_todos.mjs`, 14/14 OK): filtra correctamente vencidos/por-vencer CON
+teléfono; el primer clic abre EXACTAMENTE una pestaña (no todas de golpe) y marca solo al primer
+miembro; el botón cambia a "Siguiente (1/2 enviados)"; el segundo clic manda al siguiente y el
+botón termina en "Enviado a todos (2/2)" deshabilitado; un tercer clic ya no abre nada y avisa que
+no hay pendientes; sin el plan "alertas", el botón queda deshabilitado. Se re-corrieron las suites
+de Reenviar PIN por WhatsApp (12/12), Portal de Empleados (29/29), Fuerza como Progreso (18/18),
+Lecturas del staff (13/13), Recomendaciones/Meta (25/25) y Editar hábitos (23/23) sin regresiones.
+
 ## 2026-09-18 — Reenviar el PIN de un empleado por WhatsApp ya no es un callejón sin salida
 
 **Qué se hizo:** el botón de WhatsApp junto a cada empleado en el panel de Empleados mostraba

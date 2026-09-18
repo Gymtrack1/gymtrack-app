@@ -454,7 +454,7 @@ contenedor, igual que app-screen/admin-screen. -->
   <div class="tab" id="tab-alertas">
     <div class="header-row">
       <div class="page-title">Alertas</div>
-      <button class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppTodos()">📱 WhatsApp a todos</button>
+      <button id="alertas-btn-todos" class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppTodos()">📱 WhatsApp a todos</button>
     </div>
 
     <!-- Editor de mensaje WhatsApp (estático, siempre visible) -->
@@ -2538,6 +2538,7 @@ function _alertasCatHtml(lista,cat,cls,tituloCard){
 function toggleAlertasCat(cat){alertasExpandido[cat]=!alertasExpandido[cat];renderAlertas();}
 function renderAlertas(){
   const el=document.getElementById('alertas-content');
+  _refrescarBotonAlertasTodos();
   // FIX 6: usar PLANES correctamente
   if(!userFunciones.includes('alertas')){el.innerHTML=lockedFeature('Alertas Automáticas de Vencimiento','tu plan actual');return;}
   const ahora=Date.now();
@@ -2617,18 +2618,38 @@ function enviarWhatsApp(mid){
   renderAlertas();
 }
 
-function enviarWhatsAppTodos(){
+// Vencidos o por vencer en 7 días o menos, con teléfono — mismo criterio que ya arma las
+// categorías de Alertas de arriba (vencidos + en3 + en7), unificado para el botón "a todos".
+function _alertasUrgentesConTelefono(){
   const ahora=Date.now();
-  const urgentes=miembros.filter(m=>{
+  return miembros.filter(m=>{
     if(!m.telefono)return false;
     const v=getVencimiento(m.id);
     if(!v)return false;
     const d=Math.ceil((v-ahora)/86400000);
     return v<ahora||d<=7;
   });
-  if(!urgentes.length){alert('No hay miembros vencidos o por vencer con teléfono registrado');return;}
-  if(!confirm(`¿Enviar WhatsApp a ${urgentes.length} miembro(s)?`))return;
-  urgentes.forEach((m,i)=>setTimeout(()=>enviarWhatsApp(m.id),i*800));
+}
+// AUDITORÍA: "WhatsApp a todos" abría TODAS las pestañas de golpe con setTimeout escalonado —
+// como ninguna de esas aperturas es resultado DIRECTO de un clic (pasan por un timer), el
+// navegador las bloquea casi todas (a veces incluso la primera). Mismo problema que ya se
+// documentó y resolvió en Promociones (ver enviarWhatsAppPromoSiguiente, mismo patrón "un clic =
+// un mensaje" reusado aquí): el botón manda solo al SIGUIENTE pendiente (usa el mismo Set
+// whatsappEnviadoAlerta que ya marca cada tarjeta individual como enviada) y hay que darle clic
+// una vez por miembro — el texto del botón (_refrescarBotonAlertasTodos) muestra cuántos van.
+function enviarWhatsAppTodos(){
+  const pendiente=_alertasUrgentesConTelefono().find(m=>!whatsappEnviadoAlerta.has(m.id));
+  if(!pendiente)return alert('No hay miembros vencidos o por vencer con teléfono registrado (o ya se les mandó el aviso a todos).');
+  enviarWhatsApp(pendiente.id);
+}
+function _refrescarBotonAlertasTodos(){
+  const btn=document.getElementById('alertas-btn-todos');
+  if(!btn)return;
+  if(!userFunciones.includes('alertas')){btn.disabled=true;btn.textContent='📱 WhatsApp a todos';return;}
+  const urgentes=_alertasUrgentesConTelefono();
+  const enviados=urgentes.filter(m=>whatsappEnviadoAlerta.has(m.id)).length;
+  btn.disabled=!urgentes.length||enviados>=urgentes.length;
+  btn.textContent=!urgentes.length||enviados===0?'📱 WhatsApp a todos':enviados<urgentes.length?`▶ Siguiente (${enviados}/${urgentes.length} enviados)`:`✅ Enviado a todos (${urgentes.length}/${urgentes.length})`;
 }
 
 // ALERTA DE PROMOCIÓN/PAQUETE (mensaje libre, no ligado a la colección `promociones` ni
