@@ -4,6 +4,46 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — "Fuerza por músculo" se despliega igual que "Mi progreso" (selector + tendencia + lista)
+
+**Qué se hizo:** "Fuerza por músculo" mostraba un radar de un solo vistazo (todos los músculos a
+la vez, con el 1RM MÁXIMO histórico de cada uno) — no había forma de ver cómo fue evolucionando un
+músculo en el tiempo, ni una lista con el detalle. El dueño pidió que se despliegue con el mismo
+patrón que ya usa "Mi progreso": un selector (aquí de músculo, en vez de ejercicio) + una gráfica
+de tendencia + una lista de tarjetas con el detalle de cada registro.
+
+1. **`_registrosDeMusculo(registros,musculo)`** (nueva) — todos los registros de fuerza de un
+   músculo (puede venir de varios ejercicios distintos, a diferencia de "Mi progreso" que filtra
+   un solo ejercicio); mismo criterio de exclusión que `_fuerzaPorMusculo` (sin cardio, sin
+   ejercicioId desconocido, sin peso no numérico).
+2. **`_portalFuerzaResultadosHtml()` reescrita** con el mismo patrón que
+   `_portalProgresoResultadosHtml`: un `<select>` con los músculos que sí tienen datos
+   (`_fuerzaPorMusculo` sigue sirviendo para eso), la gráfica, y debajo una lista de tarjetas
+   (`_tarjetaProgresoHtml`, la MISMA que usa "Mi progreso") — cada una con el nombre del ejercicio
+   y su 1RM estimado, porque a diferencia de "Mi progreso" un músculo puede agrupar varios
+   ejercicios a la vez. La primera vez, prioriza el músculo que el cliente estaba viendo en
+   "Registrar serie" (`portalMusculoSel`) si ya tiene datos — mismo criterio que "Mi progreso" con
+   `portalEjercicioSel`.
+3. **`dibujarChartPortalFuerza()` pasa de radar a línea de tendencia** (`_chartConfigFuerza`,
+   mismo `_opcionesChartProgreso` que ya usa "Mi progreso"): un punto por registro del músculo
+   elegido, en orden cronológico, siempre en kg (unidad canónica — un músculo puede agrupar
+   registros capturados en kg y en lb, y la gráfica necesita un número comparable entre puntos,
+   igual que el radar anterior). La lista de tarjetas sí respeta la unidad original de cada
+   registro, como el resto de las vistas de progreso.
+4. **`portalCambiarFuerzaMusculoSel(musculo)`** (nueva) + `portalFuerzaMusculoSel` (nuevo estado) —
+   cambia el músculo elegido y repinta lista + gráfica, mismo patrón que
+   `portalCambiarProgresoEjercicioSel`.
+
+**Verificado:** `node --check` sobre el script principal (5337 líneas). Prueba nueva de Playwright
+(`test_fuerza_como_progreso.mjs`, 18/18 OK): el selector solo lista músculos con datos y prioriza
+el que el cliente estaba viendo en "Registrar serie"; la lista muestra solo los registros del
+músculo elegido (con el ejercicio + 1RM estimado en cada tarjeta) y cambia al elegir otro músculo
+desde el selector; la gráfica es de tipo línea (no radar), un punto por registro en orden
+cronológico, con el 1RM estimado (Epley) y no el peso crudo; y la sección sigue ocultándose por
+completo si el cliente nunca ha registrado nada, igual que antes. Se re-corrieron las suites de
+Lecturas del staff (13/13), Recomendaciones/Meta (25/25), Editar hábitos (23/23), Mi Meta (17/17)
+y Portal de Empleados (29/29) sin regresiones.
+
 ## 2026-09-18 — Auditoría de lecturas: "Portal de Empleados" ya no trae TODO el historial en cada entrada de PIN
 
 **Qué se hizo:** revisión completa de todas las lecturas/escrituras de Firestore de la app,
