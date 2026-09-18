@@ -4,6 +4,41 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — El coach puede escribir/editar los hábitos del plan de un cliente, no solo marcarlos (Parte 20.4)
+
+**Qué se hizo:** en la Parte 20.3 el coach ya podía marcar/desmarcar los hábitos del plan de un
+cliente desde "Ver recomendaciones IA". El dueño pidió ir más allá: que el coach pueda **escribir
+hábitos nuevos o editar el texto de los que ya existen**, no solo marcarlos como hechos.
+
+1. **Dos helpers nuevos junto a `_marcarHabitoEnPlan`**: `_editarTextoHabitoEnPlan` (reemplaza el
+   texto de un hábito ya existente; un texto vacío no hace nada, para no dejar uno en blanco por
+   error de dedo) y `_agregarHabitoEnPlan` (agrega un hábito nuevo a un hito, con el mismo
+   generador de ids que ya usa el Worker al crear el plan — `_idAleatorio('hab')` — para que quede
+   indistinguible de uno generado por la IA).
+2. **`renderPlanFitnessIA` recibe un cuarto parámetro opcional `editOpts`** (`{editarFn,
+   agregarFn}`). Sin él (perfil del staff normal, portal del cliente — sin cambios ahí) el hábito
+   sigue siendo un `<span>` de solo lectura con su checkbox, exactamente como antes. Con él (solo
+   "Ver recomendaciones IA" del coach lo pasa), el texto del hábito se pinta en un `<input>`
+   editable (`onchange` llama a `editarFn`) y aparece un renglón "Agregar hábito..." + botón por
+   cada hito (llama a `agregarFn`).
+3. **`portalStaffEditarHabito`/`portalStaffAgregarHabito`** (nuevas) y `portalStaffToggleHabito`
+   (ya existía) ahora comparten el guardado a través de `_portalStaffGuardarPlanCliente` — mismas
+   dos escrituras de siempre (`miembros/` + espejo `miembrosPublicos`) y mismo repintado de la
+   tarjeta expandida. Como la regla de Firestore ya permitía a cualquier autenticado reescribir el
+   campo completo `planFitnessIA` de cualquier miembro (sin validar su contenido interno, solo qué
+   campos de nivel superior pueden cambiar), **no hizo falta tocar `firestore.rules` ni
+   `rules-test/`** — el mismo permiso que ya dejaba marcar hábitos alcanza para editarlos/agregarlos.
+
+**Verificado:** `node --check` sobre el script principal (5269 líneas). Prueba nueva de Playwright
+(`test_editar_habitos.mjs`, 23/23 OK): los helpers puros no mutan el plan original y rechazan
+texto vacío al editar; desde "Ver recomendaciones IA" el hábito se renderiza como `<input
+type="text">` real con el valor actual; editar su texto y disparar `change` guarda y repinta con
+el texto nuevo; escribir en "Agregar hábito..." y pulsar el botón agrega un segundo hábito visible
+de inmediato; y, sin `editOpts` (perfil del staff / portal del cliente), el hábito sigue siendo un
+`<span>` de solo lectura sin ningún `<input>` de edición ni botón de agregar. Se re-corrieron las
+suites de Recomendaciones/Meta (25/25), Mi Meta (17/17), Portal de Empleados (29/29) y Fuerza
+(23/23) sin regresiones.
+
 ## 2026-09-18 — "Ver recomendaciones IA" del coach ahora es el plan de Meta, editable, con notas visibles para el cliente (Parte 20.3)
 
 **Qué se hizo:** tras quitar la tarjeta de Fuerza (Parte 20.2), "Ver recomendaciones IA" en el

@@ -4865,6 +4865,27 @@ function _marcarHabitoEnPlan(plan,hitoId,habitoId,completado,origen){
   return {...plan,hitos};
 }
 
+// Reescribe el texto de un hábito ya existente — solo el coach lo usa (Parte 20.4, "Ver
+// recomendaciones IA"), ver renderPlanFitnessIA/editOpts. Un texto vacío no hace nada (evita
+// dejar un hábito en blanco por error de dedo, en vez de exigir un modal de confirmación).
+function _editarTextoHabitoEnPlan(plan,hitoId,habitoId,nuevoTexto){
+  const texto=String(nuevoTexto||'').trim();
+  if(!texto)return plan;
+  const hitos=(plan.hitos||[]).map(h=>{
+    if(h.id!==hitoId)return h;
+    return {...h,habitos:(h.habitos||[]).map(hab=>hab.id!==habitoId?hab:{...hab,texto})};
+  });
+  return {...plan,hitos};
+}
+// Agrega un hábito nuevo a un hito ya existente — mismo criterio de id que usa el Worker al
+// generar el plan (_idAleatorio), para que quede indistinguible de un hábito generado por la IA.
+function _agregarHabitoEnPlan(plan,hitoId,texto){
+  const t=String(texto||'').trim();
+  if(!t)return plan;
+  const hitos=(plan.hitos||[]).map(h=>h.id!==hitoId?h:{...h,habitos:[...(h.habitos||[]),{id:_idAleatorio('hab'),texto:t,completado:false,completadoPor:null,completadoEn:null}]});
+  return {...plan,hitos};
+}
+
 async function _solicitarPlanFitnessIA(payload){
   if(IA_WORKER_URL.includes('REEMPLAZA-CON-TU-WORKER'))throw new Error('El gym todavía no configuró el Worker de recomendaciones (ver cloudflare-worker-ia/README.md)');
   const resp=await fetch(IA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -4889,7 +4910,13 @@ async function _solicitarPlanFitnessIA(payload){
 // (toggleHabitoPerfil en staff, portalToggleHabito en el portal) — cada lado persiste distinto
 // (userDoc vs. gymDoc+espejo público), por eso no se comparte la función de guardado, solo el
 // render y el cálculo del merge/normalización.
-function renderPlanFitnessIA(elId,plan,toggleFn){
+// `editOpts` (opcional, {editarFn,agregarFn}) — SOLO lo pasa "Ver recomendaciones IA" del coach
+// (Parte 20.4, ver CHANGELOG.md): con él, el texto de cada hábito se muestra en un <input> editable
+// (onchange llama a editarFn) y aparece un renglón para agregar un hábito nuevo a ese hito
+// (agregarFn). Sin este parámetro (perfil del staff normal, portal del cliente) el texto del
+// hábito sigue siendo de solo lectura, como siempre — solo el coach desde esa pantalla puede
+// reescribir el contenido, no solo marcarlo.
+function renderPlanFitnessIA(elId,plan,toggleFn,editOpts){
   const el=document.getElementById(elId);
   if(!el)return;
   if(!plan||!plan.resumenTexto){el.innerHTML='<div style="font-size:12px;color:var(--muted)">Aún no hay plan. Pulsa el botón para pedirle uno a la IA.</div>';return;}
@@ -4901,11 +4928,18 @@ function renderPlanFitnessIA(elId,plan,toggleFn){
           <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">${escAttr(h.periodo)}</div>
           <div style="font-weight:700;font-size:13px;margin:2px 0 8px">${escAttr(h.metaIntermedia)}</div>
           <div style="display:flex;flex-direction:column;gap:6px">
-            ${(h.habitos||[]).map(hab=>`<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer">
+            ${(h.habitos||[]).map(hab=>editOpts?`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+                <input type="checkbox" ${hab.completado?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:none;border-radius:0" onchange="${toggleFn}('${h.id}','${hab.id}',this.checked)">
+                <input type="text" value="${escAttr(hab.texto)}" style="flex:1;min-width:0;font-size:12.5px;padding:4px 6px;${hab.completado?'text-decoration:line-through;color:var(--muted)':''}" onchange="${editOpts.editarFn}('${h.id}','${hab.id}',this.value)">
+              </div>`:`<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer">
                 <input type="checkbox" ${hab.completado?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:2px 0 0;padding:0;background:none;border:none;border-radius:0" onchange="${toggleFn}('${h.id}','${hab.id}',this.checked)">
                 <span style="flex:1;min-width:0;${hab.completado?'text-decoration:line-through;color:var(--muted)':''}">${escAttr(hab.texto)}</span>
               </label>`).join('')}
           </div>
+          ${editOpts?`<div style="display:flex;gap:6px;margin-top:8px">
+              <input type="text" id="nuevo-habito-${h.id}" placeholder="Agregar hábito..." style="flex:1;min-width:0;font-size:12.5px;padding:4px 6px" onkeydown="if(event.key==='Enter'){${editOpts.agregarFn}('${h.id}',this.value);}">
+              <button type="button" class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="${editOpts.agregarFn}('${h.id}',document.getElementById('nuevo-habito-${h.id}').value)">+ Agregar</button>
+            </div>`:''}
         </div>`).join('')}
     </div>`;
 }
@@ -6139,14 +6173,20 @@ function _portalStaffRecomendacionesListaHtml(){
     </div>`;
   }).join('');
 }
-// El roadmap de hábitos marcable (checkboxes) no vive en el HTML de arriba porque
-// renderPlanFitnessIA (compartida con el staff/perfil y el portal del cliente) lo pinta ella
-// misma dentro de un elId — se llama aparte, una vez por cada tarjeta ya expandida, después de
-// insertar el HTML de la lista (mismo patrón que abrirModalPortalMeta del lado cliente).
+// El roadmap de hábitos marcable/editable no vive en el HTML de arriba porque renderPlanFitnessIA
+// (compartida con el staff/perfil y el portal del cliente) lo pinta ella misma dentro de un elId
+// — se llama aparte, una vez por cada tarjeta ya expandida, después de insertar el HTML de la
+// lista (mismo patrón que abrirModalPortalMeta del lado cliente). `editOpts` (ver
+// renderPlanFitnessIA) es lo que activa los <input> editables + "Agregar hábito" — solo esta
+// pantalla del coach los pasa; el perfil del staff y el portal del cliente siguen de solo lectura
+// salvo el checkbox.
+function _portalStaffPlanEditOpts(miembroId){
+  return{editarFn:`portalStaffEditarHabito.bind(null,'${miembroId}')`,agregarFn:`portalStaffAgregarHabito.bind(null,'${miembroId}')`};
+}
 function _pintarPlanesExpandidosStaff(){
   _portalStaffClientesConPlan().forEach(m=>{
     if(portalStaffRecomendacionesExpandido.has(m.id)){
-      renderPlanFitnessIA(`portal-staff-plan-${m.id}`,m.planFitnessIA,`portalStaffToggleHabito.bind(null,'${m.id}')`);
+      renderPlanFitnessIA(`portal-staff-plan-${m.id}`,m.planFitnessIA,`portalStaffToggleHabito.bind(null,'${m.id}')`,_portalStaffPlanEditOpts(m.id));
     }
   });
 }
@@ -6170,26 +6210,50 @@ function _refrescarPortalStaffRecomendaciones(){
   if(cont)cont.innerHTML=_portalStaffRecomendacionesListaHtml();
   _pintarPlanesExpandidosStaff();
 }
-// El coach marca/desmarca un hábito del plan de un cliente desde esta pantalla — mismo helper
-// compartido (_marcarHabitoEnPlan) y mismas dos escrituras (miembros/ + espejo miembrosPublicos)
-// que portalToggleHabito del lado cliente, origen:'staff' para distinguir quién lo marcó. Como
-// esta pantalla puede tener varias tarjetas de clientes distintos expandidas a la vez, el
-// miembroId va amarrado con .bind (ver _pintarPlanesExpandidosStaff) en vez de ser un argumento
-// fijo como en portalToggleHabito, que solo trabaja sobre portalMiembro.
-async function portalStaffToggleHabito(miembroId,hitoId,habitoId,completado){
-  const m=portalStaffMiembros.find(x=>x.id===miembroId);
-  if(!m||!m.planFitnessIA)return;
-  const planFitnessIA=_marcarHabitoEnPlan(m.planFitnessIA,hitoId,habitoId,completado,'staff');
+// Guarda un planFitnessIA ya modificado (marcar/desmarcar, editar texto, agregar hábito — las
+// tres mutaciones que puede hacer el coach desde esta pantalla) con las mismas dos escrituras
+// (miembros/ + espejo miembrosPublicos) que ya usa portalToggleHabito del lado cliente, y repinta
+// la tarjeta ya expandida de ese cliente con el resultado (o con el plan viejo si falló).
+async function _portalStaffGuardarPlanCliente(miembroId,m,planFitnessIA){
   const gymId=window._portalGym;
+  const toggleFn=`portalStaffToggleHabito.bind(null,'${miembroId}')`;
+  const editOpts=_portalStaffPlanEditOpts(miembroId);
   try{
     await updateDoc(gymDoc(gymId,'miembros',miembroId),{planFitnessIA});
     await updateDoc(gymDoc(gymId,'miembrosPublicos',miembroId),{planFitnessIA});
     m.planFitnessIA=planFitnessIA;
-    renderPlanFitnessIA(`portal-staff-plan-${miembroId}`,planFitnessIA,`portalStaffToggleHabito.bind(null,'${miembroId}')`);
+    renderPlanFitnessIA(`portal-staff-plan-${miembroId}`,planFitnessIA,toggleFn,editOpts);
   }catch(e){
     alert('No se pudo actualizar. Intenta de nuevo.');
-    renderPlanFitnessIA(`portal-staff-plan-${miembroId}`,m.planFitnessIA,`portalStaffToggleHabito.bind(null,'${miembroId}')`);
+    renderPlanFitnessIA(`portal-staff-plan-${miembroId}`,m.planFitnessIA,toggleFn,editOpts);
   }
+}
+// El coach marca/desmarca un hábito del plan de un cliente desde esta pantalla — mismo helper
+// compartido (_marcarHabitoEnPlan) que portalToggleHabito del lado cliente, origen:'staff' para
+// distinguir quién lo marcó. Como esta pantalla puede tener varias tarjetas de clientes distintos
+// expandidas a la vez, el miembroId va amarrado con .bind (ver _pintarPlanesExpandidosStaff) en
+// vez de ser un argumento fijo como en portalToggleHabito, que solo trabaja sobre portalMiembro.
+async function portalStaffToggleHabito(miembroId,hitoId,habitoId,completado){
+  const m=portalStaffMiembros.find(x=>x.id===miembroId);
+  if(!m||!m.planFitnessIA)return;
+  const planFitnessIA=_marcarHabitoEnPlan(m.planFitnessIA,hitoId,habitoId,completado,'staff');
+  await _portalStaffGuardarPlanCliente(miembroId,m,planFitnessIA);
+}
+// El coach reescribe el texto de un hábito ya existente (Parte 20.4, ver CHANGELOG.md) — pedido
+// explícito del dueño: no solo marcarlos, poder escribirlos/editarlos.
+async function portalStaffEditarHabito(miembroId,hitoId,habitoId,nuevoTexto){
+  const m=portalStaffMiembros.find(x=>x.id===miembroId);
+  if(!m||!m.planFitnessIA)return;
+  const planFitnessIA=_editarTextoHabitoEnPlan(m.planFitnessIA,hitoId,habitoId,nuevoTexto);
+  await _portalStaffGuardarPlanCliente(miembroId,m,planFitnessIA);
+}
+// El coach agrega un hábito nuevo a un hito ya existente (Parte 20.4, ver CHANGELOG.md).
+async function portalStaffAgregarHabito(miembroId,hitoId,texto){
+  const m=portalStaffMiembros.find(x=>x.id===miembroId);
+  if(!m||!m.planFitnessIA)return;
+  if(!String(texto||'').trim())return alert('Escribe el hábito antes de agregarlo');
+  const planFitnessIA=_agregarHabitoEnPlan(m.planFitnessIA,hitoId,texto);
+  await _portalStaffGuardarPlanCliente(miembroId,m,planFitnessIA);
 }
 async function portalStaffAgregarNotaRecomendacion(miembroId){
   const input=document.getElementById(`nota-recomendacion-texto-${miembroId}`);
