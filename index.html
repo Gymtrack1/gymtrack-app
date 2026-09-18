@@ -3882,20 +3882,51 @@ async function copiarLinkStaff(){
     prompt('Copia este link manualmente:',url);
   }
 }
+// PIN de 4 dígitos al azar — mismo rango que ya acepta _pinEmpleadoValido/saveEmpleado
+// (/^\d{4,6}$/). Lo usa enviarLinkStaffWhatsApp para generar uno nuevo cuando hay que reenviar
+// el acceso de un empleado y el PIN en texto plano ya no está disponible.
+function _generarPinAleatorio(){
+  return String(Math.floor(1000+Math.random()*9000));
+}
 // Mismo mecanismo wa.me que ya usa Alertas/Recordatorios/Promociones — incluye el PIN del
 // empleado en el mensaje porque el dueño se lo manda directo, no hace falta que lo escriba aparte.
-// El PIN se guarda hasheado (ver saveEmpleado), así que aquí SOLO se puede mandar si sigue
-// disponible en memoria (_pinesRecienEstablecidos, se llenó al crearlo/cambiarlo en esta misma
-// sesión del navegador) — no hay forma de recuperarlo después de guardado.
+// El PIN se guarda hasheado (ver saveEmpleado), así que solo se puede reenviar el mismo PIN si
+// sigue disponible en memoria (_pinesRecienEstablecidos, se llenó al crearlo/cambiarlo en esta
+// misma sesión del navegador). Si no (el caso más común: se configuró en otra sesión, o nunca se
+// configuró), en vez de un callejón sin salida que mande al dueño a "Editar" a mano, este mismo
+// botón genera un PIN nuevo, lo guarda, y lo manda — un solo clic en vez de cuatro pasos.
+// window.open() se llama SIEMPRE de forma síncrona justo después del confirm() (nunca tras un
+// await) para no arriesgar que el navegador bloquee el popup por no verlo como resultado directo
+// del clic; el guardado en Firestore del PIN nuevo corre aparte, sin bloquear la apertura de
+// WhatsApp (ver _guardarPinNuevoEmpleadoYAvisar).
 function enviarLinkStaffWhatsApp(empleadoId){
   const e=empleados.find(x=>x.id===empleadoId);
   if(!e||!e.telefono)return alert('Este empleado no tiene teléfono registrado');
-  if(!e.pinAcceso)return alert('Asígnale primero un PIN de acceso a este empleado (Editar) antes de mandarle el link');
-  const pinPlano=_pinesRecienEstablecidos[empleadoId];
-  if(!pinPlano)return alert('Por seguridad el PIN se guarda cifrado y no se puede volver a mostrar. Para reenviarlo, entra a "Editar", escribe un PIN nuevo y guarda — ahí sí podrás mandarlo por WhatsApp.');
+  let pinPlano=_pinesRecienEstablecidos[empleadoId];
+  if(!pinPlano){
+    const pregunta=e.pinAcceso
+      ?`Por seguridad no se puede recuperar el PIN actual de ${e.nombre}. Se va a generar un PIN NUEVO (el anterior dejará de funcionar) y se va a mandar por WhatsApp. ¿Continuar?`
+      :`${e.nombre} todavía no tiene un PIN de acceso. Se va a generar uno y se va a mandar por WhatsApp. ¿Continuar?`;
+    if(!confirm(pregunta))return;
+    pinPlano=_generarPinAleatorio();
+    _guardarPinNuevoEmpleadoYAvisar(empleadoId,pinPlano);
+  }
   const msg=`Hola ${e.nombre}, aquí tienes el link del Portal de Empleados (para registrar tu peso o ver el progreso de los clientes del gym):\n${_linkStaff()}\n\nTu PIN de acceso: ${pinPlano}`;
   const tel=e.telefono.replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+async function _guardarPinNuevoEmpleadoYAvisar(empleadoId,pinPlano){
+  try{
+    const pinAcceso=await sha256Hex(pinPlano);
+    await updateDoc(userDoc('empleados',empleadoId),{pinAcceso});
+    _actualizarLocal(empleados,empleadoId,{pinAcceso});
+    sincronizarEmpleadoPublico(empleadoId);
+    _pinesRecienEstablecidos[empleadoId]=pinPlano;
+    renderEmpleados();
+    toast('PIN nuevo generado y guardado ✓');
+  }catch(err){
+    alert('El mensaje de WhatsApp ya se mandó, pero el PIN nuevo NO se pudo guardar en la base de datos (sin internet o algo falló). Ese PIN todavía no sirve para entrar — genera otro desde "Editar" antes de que el empleado intente usarlo.');
+  }
 }
 
 // GASTOS

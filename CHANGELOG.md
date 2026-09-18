@@ -4,6 +4,44 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — Reenviar el PIN de un empleado por WhatsApp ya no es un callejón sin salida
+
+**Qué se hizo:** el botón de WhatsApp junto a cada empleado en el panel de Empleados mostraba
+"Por seguridad el PIN se guarda cifrado y no se puede volver a mostrar. Para reenviarlo, entra a
+'Editar', escribe un PIN nuevo y guarda — ahí sí podrás mandarlo por WhatsApp" cada vez que el PIN
+no estaba disponible en texto plano — que es el caso normal para cualquier PIN configurado en una
+sesión anterior del navegador (el hasheo es intencional y correcto, ver Parte de hasheo de PINs;
+el mensaje en sí no mentía). El problema era el flujo: para reenviar el acceso había que salir del
+botón, abrir "Editar", inventarse un PIN nuevo a mano, guardarlo, cerrar el modal y volver a darle
+al botón de WhatsApp — cuatro pasos para algo que se ve como una sola acción.
+
+**Se simplificó a un solo clic**: si el botón de WhatsApp no tiene el PIN en memoria, en vez del
+callejón sin salida, ahora:
+1. Pregunta con `confirm()` — un mensaje distinto según el caso (`"no se puede recuperar el PIN
+   actual... se generará uno nuevo"` si ya tenía uno, `"todavía no tiene un PIN"` si nunca se
+   configuró) — porque el PIN anterior SIEMPRE deja de servir al generar uno nuevo, y eso hay que
+   decirlo antes de hacerlo, no después.
+2. Si el dueño confirma, genera un PIN de 4 dígitos al azar (`_generarPinAleatorio`), abre
+   WhatsApp con ese PIN de inmediato, y en paralelo lo hashea y lo guarda en Firestore
+   (`_guardarPinNuevoEmpleadoYAvisar`) — mismas dos escrituras de siempre (`empleados` + espejo
+   `empleadosPublicos` vía `sincronizarEmpleadoPublico`).
+3. **`window.open()` se sigue llamando SIEMPRE de forma síncrona, justo después del `confirm()`**
+   — nunca después de un `await` — para no arriesgar que el navegador bloquee el popup por no
+   verlo como resultado directo del clic (mismo patrón que ya usan Alertas/Recordatorios/
+   Promociones). El guardado en Firestore corre aparte; si llegara a fallar (sin internet), un
+   aviso claro le dice al dueño que ese PIN concreto no quedó guardado y hay que regenerarlo desde
+   "Editar" antes de que el empleado lo intente usar.
+
+**Verificado:** `node --check` sobre el script principal (5368 líneas). Prueba nueva de Playwright
+(`test_reenviar_pin_whatsapp.mjs`, 12/12 OK): con el PIN todavía en memoria, abre WhatsApp directo
+sin preguntar nada; sin PIN en memoria pero con uno ya configurado, pregunta primero, abre
+WhatsApp con un PIN nuevo, y la apertura del popup ocurre ANTES de que termine el guardado en
+Firestore (se verificó el orden real de los eventos, no solo que ambos pasen); sin PIN configurado
+en absoluto, el mensaje de confirm() es el correcto para ese caso; cancelar el confirm() no abre
+WhatsApp ni guarda nada; sin teléfono registrado, sigue avisando igual que antes. Se re-corrieron
+las suites de Portal de Empleados (29/29), Fuerza como Progreso (18/18), Lecturas del staff
+(13/13), Recomendaciones/Meta (25/25), Editar hábitos (23/23) y Mi Meta (17/17) sin regresiones.
+
 ## 2026-09-18 — "Fuerza por músculo" se despliega igual que "Mi progreso" (selector + tendencia + lista)
 
 **Qué se hizo:** "Fuerza por músculo" mostraba un radar de un solo vistazo (todos los músculos a
