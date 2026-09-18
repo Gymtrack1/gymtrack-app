@@ -196,6 +196,27 @@ await check('Cliente anónimo puede LISTAR miembrosPublicos de TODO el gym sin f
 await check('El staff (dueño del gym) sigue pudiendo leer/escribir empleadosPublicos normalmente', setDoc(doc(gymA, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1'), { nombre: 'Carlos Staff', pinAcceso: '9999' }), true);
 await check('Gym B (otro gimnasio) también puede leer empleadosPublicos de Gym A (mismo criterio que miembrosPublicos, documentado en firestore.rules — el dato sensible real es el pinAcceso, aceptado como barrera de UI, no de datos)', getDoc(doc(gymB, 'usuarios', 'uidA', 'empleadosPublicos', 'emp1')), true);
 
+console.log('\n--- Recomendación IA (Parte 20, generarRecomendacionIA + notas) ---');
+await testEnv.withSecurityRulesDisabled(async (ctx) => {
+  await setDoc(doc(ctx.firestore(), 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'Prioriza pierna esta semana.', generadoEn: Date.now(), basadoEnRegistros: 5 });
+});
+await check('Cliente anónimo puede LEER la recomendación de un miembro (portal cliente y Vista de Progreso del staff)', getDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), true);
+await check('Cliente anónimo NO puede CREAR una recomendación directo (solo la Cloud Function, vía Admin SDK)', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'inventada', generadoEn: Date.now(), basadoEnRegistros: 999 }), false);
+await check('Cliente anónimo NO puede EDITAR una recomendación existente', updateDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'hackeada' }), false);
+await check('Cliente anónimo NO puede BORRAR una recomendación', deleteDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), false);
+await check('El staff (dueño del gym) SÍ puede escribir directo en recomendacionesIA (para corregir/borrar a mano si hace falta)', setDoc(doc(gymA, 'usuarios', 'uidA', 'recomendacionesIA', 'm1'), { texto: 'Prioriza pierna esta semana.', generadoEn: Date.now(), basadoEnRegistros: 5 }), true);
+await check('Gym B también puede leer la recomendación de un miembro de Gym A (mismo criterio que miembrosPublicos/registrosProgreso — dato no aislado por gym, aceptado como el resto del portal sin backend propio)', getDoc(doc(gymB, 'usuarios', 'uidA', 'recomendacionesIA', 'm1')), true);
+
+await check('Cliente anónimo puede CREAR una nota válida (autorTipo:"cliente")', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1'), { texto: 'Me costó la sentadilla', autorNombre: 'Juan (#001)', autorTipo: 'cliente', fecha: Date.now() }), true);
+await check('Coach (empleado anónimo con PIN) puede CREAR una nota válida (autorTipo:"coach")', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n2'), { texto: 'Le bajé el peso en sentadilla', autorNombre: 'Carlos Staff', autorTipo: 'coach', fecha: Date.now() }), true);
+await check('Nota con autorTipo inválido se rechaza', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n3'), { texto: 'texto', autorNombre: 'X', autorTipo: 'admin', fecha: Date.now() }), false);
+await check('Nota con campo extra se rechaza (forma exacta del documento)', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n4'), { texto: 'texto', autorNombre: 'X', autorTipo: 'cliente', fecha: Date.now(), miembroId: 'm1' }), false);
+await check('Nota sin texto (vacío) se rechaza', setDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n5'), { texto: '', autorNombre: 'X', autorTipo: 'cliente', fecha: Date.now() }), false);
+await check('Cliente anónimo puede LEER las notas', getDocs(collection(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas')), true);
+await check('Cliente anónimo NO puede EDITAR una nota existente (sin edición por ahora)', updateDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1'), { texto: 'editada' }), false);
+await check('Cliente anónimo NO puede BORRAR una nota (sin borrado por ahora)', deleteDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1')), false);
+await check('El staff (dueño del gym) SÍ puede editar/borrar una nota (moderación) aunque la subcolección esté 2 niveles abajo', deleteDoc(doc(gymA, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1')), true);
+
 console.log('\n--- Límite conocido: auto-elevación de plan ---');
 await check('(esperado que PASE hoy) Gym A puede reescribir su propio plan/funciones', updateDoc(doc(gymA, 'usuarios', 'uidA'), { plan: 'premium', funciones: ['dashboard','finanzas','empleados'] }), true);
 

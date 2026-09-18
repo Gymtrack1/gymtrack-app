@@ -4,6 +4,115 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-18 — Recomendación IA (basada en Fuerza) + notas, con Cloud Function nueva (Parte 20)
+
+**Qué se hizo:** nueva "Recomendación IA" en dos lugares, cada uno en su propia sección —
+distinta de la ya existente "Mi Meta y Recomendación IA" (`metaFitness`/`planFitnessIA`, Parte
+6/7, que sigue funcionando igual, sin tocar): esta nueva usa como contexto la Fuerza por músculo
+de la Parte 19, no una meta que el cliente define a mano, y corre sobre infraestructura NUEVA (ver
+aviso de arquitectura abajo).
+
+1. **Portal del cliente**: botón "Recomendar" junto a Fuerza/Mi progreso, abre
+   `renderPortalRecomendacionSeccion()` con el texto de la recomendación, fecha, cuántos
+   registros de fuerza se usaron, botón "🔄 Actualizar recomendación", y notas debajo.
+2. **Portal de Empleados (coach)**: tercera opción del menú, "📋 Ver recomendaciones IA"
+   (`renderPortalStaffRecomendaciones`) — el coach elige un cliente del mismo listado que ya usa
+   "Registrar mi peso" y ve la MISMA recomendación que ese cliente generó, de solo lectura (SIN
+   botón de actualizar de este lado). Si el cliente nunca la ha pedido, mensaje claro en vez de
+   error.
+3. **Notas tipo bitácora** debajo de la recomendación, en ambos lados — textarea + botón
+   "Agregar nota", lista ordenada de más reciente a más antigua con autor+fecha+texto. Sin
+   edición ni borrado por ahora (por decisión explícita, mantenerlo simple). Comparten el mismo
+   render (`_notasRecomendacionHtml`), cada lado guarda con su propio `autorNombre`/`autorTipo`
+   ('cliente' desde el portal, 'coach' desde Portal de Empleados) vía
+   `portalAgregarNotaRecomendacion`/`portalStaffAgregarNotaRecomendacion`.
+
+**Aviso de arquitectura (correcciones sobre el contexto del prompt, confirmadas revisando el
+repo antes de tocar nada):**
+- **No existe ningún "conector de torniquete/RFID"** en este repo — no hay ninguna Cloud Function
+  previa. Lo único externo que ya existía es `cloudflare-worker-ia/` (Cloudflare Worker, no
+  Firebase), usado por la recomendación de meta ya existente y con Gemini como proveedor. Esta
+  parte agrega la PRIMERA Cloud Function de Firebase del proyecto (`functions/`) — infraestructura
+  nueva, deploy nuevo, con Claude/Anthropic como proveedor (pedido explícito). El gym termina con
+  DOS sistemas de IA corriendo en paralelo (Cloudflare+Gemini para la meta, Firebase Functions+
+  Claude para esta) — se avisa aquí para que quede documentado, no se tocó el existente.
+- Se generó exactamente como se pidió: NUNCA se llama a la API de Claude desde `index.html` — solo
+  vía `httpsCallable('generarRecomendacionIA')` (SDK de Firebase Functions, agregado a la
+  inicialización de Firebase junto a Firestore/Auth/Storage).
+
+**Nombres reales de colección/campo:**
+- `usuarios/{uid}/recomendacionesIA/{miembroId}` → `{texto, generadoEn, basadoEnRegistros}`.
+  Mismo id de documento que el `miembroId` (no un id autogenerado).
+- `usuarios/{uid}/recomendacionesIA/{miembroId}/notas/{notaId}` → `{texto, autorNombre,
+  autorTipo:'coach'|'cliente', fecha}`.
+- La Cloud Function lee `registrosProgreso` (colección real, ya existente) filtrando por
+  `miembroId`, y agrupa por el campo `musculo` que CADA registro ya trae guardado — no duplica el
+  catálogo `BIBLIOTECA_EJERCICIOS` de índice.html del lado servidor (ver detalle técnico abajo).
+  También lee `miembros/{miembroId}` directo (Admin SDK, sin pasar por reglas) para
+  `categoriaMembresia`, `metaSemanal`, `fechaNacimiento`.
+
+**Cómo se generó (una sola vez, guardada) — `functions/index.js`, `generarRecomendacionIA`
+(HTTPS callable):**
+- Control de costo del lado SERVIDOR (no solo en `index.html`): si ya hay una recomendación de
+  los últimos 7 días y no se pidió `forzar:true`, regresa la existente sin llamar a la IA — así
+  no se puede saltar llamando a la function directo.
+- `estimar1RM`/fórmula de Epley: se reimplementó en el servidor (una función de una línea, sin
+  riesgo real de desincronización) en vez de importarla de `index.html` (arquitectura de un solo
+  archivo, no se puede "importar" desde Node). La agrupación por músculo NO duplica el catálogo de
+  ejercicios — cada `registrosProgreso` ya trae su propio campo `musculo` guardado (ver
+  `portalGuardarSerie`/`portalStaffGuardarSerie`), así que agrupar server-side es directo. La
+  ÚNICA lista que sí se duplicó a mano es `GRUPOS_MUSCULARES_FUERZA` (los 9 nombres de músculo de
+  fuerza, sin Cardio) — necesaria para que el prompt le diga a la IA qué músculos el cliente
+  TODAVÍA NO ha trabajado en absoluto (esos no aparecen en ningún registro, así que no hay forma
+  de inferirlos sin la lista completa). Solo hay que tocarla si se agrega un grupo muscular
+  COMPLETAMENTE NUEVO en `index.html` — nunca por agregar un ejercicio dentro de uno que ya existe.
+- Modelo: `claude-opus-5` (default de Anthropic pedido, ver aviso de costos abajo), llamado con el
+  SDK oficial `@anthropic-ai/sdk` (nunca fetch crudo). Prompt: en español, 3-5 puntos, prioriza
+  músculos con menos desarrollo relativo o sin registros, trata como principiante si hay pocos o
+  ningún registro.
+- La API key vive SOLO en Secret Manager de Google Cloud (`firebase functions:secrets:set
+  ANTHROPIC_API_KEY`, NO el comando `functions:config:set` que el prompt sugería — ese está
+  descontinuado por Firebase, ver `functions/README.md`), referenciada por nombre en el código
+  (`defineSecret`) — nunca en texto plano en ningún archivo del repo.
+
+**Firestore rules (`firestore.rules` + `rules-test/`):** `recomendacionesIA/{miembroId}` —
+lectura pública para cualquier autenticado (mismo nivel de confianza que
+`registrosProgreso`/`miembrosPublicos`), SIN creación/edición/borrado desde el cliente — el
+documento solo lo escribe la Cloud Function (Admin SDK, pasa por encima de las reglas). La
+subcolección `notas` valida la forma exacta del documento (`autorTipo` solo `'coach'`/`'cliente'`,
+`texto` no vacío ≤1000 caracteres) y permite crear pero no editar/borrar desde el cliente — el
+dueño del gimnasio sí puede (moderación), declarado explícito porque al ser una subcolección de 2
+niveles, la regla genérica del archivo (1 nivel) no la alcanza sola.
+
+**Qué se verificó:**
+- `node --check` sobre el `<script>` principal de `index.html` (5,191 líneas) y sobre
+  `functions/index.js` — sintaxis válida en ambos.
+- `functions/`: `npm install` real (no solo revisión de código) confirma que las 3 dependencias
+  (`@anthropic-ai/sdk`, `firebase-admin`, `firebase-functions`) resuelven e instalan sin
+  conflictos, y que el módulo CARGA de verdad en Node (`require('./index.js')` exporta
+  `generarRecomendacionIA` sin tronar). Lógica pura aislada en Node (mismo criterio que
+  `cloudflare-worker-ia/`, sin desplegar ni llamar a Firebase/Anthropic de verdad) —
+  **21 OK / 0 FAIL**: `estimar1RM` reproduce Epley; `calcularEdad` con fecha real y con
+  `null`/`0`; `fuerzaPorMusculoServer` agrupa por el campo `musculo` de cada registro (excluye
+  cardio, se queda con el mayor 1RM por músculo, cuenta bien el total); `armarPrompt` menciona
+  los 9 grupos musculares (los trabajados con su 1RM, los demás como "sin registros todavía"),
+  incluye edad/categoría/meta correctos, y el caso de un cliente sin ningún registro (principiante)
+  queda bien representado.
+- Playwright (Chromium), llamando a las funciones reales de `index.html` — **15 OK / 0 FAIL**:
+  portal cliente arranca con "Aún no has pedido tu recomendación" y sin botón de actualizar; el
+  callable se llama con `{uid,miembroId,forzar:false}` correctos; tras generar aparece el texto,
+  fecha, botón "Actualizar recomendación" y notas vacías; agregar una nota la guarda con
+  `autorTipo:'cliente'` y el nombre+número correctos, y aparece en la lista. Lado coach: sin
+  elegir cliente pide elegir uno; con un cliente que SÍ tiene recomendación la muestra
+  (incluyendo una nota que el cliente ya había dejado) sin ningún botón de actualizar; con un
+  cliente que NO la ha pedido muestra el mensaje claro; una nota del coach se guarda con
+  `autorTipo:'coach'` y el nombre del propio empleado.
+- Se re-corrió toda la suite de Playwright de partes anteriores (Fuerza, Portal de Empleados,
+  doLogout, revertir/mover el resumen "ayer", escapes XSS) sin regresiones.
+- `rules-test/test.mjs` contra el emulador real de Firestore — se agregaron 12 casos nuevos
+  (lectura pública, creación bloqueada del documento principal, notas con forma válida/inválida,
+  moderación del dueño) — **82 OK / 0 FAIL** en total (0 regresiones en los 70 casos previos).
+
 ## 2026-09-19 — "Fuerza por músculo" en el portal del cliente (Parte 19)
 
 **Qué se hizo:** nueva sección "💪 Fuerza por músculo" en el portal del cliente por QR, junto a

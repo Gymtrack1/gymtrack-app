@@ -13,10 +13,16 @@
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+  // Cloud Functions (Parte 20, ver CHANGELOG.md): SOLO se usa para generarRecomendacionIA — la
+  // función que llama a la API de Claude del lado servidor (nunca desde el navegador, para no
+  // exponer la API key). httpsCallable ya maneja la sesión de Firebase Auth actual (incluida una
+  // anónima del portal) sin nada extra que configurar del lado cliente.
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
   const firebaseConfig = { apiKey:"AIzaSyDP2XgeXRfnuu2skfXvgFf9_xkRC9pLJOQ", authDomain:"mi-gimnasio-8d528.firebaseapp.com", projectId:"mi-gimnasio-8d528", storageBucket:"mi-gimnasio-8d528.firebasestorage.app", messagingSenderId:"19052651365", appId:"1:19052651365:web:6914d31e8dbbd63330b78c" };
-  const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
+  const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app); const functionsApp=getFunctions(app);
   window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._query=query; window._where=where; window._writeBatch=writeBatch; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
   window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
+  window._httpsCallable=(name)=>httpsCallable(functionsApp,name);
   const ADMIN_EMAIL='luismolinac06@gmail.com';
 
   // PORTAL PÚBLICO DEL CLIENTE (un solo QR por gimnasio -> músculo/ejercicio/progreso/peso
@@ -1019,6 +1025,7 @@ let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
 let storage,storageRef,uploadBytesFn,getDownloadURLFn,deleteObjectFn;
+let httpsCallableFn; // Cloud Function generarRecomendacionIA (Parte 20) — solo se usa en el portal
 let userPlan='sencillo';
 let userFunciones=[];
 let planListener=null,listenerRetries=0,planPollInterval=null;
@@ -4748,6 +4755,8 @@ let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
 let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
 let chartPortalProgreso=null,chartPortalPeso=null,chartPortalFuerza=null;
+// Recomendación IA (Parte 20, ver CHANGELOG.md) — ver _cargarRecomendacionIA/renderPortalRecomendacionSeccion.
+let portalRecomendacion=null,portalRecomendacionNotas=[],portalRecomendacionCargando=false;
 
 function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
@@ -4896,6 +4905,7 @@ window.addEventListener('portalReady',()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; queryFn=window._query; whereFn=window._where;
+  httpsCallableFn=window._httpsCallable;
   // El formulario se muestra YA, sin esperar la personalización — si esa lectura a Firestore
   // se traba (mala conexión, o simplemente tarda), el cliente igual puede identificarse. Los
   // colores/logo del gym se aplican en cuanto lleguen, en paralelo (fire-and-forget); si nunca
@@ -4976,6 +4986,30 @@ async function portalCargarDatos(){
   const gymId=window._portalGym;
   try{const s=await getDocs(queryFn(gymCol(gymId,'registrosProgreso'),whereFn('miembroId','==',portalMiembro.id)));portalRegistros=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalRegistros=[];}
   try{const s=await getDocs(queryFn(gymCol(gymId,'pesoCorporal'),whereFn('miembroId','==',portalMiembro.id)));portalPesos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){portalPesos=[];}
+  const{recomendacion,notas}=await _cargarRecomendacionIA(gymId,portalMiembro.id);
+  portalRecomendacion=recomendacion;portalRecomendacionNotas=notas;
+}
+// Recomendación IA (Parte 20, ver CHANGELOG.md) — lectura DIRECTA a Firestore (gratis, sin pasar
+// por la Cloud Function): solo la generación/actualización cuesta dinero (llama a la IA), así que
+// simplemente MOSTRAR lo que ya existe nunca debe disparar la function. Compartida por el portal
+// del cliente (mid=el propio portalMiembro.id) y la Vista de Progreso del staff (mid=el cliente
+// que el coach eligió) — por eso recibe gymId/mid como parámetros en vez de leer portalMiembro
+// directo, y guarda el resultado en variables DISTINTAS para cada lado (portalRecomendacion... /
+// portalStaffRecomendacion...) para que ver la recomendación de un cliente desde el coach nunca
+// pise la del propio cliente en la misma sesión del navegador (o viceversa).
+async function _cargarRecomendacionIA(gymId,miembroId){
+  let recomendacion=null,notas=[];
+  try{
+    const snap=await getDoc(gymDoc(gymId,'recomendacionesIA',miembroId));
+    recomendacion=snap.exists()?{id:snap.id,...snap.data()}:null;
+  }catch(e){recomendacion=null;}
+  if(recomendacion){
+    try{
+      const s=await getDocs(gymCol(gymId,`recomendacionesIA/${miembroId}/notas`));
+      notas=s.docs.map(d=>({id:d.id,...d.data()}));
+    }catch(e){notas=[];}
+  }
+  return{recomendacion,notas};
 }
 
 function portalUltimoPeso(){
@@ -5001,6 +5035,7 @@ function renderPortalHome(){
   html+=renderPortalNavegacionSeccion();
   html+=renderPortalProgresoSeccion();
   html+=renderPortalFuerzaSeccion();
+  html+=renderPortalRecomendacionSeccion();
   html+=renderPortalMetaSeccion();
   html+=renderPortalPerfilFisicoSeccion();
   el.innerHTML=html;
@@ -5297,6 +5332,81 @@ function dibujarChartPortalFuerza(){
   });
 }
 
+// RECOMENDACIÓN IA (Parte 20, ver CHANGELOG.md) — botón junto a Fuerza que genera (vía Cloud
+// Function generarRecomendacionIA, ver functions/index.js — NUNCA se llama a la API de Claude
+// directo desde aquí) una recomendación de rutina basada en la fuerza por músculo del cliente.
+// Se guarda una sola vez en usuarios/{gym}/recomendacionesIA/{miembroId} y se relee tal cual —
+// esta sección NUNCA recalcula el texto localmente, solo lo muestra y ofrece regenerarlo.
+function renderPortalRecomendacionSeccion(){
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>🤖 Recomendación IA</h3>
+    <div id="portal-recomendacion-contenido">${_portalRecomendacionHtml()}</div>
+  </div>`;
+}
+function _portalRecomendacionHtml(){
+  if(portalRecomendacionCargando)return'<div style="font-size:13px;color:var(--muted)">Generando tu recomendación… puede tardar unos segundos.</div>';
+  if(!portalRecomendacion)return`<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Aún no has pedido tu recomendación.</div>
+    <button class="btn btn-primary" style="width:100%" onclick="portalPedirRecomendacionFuerzaIA(false)">Recomendar</button>`;
+  return`<div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escAttr(portalRecomendacion.texto)}</div>
+    <div style="font-size:11px;color:var(--muted);margin:8px 0 14px">${fmtDate(portalRecomendacion.generadoEn)} · basada en ${portalRecomendacion.basadoEnRegistros||0} registro${portalRecomendacion.basadoEnRegistros===1?'':'s'} de fuerza</div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:16px" onclick="portalPedirRecomendacionFuerzaIA(true)">🔄 Actualizar recomendación</button>
+    ${_notasRecomendacionHtml(portalRecomendacionNotas,'portalAgregarNotaRecomendacion')}`;
+}
+// Compartido por el portal del cliente y la Vista de Progreso del staff — misma forma de tarjeta
+// de notas en ambos lados, solo cambia qué función de guardado dispara el botón (cada lado
+// persiste con su propio autorNombre/autorTipo, ver portalAgregarNotaRecomendacion/
+// portalStaffAgregarNotaRecomendacion).
+function _notasRecomendacionHtml(notas,guardarFn){
+  const lista=[...notas].sort((a,b)=>b.fecha-a.fecha);
+  const listaHtml=lista.length?lista.map(n=>`<div class="ec-row" style="align-items:flex-start;flex-direction:column;gap:2px">
+      <div style="font-size:11px;color:var(--muted)">${escAttr(n.autorNombre)} · ${fmtDate(n.fecha)}</div>
+      <div style="font-size:13px">${escAttr(n.texto)}</div>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--muted);padding:6px 0">Sin notas todavía.</div>';
+  return`<div style="border-top:1px solid var(--border);padding-top:14px">
+    <div style="font-weight:700;font-size:13px;margin-bottom:10px">📝 Notas</div>
+    <div style="margin-bottom:10px">${listaHtml}</div>
+    <textarea id="nota-recomendacion-texto" placeholder="Agregar una nota..." style="width:100%;min-height:60px"></textarea>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="${guardarFn}()">Agregar nota</button>
+  </div>`;
+}
+function _refrescarPortalRecomendacion(){
+  const cont=document.getElementById('portal-recomendacion-contenido');
+  if(cont)cont.innerHTML=_portalRecomendacionHtml();
+}
+// forzar=false: primera vez (no hay recomendación todavía) — la Cloud Function genera una nueva.
+// forzar=true: botón "Actualizar recomendación" — le pide a la function que regenere aunque ya
+// tenga una reciente (la function decide igual si vale la pena regenerar, ver su código).
+async function portalPedirRecomendacionFuerzaIA(forzar){
+  if(portalRecomendacionCargando)return;
+  portalRecomendacionCargando=true;
+  _refrescarPortalRecomendacion();
+  try{
+    const fn=httpsCallableFn('generarRecomendacionIA');
+    const resp=await fn({uid:window._portalGym,miembroId:portalMiembro.id,forzar:!!forzar});
+    portalRecomendacion=resp.data;
+    toast('Recomendación lista ✓');
+  }catch(e){
+    const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
+    alert(`No se pudo generar la recomendación. Intenta de nuevo. (${detalle})`);
+  }finally{
+    portalRecomendacionCargando=false;
+    _refrescarPortalRecomendacion();
+  }
+}
+async function portalAgregarNotaRecomendacion(){
+  const input=document.getElementById('nota-recomendacion-texto');
+  const texto=input?input.value.trim():'';
+  if(!texto)return alert('Escribe una nota');
+  if(!portalRecomendacion)return;
+  const data={texto,autorNombre:`${portalMiembro.nombre} (#${fmtNum(portalMiembro.numero||0)})`,autorTipo:'cliente',fecha:Date.now()};
+  try{
+    const ref=await addDoc(gymCol(window._portalGym,`recomendacionesIA/${portalRecomendacion.id}/notas`),data);
+    portalRecomendacionNotas.push({id:ref.id,...data});
+    toast('Nota agregada ✓');
+    _refrescarPortalRecomendacion();
+  }catch(e){alert('No se pudo guardar la nota. Intenta de nuevo.');}
+}
+
 function dibujarChartPortalPeso(){
   const canvas=document.getElementById('chart-portal-peso');
   if(!canvas)return;
@@ -5590,6 +5700,12 @@ let portalStaffRegEjercicioSel='';
 let portalStaffRegBusqueda='';
 let portalStaffRegTipoSel='';
 let portalStaffRegUnidadPeso='kg';
+// PORTAL DE EMPLEADOS — "Ver recomendaciones IA" (Parte 20, ver CHANGELOG.md): el coach elige un
+// cliente del mismo listado portalStaffMiembros y ve la recomendación que ESE cliente ya generó
+// desde su propio portal — de solo lectura, nunca regenera (sin botón "Actualizar" de este lado,
+// a diferencia del portal del cliente).
+let portalStaffRecomendacionPersonaId='';
+let portalStaffRecomendacion=null,portalStaffRecomendacionNotas=[];
 
 async function renderPortalStaffIdentify(){
   const el=document.getElementById('portal-content');
@@ -5684,6 +5800,7 @@ function renderPortalStaffMenu(){
     <div style="display:flex;flex-direction:column;gap:10px">
       <button type="button" class="btn btn-primary" style="width:100%" onclick="portalStaffIrARegistrar()">🏋️ Registrar mi peso</button>
       <button type="button" class="btn btn-ghost" style="width:100%" onclick="portalStaffIrAProgreso()">📊 Ver progreso de clientes</button>
+      <button type="button" class="btn btn-ghost" style="width:100%" onclick="portalStaffIrARecomendaciones()">📋 Ver recomendaciones IA</button>
     </div>
   </div>`;
 }
@@ -5693,6 +5810,10 @@ function portalStaffIrARegistrar(){
 }
 function portalStaffIrAProgreso(){
   renderPortalStaffProgreso();
+}
+function portalStaffIrARecomendaciones(){
+  portalStaffRecomendacionPersonaId='';portalStaffRecomendacion=null;portalStaffRecomendacionNotas=[];
+  renderPortalStaffRecomendaciones();
 }
 
 // Sugerencia de peso para hoy (Parte 14) — regla fija de sobrecarga progresiva basada SOLO en el
@@ -5831,6 +5952,7 @@ function portalStaffSalir(){
   portalStaffSoloAyer=false;
   portalStaffMiembrosExpandidos=new Set();
   portalStaffRegMusculoSel='';portalStaffRegEjercicioSel='';portalStaffRegBusqueda='';portalStaffRegTipoSel='';
+  portalStaffRecomendacionPersonaId='';portalStaffRecomendacion=null;portalStaffRecomendacionNotas=[];
   renderPortalStaffIdentify();
 }
 
@@ -6000,6 +6122,65 @@ async function portalStaffGuardarSerie(){
     toast(esCardio?'Registro guardado ✓':'Serie guardada ✓');
     _refrescarPortalStaffRegEjercicio(); // se queda en el mismo ejercicio para poder registrar otra serie seguida
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+}
+
+// PORTAL DE EMPLEADOS — "Ver recomendaciones IA" (Parte 20, ver CHANGELOG.md): elige un cliente
+// del mismo listado que ya usa "Registrar mi peso" (portalStaffMiembros) y ve la MISMA
+// recomendación que ese cliente generó desde su portal — solo lectura, reusa
+// _cargarRecomendacionIA (mismo helper que el portal del cliente) y _notasRecomendacionHtml para
+// no duplicar el render de la tarjeta de notas.
+function renderPortalStaffRecomendaciones(){
+  const el=document.getElementById('portal-content');
+  if(!el)return;
+  el.innerHTML=`<div class="ec-card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="renderPortalStaffMenu()">‹ Menú</button>
+        <button class="btn btn-ghost btn-sm" onclick="portalStaffSalir()">Salir</button>
+      </div>
+      <h3 style="margin:8px 0 12px">📋 Recomendaciones IA</h3>
+      <div class="form-group">
+        <label>Cliente</label>
+        <select id="portal-staff-recomendacion-persona" onchange="portalStaffCambiarRecomendacionPersona(this.value)">
+          <option value="">— Elige un cliente —</option>
+          ${portalStaffMiembros.map(m=>`<option value="${m.id}" ${portalStaffRecomendacionPersonaId===m.id?'selected':''}>${escAttr(m.nombre)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="portal-staff-recomendacion-contenido">${_portalStaffRecomendacionHtml()}</div>`;
+}
+async function portalStaffCambiarRecomendacionPersona(miembroId){
+  portalStaffRecomendacionPersonaId=miembroId;
+  portalStaffRecomendacion=null;portalStaffRecomendacionNotas=[];
+  if(!miembroId){_refrescarPortalStaffRecomendacion();return;}
+  const{recomendacion,notas}=await _cargarRecomendacionIA(window._portalGym,miembroId);
+  portalStaffRecomendacion=recomendacion;portalStaffRecomendacionNotas=notas;
+  _refrescarPortalStaffRecomendacion();
+}
+function _portalStaffRecomendacionHtml(){
+  if(!portalStaffRecomendacionPersonaId)return'<div class="empty"><div class="empty-icon">📋</div><div>Elige un cliente arriba para ver su recomendación</div></div>';
+  if(!portalStaffRecomendacion)return'<div class="empty"><div class="empty-icon">🤖</div><div>Este cliente aún no ha pedido su recomendación</div></div>';
+  return`<div class="ec-card">
+    <div style="font-size:13px;white-space:pre-wrap;line-height:1.5">${escAttr(portalStaffRecomendacion.texto)}</div>
+    <div style="font-size:11px;color:var(--muted);margin:8px 0 14px">${fmtDate(portalStaffRecomendacion.generadoEn)} · basada en ${portalStaffRecomendacion.basadoEnRegistros||0} registro${portalStaffRecomendacion.basadoEnRegistros===1?'':'s'} de fuerza</div>
+    ${_notasRecomendacionHtml(portalStaffRecomendacionNotas,'portalStaffAgregarNotaRecomendacion')}
+  </div>`;
+}
+function _refrescarPortalStaffRecomendacion(){
+  const cont=document.getElementById('portal-staff-recomendacion-contenido');
+  if(cont)cont.innerHTML=_portalStaffRecomendacionHtml();
+}
+async function portalStaffAgregarNotaRecomendacion(){
+  const input=document.getElementById('nota-recomendacion-texto');
+  const texto=input?input.value.trim():'';
+  if(!texto)return alert('Escribe una nota');
+  if(!portalStaffRecomendacion)return;
+  const data={texto,autorNombre:portalStaffEmpleadoSel.nombre,autorTipo:'coach',fecha:Date.now()};
+  try{
+    const ref=await addDoc(gymCol(window._portalGym,`recomendacionesIA/${portalStaffRecomendacion.id}/notas`),data);
+    portalStaffRecomendacionNotas.push({id:ref.id,...data});
+    toast('Nota agregada ✓');
+    _refrescarPortalStaffRecomendacion();
+  }catch(e){alert('No se pudo guardar la nota. Intenta de nuevo.');}
 }
 </script>
 </body>

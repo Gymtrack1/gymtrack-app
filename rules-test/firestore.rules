@@ -295,6 +295,42 @@ service cloud.firestore {
         allow read: if isSignedIn();
       }
 
+      // RECOMENDACIÓN IA (Parte 20, ver CHANGELOG.md) — {texto, generadoEn, basadoEnRegistros}
+      // por miembro, la lee tanto el propio cliente (portal) como el coach (Vista de Progreso del
+      // staff, eligiendo cliente de un selector). Lectura pública para cualquier autenticado,
+      // MISMO nivel de confianza que registrosProgreso/miembrosPublicos arriba (no hay forma de
+      // aislar "solo el propio cliente" con auth anónima). SIN creación/edición/borrado aquí a
+      // propósito: el documento SOLO lo escribe la Cloud Function generarRecomendacionIA (Admin
+      // SDK, que pasa por encima de estas reglas) — así ningún cliente puede escribirse su propia
+      // recomendación ni inflar basadoEnRegistros para forzar un resultado. La regla genérica de
+      // abajo sigue dando lectura/escritura completa al dueño del gimnasio (o admin) por si algún
+      // día necesita corregir/borrar un documento a mano.
+      match /recomendacionesIA/{miembroId} {
+        allow read: if isSignedIn();
+
+        // Notas tipo bitácora debajo de la recomendación — cualquiera de los dos lados (cliente
+        // o coach) puede agregar una, nunca editarla ni borrarla (mantenerlo simple, ver
+        // CHANGELOG.md). Se valida la forma EXACTA del documento para que nadie pueda colar
+        // campos extra ni un autorTipo inventado. OJO: al ser una subcolección de 2 niveles
+        // (recomendacionesIA/{id}/notas/{id}), la regla genérica de abajo (match
+        // /{coleccion}/{docId}, un solo nivel) NO la alcanza — por eso el dueño/admin se declara
+        // aquí explícito, para conservar el mismo criterio de "el dueño puede todo en su propia
+        // cuenta" que ya aplica al resto del archivo.
+        match /notas/{notaId} {
+          allow read: if isSignedIn();
+          allow create: if isSignedIn() &&
+            request.resource.data.keys().hasOnly(['texto', 'autorNombre', 'autorTipo', 'fecha']) &&
+            request.resource.data.texto is string &&
+            request.resource.data.texto.size() > 0 &&
+            request.resource.data.texto.size() <= 1000 &&
+            request.resource.data.autorNombre is string &&
+            request.resource.data.autorNombre.size() > 0 &&
+            request.resource.data.autorTipo in ['coach', 'cliente'] &&
+            request.resource.data.fecha is number;
+          allow update, delete: if isAdmin() || isOwnerDoc(gymId);
+        }
+      }
+
       // Datos operativos del gimnasio (miembros, pagos, asistencias, etc).
       // Solo el dueño de esa cuenta (o el admin) puede leer/escribir. Esto
       // sigue exactamente igual que antes de agregar el portal: las reglas
