@@ -4,6 +4,99 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-20 — Foto de perfil de miembros (manual + importación en lote)
+
+**Qué se hizo:** se pidió agregar una foto de perfil simple por miembro (solo referencia visual,
+sin reconocimiento facial ni cámaras) para poder identificar a los clientes de un vistazo — un
+colaborador reportó que "no sabemos las caras para ubicarlos". Reutiliza el mismo patrón que ya
+existía para el logo/fondos del gimnasio (Storage + `<canvas>` para procesar la imagen), sin
+librerías nuevas y sin dividir `index.html`.
+
+1. **Campo `fotoURL`** en `miembros/{id}` (string, URL de Storage), igual que
+   nombre/teléfono/correo — no se agregó al espejo público `miembrosPublicos` ni se tocó el
+   portal QR ni el Portal de Empleados (fuera de alcance explícito de este cambio).
+2. **Helpers compartidos** (nuevos, junto a `validarImagen`/`conTimeout`, reusados por el modal
+   manual Y el importador — nada duplicado):
+   - `comprimirImagenCanvas(file)`: redimensiona en el navegador a un máximo de
+     **400×400px** (`FOTO_PERFIL_MAX_PX`) manteniendo proporción, y reexporta como JPEG a
+     calidad 0.85 — con `<canvas>`, sin ninguna librería nueva. Una foto de cámara de varios MB
+     queda típicamente en 15-40KB.
+   - `subirFotoMiembro(miembroId,blob)`: sube a
+     `fotosMiembros/{gymId}/{miembroId}/foto.jpg` — incluso el prompt original sugería
+     `usuarios/{uid}/miembros/{miembroId}/...`, pero esa ruta habría caído en el "denegado por
+     defecto" de `storage.rules` (que usa `<tipo>/{gymId}/...`, no `usuarios/{uid}/...` — ese
+     prefijo es de Firestore, no de las Storage rules de este proyecto); se usó el mismo patrón
+     que ya siguen `logos/{gymId}/...` y `fondos/{gymId}/...`, con su propia regla nueva en
+     `storage.rules` (`allow read, write: if isAdmin() || isOwner(gymId)`, igual que las otras
+     dos). **No existe una suite de pruebas para Storage rules en este repo** (tampoco la tenían
+     logos/fondos), así que no se agregó una — sí se verificó a mano que el patrón de la regla
+     nueva es idéntico al de las que ya funcionan.
+   - `avatarMiembroHtml(m,tamPx)` + `_avatarColor`/`_inicialesNombre`: si el miembro tiene
+     `fotoURL` pinta un `<img>` circular; si no, un círculo de color con sus 2 iniciales (mismo
+     patrón visual que Gmail/Slack) — el color sale de un hash simple y determinista del nombre,
+     así el mismo miembro siempre cae en el mismo color sin guardar nada extra.
+3. **Modal de miembro (alta/edición)**: campo de foto arriba del formulario, con preview (foto
+   actual, o iniciales si no tiene), "Subir foto" y "Quitar foto". A diferencia del
+   logo/fondos (que suben de inmediato), aquí la foto se comprime y queda **en memoria** hasta
+   que se le da clic a "Guardar" — si el staff cancela el modal, nunca se sube nada a Storage.
+   Un miembro nuevo no tiene id real todavía: su foto se sube DESPUÉS de crear el documento (un
+   `updateDoc` de seguimiento); uno editado sube la foto ANTES y la guarda en la misma escritura
+   que el resto de los cambios. Quitar una foto existente la borra de Storage al guardar (mismo
+   criterio que `quitarLogo`/`quitarFondo`).
+4. **Perfil del miembro**: la foto (o el avatar de iniciales) en grande, arriba del nombre.
+5. **Tabla de Miembros**: miniatura circular (28px) junto al nombre en cada fila.
+6. **`delMiembro`**: ahora también borra la foto de Storage, mismo criterio que ya sigue con
+   pagos/asistencias/registros de progreso — no deja archivos huérfanos.
+7. **Importación en lote desde Excel, extendida** (mismo `_guardarImportados`, sin importador
+   aparte): un segundo `<input type="file" multiple>` ("🖼️ Fotos (opcional)", antes del botón
+   "Importar Excel" a propósito — hay que elegir las fotos primero) guarda los archivos en
+   memoria (`fotosImportacionSeleccionadas`); cada fila del Excel puede traer una columna
+   **`archivoFoto`** con el nombre exacto del archivo correspondiente. El emparejamiento es
+   **sin distinguir mayúsculas/minúsculas** (`Juan_Perez.JPG` y `juan_perez.jpg` son lo mismo).
+   La subida de fotos ocurre en una **Fase 2, después de** que todos los miembros ya se crearon
+   de verdad en Firestore (batch.set no puede mezclarse con una subida async/lenta a Storage sin
+   bloquear la creación de todos los demás) — secuencial, no en paralelo, actualizando la MISMA
+   barra/toast de progreso que ya existía (`toastPersistente`), no una aparte. Una fila sin
+   `archivoFoto`, o cuyo archivo no se encuentra entre los seleccionados, **nunca bloquea ni
+   falla la importación** — ese miembro simplemente queda con su avatar de iniciales. El
+   mensaje final ahora reporta cuántos quedaron con foto y cuántos sin ella (ej. "48 miembros
+   importados — 41 con foto, 7 sin foto"), **solo cuando de verdad se intentó traer alguna** —
+   un import normal sin fotos conserva su mensaje de siempre, sin cambios.
+8. **Plantilla de Excel** (`descargarPlantilla`, SÍ se encontró y ya existía): se le agregó la
+   columna `archivoFoto` con un valor de ejemplo (`juan_perez.jpg`) siguiendo el MISMO patrón que
+   ya usa la columna `Notas` de esa plantilla ("Fila de ejemplo — puedes borrarla") para
+   autoexplicarse — **no es un comentario/nota real de celda de Excel** (no se confirmó que el
+   build de SheetJS cargado en este proyecto soporte ese formato de forma confiable), sino un
+   valor de ejemplo directamente en la celda, más un comentario largo en el código fuente
+   explicando el formato exacto esperado.
+
+**Verificado:** `node --check` sobre el script principal (5634 líneas). Tres suites nuevas de
+Playwright:
+- `test_foto_perfil.mjs` (14/14 OK): `comprimirImagenCanvas` sobre una imagen real de
+  1200×800px generada en `<canvas>` queda en JPEG, más chica que el original, con el lado más
+  largo en exactamente 400px manteniendo la proporción 3:2; las iniciales salen bien con
+  nombre de 1 y 2 palabras y con nombre vacío ("?"); el color es determinista y un hex válido;
+  el avatar es un `<img>` cuando hay `fotoURL` y un círculo de iniciales cuando no; la tabla de
+  Miembros y `verPerfil` pintan el avatar correcto.
+- `test_foto_perfil_guardado.mjs` (17/17 OK): alta nueva con foto crea el miembro primero y
+  sube/actualiza la foto después con la ruta usando el id real; editar reemplazando la foto hace
+  UNA sola escritura con todo junto; editar quitando la foto guarda `fotoURL:null` Y borra el
+  archivo de Storage; `delMiembro` borra la foto de Storage solo si el miembro tenía una.
+- `test_importar_fotos.mjs` (10/10 OK): el emparejamiento por nombre de archivo funciona sin
+  distinguir mayúsculas/minúsculas en ambos sentidos; una fila con `archivoFoto` que no
+  encuentra su archivo se importa igual, sin foto, sin tronar; solo se suben a Storage las fotos
+  que sí emparejaron; el mensaje final reporta "con foto"/"sin foto" correctamente; un import
+  sin ninguna foto de por medio conserva el mensaje de siempre.
+
+Se re-corrieron las 8 suites de sesiones anteriores (Alertas WhatsApp, Reenviar PIN, Portal de
+Empleados, Fuerza como Progreso, Lecturas del staff, Recomendaciones/Meta, Editar hábitos, Mi
+Meta) sin regresiones.
+
+**Límite de tamaño de archivo:** 2MB (`MAX_IMAGEN_BYTES`, el mismo límite que ya usaban
+logo/fondos — no se cambió). La compresión en el navegador SÍ funciona antes de subir (verificado
+arriba, punto por punto): nunca sube el archivo original, siempre la versión ya redimensionada a
+400×400px máximo.
+
 ## 2026-09-18 — Bug real: "WhatsApp a todos" de Alertas no mandaba nada (bloqueado por el navegador)
 
 **Qué se hizo:** el dueño preguntó si el botón "📱 WhatsApp a todos" de Alertas y el "🚀 Enviar a

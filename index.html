@@ -400,6 +400,16 @@ contenedor, igual que app-screen/admin-screen. -->
       <div class="page-title">Miembros</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button onclick="descargarPlantilla()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📋 Plantilla</button>
+        <!-- Fotos de importación (ver CHANGELOG.md, Foto de perfil de miembros): opcional, y va
+             ANTES de "Importar Excel" a propósito — solo guarda los archivos elegidos en
+             memoria (seleccionarFotosImportacion), _guardarImportados() los empareja por nombre
+             con la columna archivoFoto del Excel al importar. Si el Excel se sube primero sin
+             haber elegido fotos, los miembros se crean igual, solo que sin foto. -->
+        <label style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:4px" title="Opcional — selecciona esto ANTES de &quot;Importar Excel&quot; para que las fotos se emparejen con la columna archivoFoto">
+          🖼️ Fotos (opcional)
+          <input type="file" id="input-importar-fotos" accept="image/*" multiple style="display:none" onchange="seleccionarFotosImportacion(this)">
+          <span id="import-fotos-contador" style="display:none;color:var(--accent)"></span>
+        </label>
         <label style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:4px">
           📥 Importar Excel
           <input type="file" id="input-importar-xlsx" accept=".xlsx,.xls" style="display:none" onchange="importarMiembros(this)">
@@ -561,8 +571,20 @@ contenedor, igual que app-screen/admin-screen. -->
   <div class="modal">
     <h2 id="modal-miembro-title">Nuevo Miembro</h2>
     <input type="hidden" id="edit-id">
+    <div class="form-group" style="text-align:center">
+      <label>Foto de perfil</label>
+      <div id="m-foto-preview" style="margin:6px 0 10px;display:flex;justify-content:center"></div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+          📤 Subir foto
+          <input type="file" id="m-foto-input" accept="image/*" style="display:none" onchange="onFotoMiembroFileChange(this)">
+        </label>
+        <button class="btn btn-danger btn-sm" id="m-foto-quitar-btn" style="display:none" onclick="quitarFotoMiembro()">Quitar foto</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Máx. 2MB — se redimensiona sola a 400×400px antes de subirse.</div>
+    </div>
     <div class="form-row">
-      <div class="form-group"><label>Nombre</label><input type="text" id="m-nombre" placeholder="Nombre completo"></div>
+      <div class="form-group"><label>Nombre</label><input type="text" id="m-nombre" placeholder="Nombre completo" oninput="_actualizarPreviewFotoSiEsIniciales()"></div>
       <div class="form-group"><label>Teléfono (con lada)</label><input type="text" id="m-tel" placeholder="5212345678"></div>
     </div>
     <div class="form-row">
@@ -589,6 +611,7 @@ contenedor, igual que app-screen/admin-screen. -->
 <div class="modal-overlay" id="modal-perfil">
   <div class="modal">
     <h2>Perfil del Miembro</h2>
+    <div style="display:flex;justify-content:center;margin-bottom:12px" id="p-avatar-grande"></div>
     <div class="perfil-header">
       <div class="perfil-num" id="p-num">#001</div>
       <div>
@@ -2116,7 +2139,10 @@ function renderMiembros(filter=''){
   if(miembrosPage<1)miembrosPage=1;
   const start=(miembrosPage-1)*MIEMBROS_PAGE_SIZE;
   const pagina=lista.slice(start,start+MIEMBROS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><strong>${escAttr(m.nombre)}</strong></td><td>${m.telefono?escAttr(m.telefono):'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td>${metaSemanalBadge(m.id)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
+  // Miniatura de avatar junto al nombre (foto o iniciales, ver avatarMiembroHtml/CHANGELOG.md) —
+  // pedido de un colaborador para identificar de un vistazo a quién corresponde cada fila sin
+  // cámaras ni hardware nuevo.
+  tbody.innerHTML=pagina.map(m=>{const estado=getEstado(m.id);return`<tr><td><span class="num-badge">#${fmtNum(m.numero||0)}</span></td><td><div style="display:flex;align-items:center;gap:8px">${avatarMiembroHtml(m,28)}<strong>${escAttr(m.nombre)}</strong></div></td><td>${m.telefono?escAttr(m.telefono):'—'}</td><td>${getUltimoPlan(m.id)}</td><td>${fmtDate(getVencimiento(m.id))}</td><td>${estadoBadge(estado)}</td><td>${metaSemanalBadge(m.id)}</td><td style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="verPerfil('${m.id}')">Ver</button><button class="btn btn-ghost btn-sm" onclick="editMiembro('${m.id}')">Editar</button><button class="btn btn-danger btn-sm" onclick="delMiembro('${m.id}')">✕</button></td></tr>`;}).join('');
   renderMiembrosPaginacion(lista.length,totalPaginas);
 }
 function renderMiembrosPaginacion(total,totalPaginas){
@@ -2182,14 +2208,34 @@ function descargarPlantilla(){
     'Plan actual':'Mensual',
     'Monto pagado':'500',
     'Fecha de vencimiento':'15/08/2025',
+    // archivoFoto (opcional, ver CHANGELOG.md): nombre EXACTO del archivo de imagen de este
+    // miembro, tal cual como se llama en tu carpeta de fotos (con su extensión). Solo funciona
+    // si en "Fotos (opcional)" seleccionaste esa misma carpeta/archivos antes de importar este
+    // Excel — no distingue mayúsculas/minúsculas ("Juan_Perez.JPG" y "juan_perez.jpg" son lo
+    // mismo). Déjalo vacío si no tienes foto para ese miembro; nunca detiene la importación.
+    'archivoFoto':'juan_perez.jpg',
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:22},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
   toast('Plantilla descargada ✓');
+}
+
+// FOTOS DE IMPORTACIÓN EN LOTE (ver CHANGELOG.md, Foto de perfil de miembros): solo guarda los
+// File elegidos en memoria — no sube nada todavía. _guardarImportados() los empareja por nombre
+// de archivo (sin distinguir mayúsculas/minúsculas) contra la columna archivoFoto de cada fila
+// del Excel al importar. Si nunca se elige nada aquí, la importación funciona exactamente igual
+// que antes (todos los miembros quedan con su avatar de iniciales).
+let fotosImportacionSeleccionadas=[];
+function seleccionarFotosImportacion(input){
+  fotosImportacionSeleccionadas=Array.from(input.files||[]);
+  const contador=document.getElementById('import-fotos-contador');
+  if(!contador)return;
+  if(fotosImportacionSeleccionadas.length){contador.textContent=`(${fotosImportacionSeleccionadas.length})`;contador.style.display='inline';}
+  else{contador.style.display='none';}
 }
 
 // IMPORTAR MIEMBROS DESDE EXCEL
@@ -2223,6 +2269,7 @@ async function importarMiembros(input){
           planActual: get('Plan actual','Plan Membresía','Plan'),
           fechaVencimiento: get('Fecha de vencimiento','Fecha Vencimiento','Vencimiento'),
           montoPagado: get('Monto pagado','Monto Pagado','Monto','Precio'),
+          archivoFoto: get('archivoFoto','Archivo de foto','ArchivoFoto','Foto'),
           notas:      get('Notas')
         };
       };
@@ -2293,6 +2340,13 @@ async function _guardarImportados(rows){
   const total=rows.length;
   let contadorM=0,contadorP=0;
   const nuevosMiembros=[],nuevosPagos=[]; // para parchear localmente en vez de releer todo al terminar
+  // Fotos de importación (ver CHANGELOG.md): Map en minúsculas para que el emparejamiento por
+  // nombre de archivo no distinga mayúsculas/minúsculas ("Juan_Perez.JPG" == "juan_perez.jpg").
+  // pendientesFoto se llena aquí abajo (dentro del forEach) con {miembroId,file} de cada fila
+  // que sí tenía columna archivoFoto Y esa foto sí estaba entre las seleccionadas — se sube
+  // recién en la Fase 2, después de que todos los miembros ya existan de verdad en Firestore.
+  const fotosPorNombre=new Map(fotosImportacionSeleccionadas.map(f=>[f.name.toLowerCase(),f]));
+  const pendientesFoto=[];
 
   // Evitar que el usuario cierre/recargue a mitad de la importación
   const avisarSalida=(e)=>{e.preventDefault();e.returnValue='';return '';};
@@ -2327,6 +2381,14 @@ async function _guardarImportados(rows){
         batch.set(miembroRef,miembroData);
         nuevosMiembros.push({id:miembroRef.id,...miembroData});
         chunkM++;
+
+        // Emparejamiento foto↔miembro por nombre de archivo (ver CHANGELOG.md) — solo se
+        // ANOTA aquí (miembroId + File), la subida real ocurre en la Fase 2 de abajo, después
+        // de que el batch de este chunk se confirme.
+        if(r.archivoFoto){
+          const archivo=fotosPorNombre.get(String(r.archivoFoto).trim().toLowerCase());
+          if(archivo)pendientesFoto.push({miembroId:miembroRef.id,file:archivo});
+        }
 
         // Si hay fecha de vencimiento válida, crear registro de pago
         const fechaFin=_parseFechaES(r.fechaVencimiento);
@@ -2370,6 +2432,32 @@ async function _guardarImportados(rows){
     window.removeEventListener('beforeunload',avisarSalida);
   }
 
+  // FASE 2 — subir las fotos ya emparejadas (ver CHANGELOG.md). Va DESPUÉS de que los miembros
+  // ya existan de verdad en Firestore (arriba), nunca mezclada en el mismo batch: comprimir +
+  // subir a Storage es async y mucho más lento que un batch.set, así que hacerlo miembro por
+  // miembro dentro del batch habría tardado minutos en bloquear la creación de todos los demás.
+  // Secuencial (no en paralelo) para no saturar Storage y para que el contador de progreso —
+  // sobre la MISMA barra/toast de arriba, según lo pedido, no una aparte — sea confiable. Un
+  // fallo puntual (una foto corrupta, una subida que truena) no cancela la importación: ese
+  // miembro simplemente queda sin foto, con su avatar de iniciales.
+  let fotosSubidas=0;
+  if(pendientesFoto.length){
+    window.addEventListener('beforeunload',avisarSalida);
+    for(let i=0;i<pendientesFoto.length;i++){
+      const{miembroId,file}=pendientesFoto[i];
+      toastPersistente(`Subiendo fotos ${i+1} / ${pendientesFoto.length}...`);
+      try{
+        const blob=await comprimirImagenCanvas(file);
+        const url=await subirFotoMiembro(miembroId,blob);
+        await updateDoc(userDoc('miembros',miembroId),{fotoURL:url});
+        const m=nuevosMiembros.find(x=>x.id===miembroId);
+        if(m)m.fotoURL=url;
+        fotosSubidas++;
+      }catch(e){console.error('Foto de importación falló para',miembroId,':',e);}
+    }
+    window.removeEventListener('beforeunload',avisarSalida);
+  }
+
   // Parcheo local en vez de loadMiembros()/loadPagos(): ya tenemos en memoria exactamente
   // lo que se acaba de escribir (miles de docs en un import grande) — releerlo de Firestore
   // costaría tantas lecturas como la importación misma.
@@ -2379,7 +2467,19 @@ async function _guardarImportados(rows){
   pagos.push(...nuevosPagos);
   recalcPagosPorMiembro();
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();populateMiembrosSelect();
-  toast(`✓ ${contadorM} miembro${contadorM===1?'':'s'} importado${contadorM===1?'':'s'}${contadorP?' + '+contadorP+' pagos':''}`);
+  // Reporte de fotos (solo si de verdad se intentó traer alguna — un import normal sin fotos
+  // no cambia su mensaje de siempre): cuenta como "sin foto" tanto al que nunca traía
+  // archivoFoto en su fila como al que sí traía pero no se encontró/subió correctamente.
+  const seIntentaronFotos=rows.some(r=>r.archivoFoto)||fotosImportacionSeleccionadas.length>0;
+  const resumenFotos=seIntentaronFotos?` — ${fotosSubidas} con foto, ${contadorM-fotosSubidas} sin foto`:'';
+  toast(`✓ ${contadorM} miembro${contadorM===1?'':'s'} importado${contadorM===1?'':'s'}${contadorP?' + '+contadorP+' pagos':''}${resumenFotos}`);
+  // Limpia la selección de fotos para que un próximo import (sin querer reusar estas mismas
+  // fotos) no se las encuentre ya cargadas de una importación anterior.
+  fotosImportacionSeleccionadas=[];
+  const inputFotos=document.getElementById('input-importar-fotos');
+  if(inputFotos)inputFotos.value='';
+  const contadorFotosEl=document.getElementById('import-fotos-contador');
+  if(contadorFotosEl)contadorFotosEl.style.display='none';
 }
 
 // CORREGIR FECHAS DE PAGOS IMPORTADOS
@@ -3276,6 +3376,7 @@ function verPerfil(id){
   const m=miembros.find(x=>x.id===id);if(!m)return;
   perfilActualId=id;
   const estado=getEstado(m.id);
+  document.getElementById('p-avatar-grande').innerHTML=avatarMiembroHtml(m,80);
   document.getElementById('p-num').textContent=`#${fmtNum(m.numero||0)}`;
   document.getElementById('p-nombre-display').textContent=m.nombre;
   document.getElementById('p-estado-display').innerHTML=estadoBadge(estado);
@@ -3604,6 +3705,7 @@ async function saveMiembro(){
   const nombre=document.getElementById('m-nombre').value.trim();
   if(!nombre)return alert('El nombre es obligatorio');
   const editId=document.getElementById('edit-id').value;
+  const miembroOriginal=editId?miembros.find(x=>x.id===editId):null;
   let numero;
   if(!editId){
     const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
@@ -3614,6 +3716,17 @@ async function saveMiembro(){
   const fechaNacStr=document.getElementById('m-fecha-nacimiento').value;
   const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),categoriaMembresia:document.getElementById('m-categoria-membresia').value||null,notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value),recibeRecordatorios:document.getElementById('m-recibe-recordatorios').value==='true',estatura:parseFloat(document.getElementById('m-estatura').value)||null,fechaNacimiento:fechaNacStr?new Date(fechaNacStr+'T12:00:00').getTime():null};
   if(!editId){data.numero=numero;data.creadoEn=Date.now();}
+  // Foto de perfil (ver comentario junto a fotoMiembroPendienteBlob): al EDITAR ya hay un id
+  // real, así que una foto nueva se sube ANTES de escribir `data` — una sola escritura, con el
+  // resto de los cambios y la foto juntos. Un miembro NUEVO no tiene id hasta que addDoc()
+  // regresa más abajo: su foto se sube DESPUÉS, aparte, sin bloquear que el miembro se cree
+  // aunque la subida falle (mismo criterio de "no crítico" que sincronizarMiembroPublico).
+  if(fotoMiembroQuitar){
+    data.fotoURL=null;
+  }else if(fotoMiembroPendienteBlob&&editId){
+    try{data.fotoURL=await subirFotoMiembro(editId,fotoMiembroPendienteBlob);}
+    catch(e){alert('No se pudo subir la foto — se guarda el resto de los cambios sin ella: '+mensajeError(e));}
+  }
   // Parcheo local en vez de loadMiembros(): con miles de miembros, releer toda la
   // colección por cada alta/edición es la lectura más cara y más frecuente de la app.
   let savedId=editId;
@@ -3624,7 +3737,20 @@ async function saveMiembro(){
     const ref=await addDoc(userCol('miembros'),data);
     _agregarLocal(miembros,ref.id,data);
     savedId=ref.id;
+    if(fotoMiembroPendienteBlob){
+      try{
+        const url=await subirFotoMiembro(savedId,fotoMiembroPendienteBlob);
+        await updateDoc(userDoc('miembros',savedId),{fotoURL:url});
+        _actualizarLocal(miembros,savedId,{fotoURL:url});
+      }catch(e){alert('El miembro se guardó, pero la foto no se pudo subir: '+mensajeError(e));}
+    }
   }
+  // Se quitó una foto que sí existía en Storage: se borra al final, después de que la
+  // escritura en Firestore ya haya quedado bien — igual que quitarLogo/quitarFondo.
+  if(fotoMiembroQuitar&&miembroOriginal&&miembroOriginal.fotoURL){
+    try{await deleteObjectFn(storageRef(storage,miembroOriginal.fotoURL));}catch(e){}
+  }
+  _resetFotoMiembroEstado();
   recalcMiembrosPorId();
   sincronizarMiembroPublico(savedId); // portal público del cliente, ver nota junto a la función
   closeModal('modal-miembro');
@@ -3639,6 +3765,7 @@ async function saveMiembro(){
 // Antes quedaban datos huérfanos que contaminaban las finanzas y estadísticas
 async function delMiembro(id){
   if(!confirm('¿Eliminar miembro? También se borrarán sus pagos y asistencias. Esta acción no se puede deshacer.'))return;
+  const miembroABorrar=miembros.find(x=>x.id===id);
   const pagosMiembro=pagos.filter(p=>p.miembroId===id);
   await Promise.all(pagosMiembro.map(p=>deleteDoc(userDoc('pagos',p.id))));
   const asistMiembro=asistencias.filter(a=>a.miembroId===id);
@@ -3651,6 +3778,9 @@ async function delMiembro(id){
   await Promise.all(pesoMiembro.map(p=>deleteDoc(userDoc('pesoCorporal',p.id))));
   await deleteDoc(userDoc('miembrosPublicos',id)).catch(()=>{});
   await deleteDoc(userDoc('miembros',id));
+  // Foto de perfil en Storage (ver CHANGELOG.md) — mismo criterio que arriba: no dejar un
+  // archivo huérfano en fotosMiembros/{gymId}/{id}/ sin nadie que lo reference.
+  if(miembroABorrar&&miembroABorrar.fotoURL){try{await deleteObjectFn(storageRef(storage,miembroABorrar.fotoURL));}catch(e){}}
   // Ya sabemos exactamente qué se borró: se filtra localmente en vez de loadAll()
   // (que releía las 8 colecciones completas por la baja de UN solo miembro).
   pagos=pagos.filter(p=>p.miembroId!==id);
@@ -3677,6 +3807,8 @@ function editMiembro(id){
   document.getElementById('m-meta-semanal').value=m.metaSemanal||'';
   document.getElementById('m-recibe-recordatorios').value=m.recibeRecordatorios===false?'false':'true';
   document.getElementById('m-notas').value=m.notas||'';
+  _resetFotoMiembroEstado();
+  renderFotoMiembroPreview();
   openModal('modal-miembro');
 }
 
@@ -4281,6 +4413,142 @@ function conTimeout(promesa,ms,mensaje){
     new Promise((_,reject)=>setTimeout(()=>reject(new Error(mensaje)),ms))
   ]);
 }
+
+// FOTO DE PERFIL DE MIEMBROS (ver CHANGELOG.md) — helpers compartidos entre el modal de
+// miembro (alta/edición manual) y el importador de Excel (importación en lote), para no
+// duplicar la lógica de comprimir/subir en dos lugares.
+//
+// Redimensiona/comprime una imagen en el navegador ANTES de subirla — sin esto, una foto de
+// cámara de 4-8MB se subiría tal cual a Storage por cada miembro. Usa <canvas> (nada de
+// librerías nuevas): reescala manteniendo proporción a un máximo de FOTO_PERFIL_MAX_PX por
+// lado (de sobra para un avatar circular chico, nunca hace falta el original) y reexporta
+// como JPEG a calidad 0.85. Sale típicamente en 15-40KB por foto, muy por debajo de los 2MB
+// de MAX_IMAGEN_BYTES que ya valida validarImagen() antes de llegar aquí.
+const FOTO_PERFIL_MAX_PX=400;
+function comprimirImagenCanvas(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let{width,height}=img;
+      if(width>height){if(width>FOTO_PERFIL_MAX_PX){height=Math.round(height*FOTO_PERFIL_MAX_PX/width);width=FOTO_PERFIL_MAX_PX;}}
+      else{if(height>FOTO_PERFIL_MAX_PX){width=Math.round(width*FOTO_PERFIL_MAX_PX/height);height=FOTO_PERFIL_MAX_PX;}}
+      const canvas=document.createElement('canvas');
+      canvas.width=width;canvas.height=height;
+      canvas.getContext('2d').drawImage(img,0,0,width,height);
+      canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('No se pudo procesar la imagen')),'image/jpeg',0.85);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('El archivo no es una imagen válida'));};
+    img.src=url;
+  });
+}
+// Sube una foto (ya comprimida por comprimirImagenCanvas) a Storage y regresa su URL de
+// descarga — mismo bucket y patrón storageRef/uploadBytesFn/getDownloadURLFn que ya usan
+// logo/fondos (ver onLogoFileChange arriba), ruta propia por miembro
+// (fotosMiembros/{gymId}/{miembroId}/foto.jpg, ver storage.rules) para no pisar la foto de otro.
+async function subirFotoMiembro(miembroId,blob){
+  const sref=storageRef(storage,`fotosMiembros/${uid}/${miembroId}/foto.jpg`);
+  await conTimeout(uploadBytesFn(sref,blob),20000,'La subida tardó demasiado. ¿Ya habilitaste Storage en la consola de Firebase?');
+  return conTimeout(getDownloadURLFn(sref),20000,'No se pudo obtener la URL de la foto subida.');
+}
+
+// AVATAR (foto o iniciales) — mismo patrón visual que Gmail/Slack: un círculo de color sólido
+// con las 2 primeras iniciales del nombre cuando el miembro no tiene foto. El color sale de un
+// hash simple y determinista del nombre (el mismo miembro siempre cae en el mismo color, sin
+// guardar nada extra en Firestore ni recalcular nada al editar). Se usa en la tabla de
+// Miembros (miniatura chica) y en el Perfil (grande) — un solo lugar para los dos.
+const AVATAR_COLORES=['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#DB2777','#0891B2','#4F46E5','#B45309','#0D9488'];
+function _avatarColor(nombre){
+  let h=0;
+  const s=String(nombre||'');
+  for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;
+  return AVATAR_COLORES[h%AVATAR_COLORES.length];
+}
+function _inicialesNombre(nombre){
+  const partes=String(nombre||'').trim().split(/\s+/).filter(Boolean);
+  if(!partes.length)return'?';
+  const ini=(partes[0][0]||'')+(partes[1]?partes[1][0]:'');
+  return ini.toUpperCase();
+}
+function avatarMiembroHtml(m,tamPx){
+  if(m&&m.fotoURL){
+    return`<img src="${escAttr(m.fotoURL)}" alt="" style="width:${tamPx}px;height:${tamPx}px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
+  }
+  const nombre=m?m.nombre:'';
+  const color=_avatarColor(nombre);
+  const fontPx=Math.round(tamPx*0.4);
+  return`<div style="width:${tamPx}px;height:${tamPx}px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${fontPx}px;flex-shrink:0;font-family:'DM Sans',sans-serif">${escAttr(_inicialesNombre(nombre))}</div>`;
+}
+
+// FOTO DE PERFIL — modal de miembro (alta/edición manual). A diferencia del logo/fondos (que se
+// suben de inmediato al elegir el archivo), aquí la foto se comprime y queda EN MEMORIA
+// (fotoMiembroPendienteBlob) hasta que se le da clic a "Guardar" del modal — así, si el staff
+// cancela el modal sin guardar, nunca se sube nada a Storage (nada que limpiar después). Un
+// miembro NUEVO todavía no tiene id real: la subida de verdad ocurre en saveMiembro(), después
+// de crear el documento (ver ahí).
+let fotoMiembroPendienteBlob=null,fotoMiembroPendientePreviewUrl=null,fotoMiembroQuitar=false;
+function _resetFotoMiembroEstado(){
+  if(fotoMiembroPendientePreviewUrl)URL.revokeObjectURL(fotoMiembroPendientePreviewUrl);
+  fotoMiembroPendienteBlob=null;fotoMiembroPendientePreviewUrl=null;fotoMiembroQuitar=false;
+}
+// El miembro "actual" del modal, para saber qué avatar mostrar cuando no hay preview pendiente:
+// el que se está editando (con su fotoURL real), o uno "al vuelo" con el nombre que ya se
+// escribió si es de alta nueva (para que las iniciales del avatar coincidan según se escribe).
+function _miembroEnEdicionModal(){
+  const id=document.getElementById('edit-id').value;
+  if(id)return miembros.find(x=>x.id===id)||null;
+  const nombreEl=document.getElementById('m-nombre');
+  return{nombre:nombreEl?nombreEl.value:''};
+}
+function renderFotoMiembroPreview(){
+  const el=document.getElementById('m-foto-preview');
+  const quitarBtn=document.getElementById('m-foto-quitar-btn');
+  if(!el)return;
+  const m=_miembroEnEdicionModal();
+  if(fotoMiembroPendientePreviewUrl){
+    el.innerHTML=`<img src="${fotoMiembroPendientePreviewUrl}" style="width:80px;height:80px;border-radius:50%;object-fit:cover">`;
+    if(quitarBtn)quitarBtn.style.display='inline-block';
+  }else if(!fotoMiembroQuitar&&m&&m.fotoURL){
+    el.innerHTML=`<img src="${escAttr(m.fotoURL)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover">`;
+    if(quitarBtn)quitarBtn.style.display='inline-block';
+  }else{
+    el.innerHTML=avatarMiembroHtml(m,80);
+    if(quitarBtn)quitarBtn.style.display='none';
+  }
+}
+// Mientras se escribe el nombre de un miembro NUEVO, si el avatar mostrado son iniciales (no
+// hay foto/preview todavía), se recalculan para que coincidan con lo que se va escribiendo —
+// sin esto, el avatar se quedaría con las iniciales de como estaba el nombre al abrir el modal
+// (vacío = "?") hasta guardar.
+function _actualizarPreviewFotoSiEsIniciales(){
+  if(fotoMiembroPendientePreviewUrl)return; // ya hay una foto elegida, no hay iniciales que actualizar
+  const m=_miembroEnEdicionModal();
+  if(m&&m.fotoURL&&!fotoMiembroQuitar)return; // se está mostrando una foto real, no iniciales
+  renderFotoMiembroPreview();
+}
+async function onFotoMiembroFileChange(input){
+  const file=input.files&&input.files[0];
+  input.value='';
+  if(!file)return;
+  const err=validarImagen(file);
+  if(err)return alert(err);
+  try{
+    const blob=await comprimirImagenCanvas(file);
+    if(fotoMiembroPendientePreviewUrl)URL.revokeObjectURL(fotoMiembroPendientePreviewUrl);
+    fotoMiembroPendienteBlob=blob;
+    fotoMiembroPendientePreviewUrl=URL.createObjectURL(blob);
+    fotoMiembroQuitar=false;
+    renderFotoMiembroPreview();
+  }catch(e){alert('No se pudo procesar la imagen: '+mensajeError(e));}
+}
+function quitarFotoMiembro(){
+  if(fotoMiembroPendientePreviewUrl)URL.revokeObjectURL(fotoMiembroPendientePreviewUrl);
+  fotoMiembroPendienteBlob=null;fotoMiembroPendientePreviewUrl=null;
+  fotoMiembroQuitar=true;
+  renderFotoMiembroPreview();
+}
+
 async function onLogoFileChange(input){
   const file=input.files&&input.files[0];
   input.value='';
@@ -4449,7 +4717,7 @@ function abrirModalPersonalizacion(){
 
 // MODALES
 function openModal(id){
-  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();}
+  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();_resetFotoMiembroEstado();renderFotoMiembroPreview();}
   if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo','e-pin'].forEach(x=>document.getElementById(x).value='');document.getElementById('e-pin-ayuda').textContent='';}
   if(id==='modal-inventario'){

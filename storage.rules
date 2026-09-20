@@ -5,6 +5,8 @@ rules_version = '2';
 // Rutas usadas por index.html (sección de Personalización visual, ver CHANGELOG.md):
 //   logos/{gymId}/logo.<ext>          logo del gimnasio (un archivo)
 //   fondos/{gymId}/{tabId}.<ext>      fondo de pantalla por pestaña (uno por tab)
+//   fotosMiembros/{gymId}/{miembroId}/foto.jpg   foto de perfil de un miembro (ver CHANGELOG.md,
+//     Foto de perfil de miembros) — mismo patrón <tipo>/{gymId}/... que logos/fondos de arriba.
 //
 // Mismo criterio de aislamiento que firestore.rules: cada gimnasio (gymId = su uid de Auth)
 // solo puede leer/escribir sus propios archivos; el admin puede leer/escribir cualquiera.
@@ -52,6 +54,10 @@ service firebase.storage {
     }
 
     match /fondos/{gymId}/{allPaths=**} {
+      allow read, write: if isAdmin() || isOwner(gymId);
+    }
+
+    match /fotosMiembros/{gymId}/{allPaths=**} {
       allow read, write: if isAdmin() || isOwner(gymId);
     }
 
