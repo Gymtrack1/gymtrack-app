@@ -7,9 +7,12 @@ echo "  Actualizando GymTrack desde GitHub"
 echo "======================================"
 echo ""
 
-if [ -n "$(git status --porcelain index.html 2>/dev/null)" ]; then
-  echo "⚠️  Tienes cambios locales sin guardar en index.html."
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  echo "⚠️  Tienes cambios locales sin guardar (no solo en index.html — puede ser cualquier"
+  echo "   archivo, por ejemplo firebase.json después de un despliegue)."
   echo "   Este script NO los va a borrar. Avísale a Claude antes de continuar."
+  echo ""
+  git status --porcelain
   echo ""
   echo "Presiona Enter para cerrar esta ventana."
   read
@@ -17,12 +20,13 @@ if [ -n "$(git status --porcelain index.html 2>/dev/null)" ]; then
 fi
 
 git pull origin main
+PULL_STATUS=$?
 
 echo ""
-if [ $? -eq 0 ]; then
+if [ $PULL_STATUS -eq 0 ]; then
   echo "✅ Listo. Abre index.html en tu navegador y haz Cmd+Shift+R para ver los cambios."
 else
-  echo "❌ Algo falló. Copia este mensaje y mándaselo a Claude."
+  echo "❌ Algo falló. Copia TODO el texto de arriba (incluye el error) y mándaselo a Claude."
 fi
 echo ""
 echo "Presiona Enter para cerrar esta ventana."
