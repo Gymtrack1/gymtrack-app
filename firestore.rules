@@ -18,6 +18,8 @@ rules_version = '2';
 //   usuarios/{gymId}/config/personalizacion espejo público de colores/logo (ver más abajo)
 //   usuarios/{gymId}/sugerencias/{id}       buzón anónimo del portal QR (ver más abajo)
 //   usuarios/{gymId}/empleadosPublicos/{id} espejo público mínimo por empleado (ver más abajo)
+//   usuarios/{gymId}/accesosNoIdentificados/{id} eventos del control de acceso biométrico sin
+//                                            miembro asignado (ver más abajo, CONTROL DE ACCESO)
 //
 // Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
 // datos de otro gimnasio, sin importar que llame al SDK de Firestore
@@ -155,6 +157,31 @@ rules_version = '2';
 //   empleadosPublicos (nombre + pinAcceso/pinHash). Mismo nivel de confianza que ya tiene el
 //   resto de GymTrack sin backend propio, aplicado ahora a un alcance de datos mayor (todos los
 //   clientes, no uno).
+//
+// ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// CONTROL DE ACCESO BIOMÉTRICO (ZKTeco, protocolo ADMS, ver CHANGELOG.md) — NO agrega reglas
+// nuevas: la Cloud Function receptora (functions/index.js) usa el Admin SDK, que SALTA por
+// completo estas reglas de seguridad (son solo para el SDK/cliente de index.html). Se documenta
+// aquí solo para que quede claro qué colecciones/campos toca y por qué ya están cubiertos:
+//
+//   usuarios/{gymId}.equiposAutorizados — array de SN (números de serie) de los equipos
+//     biométricos que le pertenecen a este gimnasio. Campo normal del doc usuarios/{gymId}, ya
+//     cubierto por la regla `allow update: if isAdmin() || isOwnerDoc(gymId);` de arriba — el
+//     staff lo edita como cualquier otro campo de su cuenta. La Cloud Function lo LEE con el
+//     Admin SDK (fuera de estas reglas) para resolver a qué gimnasio pertenece un evento entrante
+//     por el SN del equipo, y así no aceptar datos de un equipo no registrado.
+//
+//   usuarios/{gymId}/miembros/{id}.accesoCredencialId — el ID/PIN que el equipo asignó al
+//     miembro al enrolarlo (captura manual desde index.html). Campo normal del documento, sin
+//     regla aparte (ya cubierto por la regla genérica de colecciones operativas, más abajo).
+//
+//   usuarios/{gymId}/accesosNoIdentificados/{id} — eventos de acceso cuyo accesoCredencialId no
+//     coincidía con ningún miembro al momento de llegar (la Cloud Function los crea con el Admin
+//     SDK). El staff los lee/resuelve desde index.html (sección "Accesos sin asignar", tab
+//     Alertas) con el SDK normal — cubierto por la misma regla genérica de abajo, sin necesitar
+//     una regla propia (es una subcolección de un solo nivel bajo usuarios/{gymId}, igual que
+//     asistencias o pagos).
 //
 // ─────────────────────────────────────────────────────────────────────────
 // AGENTE DE IA: META Y PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md) — NO es

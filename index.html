@@ -364,7 +364,7 @@ contenedor, igual que app-screen/admin-screen. -->
   <button class="nav-btn" id="nav-miembros" onclick="showTab('miembros',event)">Miembros</button>
   <button class="nav-btn" id="nav-pagos" onclick="showTab('pagos',event)">Pagos</button>
   <button class="nav-btn" id="nav-asistencia" onclick="showTab('asistencia',event)">Asistencia</button>
-  <button class="nav-btn" id="nav-alertas" onclick="showTab('alertas',event)">Alertas</button>
+  <button class="nav-btn" id="nav-alertas" onclick="showTab('alertas',event)">Alertas <span class="badge badge-red" id="nav-alertas-badge" style="display:none"></span></button>
   <button class="nav-btn" id="nav-estadocuenta" onclick="showTab('estadocuenta',event)">Finanzas</button>
   <button class="nav-btn" id="nav-empleados" onclick="showTab('empleados',event)">Empleados</button>
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
@@ -466,6 +466,13 @@ contenedor, igual que app-screen/admin-screen. -->
       <div class="page-title">Alertas</div>
       <button id="alertas-btn-todos" class="btn btn-whatsapp btn-sm" onclick="enviarWhatsAppTodos()">📱 WhatsApp a todos</button>
     </div>
+
+    <!-- Accesos sin asignar (equipo biométrico ZKTeco, ver CHANGELOG.md): eventos que llegaron
+         de un equipo con un accesoCredencialId que no coincide con ningún miembro. Se pinta
+         SIEMPRE que existan, sin importar el plan/función 'alertas' del gimnasio (es un dato
+         operativo del control de acceso, no una alerta de vencimiento) — por eso vive fuera
+         del bloqueo de plan que aplica más abajo a #alertas-content. -->
+    <div id="accesos-no-identificados-content"></div>
 
     <!-- Editor de mensaje WhatsApp (estático, siempre visible) -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:24px">
@@ -597,6 +604,7 @@ contenedor, igual que app-screen/admin-screen. -->
       <div class="form-group"><label>Estatura (cm)</label><input type="number" id="m-estatura" placeholder="170"></div>
     </div>
     <div class="form-group"><label>Categoría de membresía</label><select id="m-categoria-membresia"><option value="">— Sin categoría —</option></select></div>
+    <div class="form-group"><label>ID de credencial de acceso (huella/rostro)</label><input type="text" id="m-acceso-credencial" placeholder="Opcional — el ID que le asignó el equipo biométrico al enrolarlo"></div>
     <div class="form-group"><label>Meta semanal (días que se compromete a venir)</label><input type="number" id="m-meta-semanal" min="1" max="7" placeholder="Opcional, ej. 3"></div>
     <div class="form-group"><label>¿Le gusta que le escribamos recordatorios?</label><select id="m-recibe-recordatorios"><option value="true">Sí</option><option value="false">No</option></select></div>
     <div class="form-group"><label>Notas</label><textarea id="m-notas" rows="2" placeholder="Notas opcionales..."></textarea></div>
@@ -632,6 +640,7 @@ contenedor, igual que app-screen/admin-screen. -->
       <div class="perfil-field"><div class="perfil-field-label">Vencimiento</div><div class="perfil-field-val" id="p-vence-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Notas</div><div class="perfil-field-val" id="p-notas-display">—</div></div>
       <div class="perfil-field"><div class="perfil-field-label">Recordatorios</div><div class="perfil-field-val" id="p-recordatorios-display">—</div></div>
+      <div class="perfil-field"><div class="perfil-field-label">ID de acceso biométrico</div><div class="perfil-field-val" id="p-acceso-credencial-display">—</div></div>
       <div class="perfil-field" style="grid-column:span 2">
         <div class="perfil-field-label">Meta semanal de asistencia</div>
         <div class="perfil-field-val" id="p-meta-texto">—</div>
@@ -699,6 +708,28 @@ contenedor, igual que app-screen/admin-screen. -->
       <button class="btn btn-ghost" onclick="closeModal('modal-perfil')">Cerrar</button>
       <button class="btn btn-primary btn-sm" id="p-editar-btn">Editar</button>
       <button class="btn btn-whatsapp btn-sm" id="p-wha-btn">📱 WhatsApp</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VINCULAR ACCESO (control de acceso biométrico, ver CHANGELOG.md): vincula un
+     accesoNoIdentificado pendiente a un miembro ya existente. -->
+<div class="modal-overlay" id="modal-vincular-acceso">
+  <div class="modal">
+    <h2>Vincular acceso a miembro</h2>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--text-surface)">
+      Credencial <strong id="va-credencial-display"></strong> · equipo <span id="va-equipo-display"></span> · <span id="va-fecha-display"></span>
+    </div>
+    <input type="hidden" id="va-acceso-id">
+    <input type="hidden" id="va-miembro-id">
+    <div class="form-group" style="position:relative">
+      <label>Buscar miembro</label>
+      <input type="text" id="va-miembro-search" placeholder="Nombre o número..." autocomplete="off" oninput="filtrarMiembrosVinculo(this.value)" onfocus="filtrarMiembrosVinculo(this.value)">
+      <div id="va-miembro-results" style="display:none;position:fixed;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.2)"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vincular-acceso')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarVincularAcceso()">Vincular</button>
     </div>
   </div>
 </div>
@@ -1032,6 +1063,12 @@ let _pinesRecienEstablecidos={};
 // defecto. NO usan la palabra "plan" (ver userPlan/planNombre) para evitar la colisión de
 // nombres que ya causó bugs antes ("objetos de planes sin usar").
 let categoriasMembresia=[],promociones=[],registrosProgreso=[],pesoCorporal=[],sugerencias=[];
+// Accesos sin asignar (equipo biométrico ZKTeco, ver CHANGELOG.md): eventos de acceso cuyo
+// accesoCredencialId no coincidía con ningún miembro al momento de llegar. Se guarda el id del
+// acceso pendiente que se está "resolviendo" al dar de alta un miembro nuevo desde esa tarjeta
+// (ver altaMiembroDesdeAcceso/saveMiembro) — null cuando se abre el modal de miembro normal.
+let accesosNoIdentificados=[];
+let accesoPendienteVinculando=null;
 // Caches O(1): se recalculan cada vez que se recargan miembros/pagos (ver loadMiembros/loadPagos)
 let miembrosPorId=new Map();
 let pagosPorMiembroFin=new Map();  // miembroId -> pagos ordenados desc por fechaFin (vencimiento)
@@ -1723,9 +1760,9 @@ async function doLogout(){
 // escribir, evitando releer la colección completa por cada alta/edición/baja (antes era la
 // causa principal de lecturas excesivas: p.ej. registrar UN pago releía los ~5,000 pagos).
 async function loadAll(){
-  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal(),loadSugerencias()]);
+  await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal(),loadSugerencias(),loadAccesosNoIdentificados()]);
   renderDashboard();renderPagos();renderAsistencia();
-  renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderEmpleados();renderInventario();
+  renderAlertas();renderRecordatoriosPendientes();renderEstadoCuenta();renderEmpleados();renderInventario();renderAccesosNoIdentificados();
   // La tabla de Miembros no se renderiza aquí: con 15,000 registros no hace falta construir el
   // detalle fila por fila si el usuario está viendo el Dashboard. Se renderiza al entrar a esa pestaña
   // (activarTab) o si ya está activa en este momento (ej. tras recargar datos desde otra pestaña).
@@ -1791,6 +1828,10 @@ async function loadPromociones(){try{const s=await getDocs(userCol('promociones'
 async function loadRegistrosProgreso(){try{const s=await getDocs(userCol('registrosProgreso'));registrosProgreso=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){registrosProgreso=[];}}
 async function loadPesoCorporal(){try{const s=await getDocs(userCol('pesoCorporal'));pesoCorporal=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){pesoCorporal=[];}}
 async function loadSugerencias(){try{const s=await getDocs(userCol('sugerencias'));sugerencias=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){sugerencias=[];}}
+// Solo los NO resueltos: la colección puede acumular históricos ya vinculados con el tiempo
+// (mismo criterio anti-fuga-de-lecturas que registrosProgreso en el Portal de Empleados, ver
+// CHANGELOG.md) — no hace falta releer los ya resueltos en cada carga.
+async function loadAccesosNoIdentificados(){try{const s=await getDocs(query(userCol('accesosNoIdentificados'),where('resuelto','==',false)));accesosNoIdentificados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){accesosNoIdentificados=[];}}
 
 // Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
 // volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).
@@ -2752,6 +2793,104 @@ function _refrescarBotonAlertasTodos(){
   btn.textContent=!urgentes.length||enviados===0?'📱 WhatsApp a todos':enviados<urgentes.length?`▶ Siguiente (${enviados}/${urgentes.length} enviados)`:`✅ Enviado a todos (${urgentes.length}/${urgentes.length})`;
 }
 
+// CONTROL DE ACCESO BIOMÉTRICO (ZKTeco, protocolo ADMS vía Cloud Function en functions/, ver
+// CHANGELOG.md): eventos que llegan de un equipo biométrico cuyo PIN/ID (accesoCredencialId) no
+// coincide con ningún miembro se guardan en accesosNoIdentificados en vez de perderse. Esta
+// sección los muestra para que el staff los vincule a mano — vive fuera del bloqueo de plan que
+// aplica más abajo a #alertas-content porque es un dato operativo del control de acceso, no una
+// alerta de vencimiento (ver nota junto al HTML, #accesos-no-identificados-content).
+function renderAccesosNoIdentificados(){
+  const badge=document.getElementById('nav-alertas-badge');
+  if(badge){
+    if(accesosNoIdentificados.length){badge.style.display='inline-block';badge.textContent=accesosNoIdentificados.length;}
+    else badge.style.display='none';
+  }
+  const el=document.getElementById('accesos-no-identificados-content');
+  if(!el)return;
+  if(!accesosNoIdentificados.length){el.innerHTML='';return;}
+  const filas=[...accesosNoIdentificados].sort((a,b)=>(b.fechaHora||0)-(a.fechaHora||0)).map(a=>`
+    <div class="ec-row" style="align-items:center;flex-wrap:wrap;gap:10px">
+      <div style="flex:1;min-width:200px">
+        <strong>Credencial ${escAttr(a.credencialId)}</strong>
+        <div style="font-size:12px;color:var(--muted)">Equipo ${escAttr(a.equipoId||'—')} · ${a.fechaHora?new Date(a.fechaHora).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'}):'—'}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="abrirVincularAcceso('${a.id}')">Vincular a miembro existente</button>
+        <button class="btn btn-primary btn-sm" onclick="altaMiembroDesdeAcceso('${a.id}')">Dar de alta como miembro nuevo</button>
+      </div>
+    </div>`).join('');
+  el.innerHTML=`<div class="section-title" style="color:var(--red)">🆔 Accesos sin asignar (${accesosNoIdentificados.length})</div><div class="ec-card" style="margin-bottom:24px">${filas}</div>`;
+}
+
+// Marca el acceso pendiente como resuelto y crea la asistencia correspondiente con la fecha/hora
+// que mandó el equipo (no la de ahora) — el check-in ya había pasado, solo estaba pendiente de
+// saber de quién era. Compartido por los dos flujos de resolución (vincular a miembro existente
+// y dar de alta uno nuevo).
+async function _resolverAccesoPendiente(accesoId,miembroId){
+  const acceso=accesosNoIdentificados.find(a=>a.id===accesoId);if(!acceso)return;
+  await updateDoc(userDoc('accesosNoIdentificados',accesoId),{resuelto:true});
+  const dataAsist={miembroId,fecha:acceso.fechaHora||Date.now()};
+  const ref=await addDoc(userCol('asistencias'),dataAsist);
+  _agregarLocal(asistencias,ref.id,dataAsist);
+  _eliminarLocal(accesosNoIdentificados,accesoId);
+  renderAccesosNoIdentificados();renderDashboard();renderAsistencia();renderMiembros(document.getElementById('search-miembros').value);
+}
+
+function abrirVincularAcceso(accesoId){
+  const a=accesosNoIdentificados.find(x=>x.id===accesoId);if(!a)return;
+  document.getElementById('va-acceso-id').value=accesoId;
+  document.getElementById('va-miembro-id').value='';
+  document.getElementById('va-miembro-search').value='';
+  document.getElementById('va-credencial-display').textContent=a.credencialId;
+  document.getElementById('va-equipo-display').textContent=a.equipoId||'—';
+  document.getElementById('va-fecha-display').textContent=a.fechaHora?new Date(a.fechaHora).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'}):'—';
+  openModal('modal-vincular-acceso');
+}
+function filtrarMiembrosVinculo(query){
+  const res=document.getElementById('va-miembro-results');
+  const inp=document.getElementById('va-miembro-search');
+  const rect=inp.getBoundingClientRect();
+  res.style.top=(rect.bottom+4)+'px';res.style.left=rect.left+'px';res.style.width=rect.width+'px';
+  const norm=s=>s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const q=norm(query.trim());
+  const filtrados=q?miembros.filter(m=>norm(m.nombre||'').includes(q)||String(m.numero||'').includes(q)):miembros.slice(0,10);
+  if(!filtrados.length){res.innerHTML='<div style="padding:10px 14px;color:var(--muted);font-size:13px">Sin resultados</div>';res.style.display='block';return;}
+  res.innerHTML=filtrados.map(m=>`<div onclick="seleccionarMiembroVinculo('${m.id}','#${fmtNum(m.numero||0)} ${m.nombre.replace(/'/g,"\\'")}');event.stopPropagation()" style="padding:9px 14px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background=''">#${fmtNum(m.numero||0)} ${escAttr(m.nombre)}</div>`).join('');
+  res.style.display='block';
+}
+function seleccionarMiembroVinculo(id,label){
+  document.getElementById('va-miembro-id').value=id;
+  document.getElementById('va-miembro-search').value=label;
+  document.getElementById('va-miembro-results').style.display='none';
+}
+async function confirmarVincularAcceso(){
+  const accesoId=document.getElementById('va-acceso-id').value;
+  const miembroId=document.getElementById('va-miembro-id').value;
+  if(!accesoId||!miembroId)return alert('Elige un miembro de la lista');
+  const acceso=accesosNoIdentificados.find(a=>a.id===accesoId);if(!acceso)return;
+  await updateDoc(userDoc('miembros',miembroId),{accesoCredencialId:acceso.credencialId});
+  _actualizarLocal(miembros,miembroId,{accesoCredencialId:acceso.credencialId});
+  await _resolverAccesoPendiente(accesoId,miembroId);
+  closeModal('modal-vincular-acceso');
+  toast('Acceso vinculado ✓');
+}
+// Cerrar dropdown del buscador de vinculación al hacer clic fuera (mismo patrón que el buscador de Pagos)
+document.addEventListener('click',e=>{
+  const res=document.getElementById('va-miembro-results');
+  if(res&&!res.contains(e.target)&&e.target.id!=='va-miembro-search')res.style.display='none';
+});
+
+// Abre el modal normal de alta de miembro, precargando el ID de credencial ya conocido —
+// accesoPendienteVinculando queda marcado hasta que saveMiembro() lo use (o se cancele el
+// modal, ver closeModal) para marcar el acceso como resuelto y crear la asistencia pendiente.
+function altaMiembroDesdeAcceso(accesoId){
+  const a=accesosNoIdentificados.find(x=>x.id===accesoId);if(!a)return;
+  accesoPendienteVinculando=accesoId;
+  openModal('modal-miembro');
+  document.getElementById('m-acceso-credencial').value=a.credencialId;
+  document.getElementById('modal-miembro-title').textContent='Nuevo Miembro (vinculando acceso pendiente)';
+}
+
 // ALERTA DE PROMOCIÓN/PAQUETE (mensaje libre, no ligado a la colección `promociones` ni
 // guardado en Firestore — ver nota junto al HTML de esta sección). `promoEnviados` vive solo
 // en memoria (se reinicia al recargar la página): guarda qué miembros ya recibieron el aviso
@@ -3397,6 +3536,7 @@ function verPerfil(id){
   document.getElementById('p-vence-display').textContent=fmtDate(getVencimiento(m.id));
   document.getElementById('p-notas-display').textContent=m.notas||'—';
   document.getElementById('p-recordatorios-display').textContent=m.recibeRecordatorios===false?'No':'Sí';
+  document.getElementById('p-acceso-credencial-display').textContent=m.accesoCredencialId||'—';
   renderMetaSemanalPerfil(m.id);
   renderBeneficiosPerfil(m);
   renderSeguimientoPerfil(m);
@@ -3706,6 +3846,11 @@ async function saveMiembro(){
   if(!nombre)return alert('El nombre es obligatorio');
   const editId=document.getElementById('edit-id').value;
   const miembroOriginal=editId?miembros.find(x=>x.id===editId):null;
+  const accesoCredencialId=document.getElementById('m-acceso-credencial').value.trim()||null;
+  if(accesoCredencialId){
+    const dup=miembros.find(m=>m.id!==editId&&m.accesoCredencialId===accesoCredencialId);
+    if(dup)return alert(`Ese ID de credencial ya está asignado a ${dup.nombre}. Cada credencial debe pertenecer a un solo miembro.`);
+  }
   let numero;
   if(!editId){
     const maxNum=miembros.reduce((max,m)=>Math.max(max,m.numero||0),0);
@@ -3714,7 +3859,7 @@ async function saveMiembro(){
   // FIX: creadoEn y numero solo se asignan al crear, nunca al editar
   // Antes creadoEn siempre se sobreescribía, rompiendo "nuevos este mes" en Finanzas
   const fechaNacStr=document.getElementById('m-fecha-nacimiento').value;
-  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),categoriaMembresia:document.getElementById('m-categoria-membresia').value||null,notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value),recibeRecordatorios:document.getElementById('m-recibe-recordatorios').value==='true',estatura:parseFloat(document.getElementById('m-estatura').value)||null,fechaNacimiento:fechaNacStr?new Date(fechaNacStr+'T12:00:00').getTime():null};
+  const data={nombre,telefono:document.getElementById('m-tel').value.trim(),correo:document.getElementById('m-correo').value.trim(),edad:parseInt(document.getElementById('m-edad').value)||null,direccion:document.getElementById('m-direccion').value.trim(),categoriaMembresia:document.getElementById('m-categoria-membresia').value||null,notas:document.getElementById('m-notas').value.trim(),metaSemanal:normalizarMetaSemanal(document.getElementById('m-meta-semanal').value),recibeRecordatorios:document.getElementById('m-recibe-recordatorios').value==='true',estatura:parseFloat(document.getElementById('m-estatura').value)||null,fechaNacimiento:fechaNacStr?new Date(fechaNacStr+'T12:00:00').getTime():null,accesoCredencialId};
   if(!editId){data.numero=numero;data.creadoEn=Date.now();}
   // Foto de perfil (ver comentario junto a fotoMiembroPendienteBlob): al EDITAR ya hay un id
   // real, así que una foto nueva se sube ANTES de escribir `data` — una sola escritura, con el
@@ -3753,6 +3898,9 @@ async function saveMiembro(){
   _resetFotoMiembroEstado();
   recalcMiembrosPorId();
   sincronizarMiembroPublico(savedId); // portal público del cliente, ver nota junto a la función
+  // "Dar de alta como miembro nuevo" desde un acceso sin asignar (ver altaMiembroDesdeAcceso):
+  // hay que hacer esto ANTES de closeModal('modal-miembro'), que limpia accesoPendienteVinculando.
+  if(!editId&&accesoPendienteVinculando)await _resolverAccesoPendiente(accesoPendienteVinculando,savedId);
   closeModal('modal-miembro');
   renderDashboard();renderMiembros();renderAsistencia();populateMiembrosSelect();renderAlertas();renderRecordatoriosPendientes();
   toast(editId?'Miembro actualizado ✓':'Miembro agregado ✓');
@@ -3804,6 +3952,7 @@ function editMiembro(id){
   document.getElementById('m-estatura').value=m.estatura||'';
   document.getElementById('m-fecha-nacimiento').value=fmtDateInputVal(m.fechaNacimiento);
   populateCategoriaMembresiaSelect(m.categoriaMembresia||'');
+  document.getElementById('m-acceso-credencial').value=m.accesoCredencialId||'';
   document.getElementById('m-meta-semanal').value=m.metaSemanal||'';
   document.getElementById('m-recibe-recordatorios').value=m.recibeRecordatorios===false?'false':'true';
   document.getElementById('m-notas').value=m.notas||'';
@@ -4717,7 +4866,7 @@ function abrirModalPersonalizacion(){
 
 // MODALES
 function openModal(id){
-  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();_resetFotoMiembroEstado();renderFotoMiembroPreview();}
+  if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura','m-acceso-credencial'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();_resetFotoMiembroEstado();renderFotoMiembroPreview();}
   if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo','e-pin'].forEach(x=>document.getElementById(x).value='');document.getElementById('e-pin-ayuda').textContent='';}
   if(id==='modal-inventario'){
@@ -4734,8 +4883,11 @@ function closeModal(id){
   document.getElementById(id).classList.remove('open');
   // FIX 14: limpiar todos los campos hidden de edición al cerrar
   ['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});
+  // Cancelar "Nuevo Miembro (vinculando acceso pendiente)" (ver altaMiembroDesdeAcceso) sin
+  // guardar no debe dejar el acceso marcado como pendiente de vincular en el próximo alta.
+  if(id==='modal-miembro')accesoPendienteVinculando=null;
 }
-document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el){el.classList.remove('open');['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const f=document.getElementById(x);if(f)f.value='';})}});});
+document.querySelectorAll('.modal-overlay').forEach(el=>{el.addEventListener('click',e=>{if(e.target===el){el.classList.remove('open');['edit-id','edit-emp-id','edit-inv-id','edit-prod-id'].forEach(x=>{const f=document.getElementById(x);if(f)f.value='';});if(el.id==='modal-miembro')accesoPendienteVinculando=null;}});});
 
 // TABS
 function showTab(name,event){

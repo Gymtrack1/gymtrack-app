@@ -4,6 +4,124 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-22 — Control de acceso biométrico (ZKTeco SenseFace 7A, protocolo ADMS) — primer uso de Cloud Functions
+
+**Qué se hizo:** el gimnasio ya tiene instalado un equipo de huella/rostro ZKTeco SenseFace 7A, que
+habla el protocolo ADMS de ZKTeco — se le configura la dirección de un servidor en su propio menú y,
+a partir de ahí, manda por su cuenta (HTTP push, sin que nadie lo consulte) un evento cada vez que
+alguien pasa. Se construyó el receptor y la pantalla del staff para vincular cada credencial a un
+miembro.
+
+**Esta es la PRIMERA vez que el proyecto usa Cloud Functions.** Hasta ahora GymTrack corría 100% del
+lado del cliente (Firestore + Auth desde `index.html`, sin backend propio) — eso sigue siendo cierto
+para el resto de la app. Lo nuevo vive en `functions/`, una carpeta de Node aparte, exactamente igual
+que `firestore.rules`/`storage.rules` ya son archivos aparte de `index.html`: **no se tocó la regla
+de que `index.html` es un solo archivo**, la Cloud Function no vive ahí.
+
+**Parte 1 — `functions/index.js` (Express + Firebase Functions v2, `onRequest`):**
+1. `GET /iclock/cdata` — handshake inicial: responde el bloque de opciones estándar del protocolo
+   push de ZKTeco (`TransFlag`, `Realtime`, etc.). El formato exacto de líneas/campos sigue
+   implementaciones de referencia públicas del protocolo ADMS (ZKTeco no publica una spec oficial
+   descargable) — si el firmware real del SenseFace 7A difiere en algún detalle menor, hay que
+   ajustar `parseAttLogLine` viendo el log de Cloud Functions (cada línea recibida queda logueada).
+2. `POST /iclock/cdata` — el equipo sube los registros de asistencia como texto plano (líneas
+   `PIN\tFecha/Hora\t...`, tab-separado, con fallback por regex si el tab se pierde en tránsito).
+   Soporta varias líneas en un mismo POST (el equipo manda todo lo acumulado tras un corte de
+   conexión). Por cada línea: busca un miembro con ese `accesoCredencialId` en
+   `usuarios/{gymId}/miembros`; si lo encuentra, crea el registro en `asistencias` con
+   **exactamente el mismo formato** que ya usa el botón manual "Registrar" (`{miembroId, fecha}`,
+   mismo `registrarAsistencia` de `index.html`) — usando la fecha/hora que mandó el EQUIPO, no la
+   del servidor. Si NO lo encuentra, el evento **no se descarta**: se guarda en la colección nueva
+   `accesosNoIdentificados` (`credencialId`, `equipoId`, `fechaHora`, `gimnasioUid`,
+   `resuelto:false`).
+3. `GET /iclock/getrequest` — ping de comandos pendientes del equipo; siempre responde "OK" (sin
+   comandos) — la vinculación automática del ID (mandarle un comando al equipo en vez de captura
+   manual) queda pendiente como mejora futura, ya conversada y evaluada aparte, no se implementa
+   aquí.
+4. **Multi-tenencia sin login** (el equipo no puede autenticarse): cada request trae el SN del
+   equipo (`?SN=...`). Se agregó `usuarios/{gymId}.equiposAutorizados` (array de SNs) — el gimnasio
+   se resuelve con `where('equiposAutorizados','array-contains',SN)` sobre la colección `usuarios`.
+   Un SN que no está en NINGÚN gimnasio se rechaza con `403` en las tres rutas, antes de tocar
+   cualquier dato, para no aceptar eventos de cualquier IP que le pegue al endpoint.
+5. **Idempotencia parcial:** las asistencias creadas desde ADMS usan un id determinista
+   (`sha1(SN|PIN|fecha)`) — si el equipo reenvía el mismo evento tras un corte de conexión (previsto
+   por el propio protocolo), el `set()` sobreescribe con el mismo contenido en vez de duplicar el
+   check-in. Los `accesosNoIdentificados` NO usan id determinista a propósito: si uno ya se vinculó
+   y quedó `resuelto:true`, un reenvío del mismo evento no debe poder revertirlo a `false` — un
+   duplicado ocasional ahí es un costo aceptable frente a perder una resolución ya hecha por el
+   staff.
+6. `firebase.json` ahora declara `functions` (`source: functions`, `codebase: default`).
+
+**Parte 2 — `index.html`:**
+1. Campo `accesoCredencialId` (texto libre, opcional) en el modal de miembro — no existía en el
+   repo (se revisó primero, sin encontrar trabajo previo de un sistema Dahua u otro nombre para este
+   campo; se implementó desde cero con este nombre, tal como se especificó). Se muestra también en
+   el perfil del miembro. Validación agregada (no pedida explícitamente, pero necesaria para que el
+   emparejamiento automático funcione bien): no se puede guardar una credencial que ya está asignada
+   a otro miembro — se avisa cuál es el dueño actual.
+2. Nueva sección **"🆔 Accesos sin asignar"**, arriba de todo en la pestaña Alertas — se eligió
+   Alertas (en vez de una pestaña propia) porque es donde el staff ya revisa pendientes operativos a
+   diario, pero **no depende del plan/función `alertas`** del gimnasio (se sigue mostrando aunque esa
+   función esté bloqueada por plan): es un dato del control de acceso, no una alerta de vencimiento.
+   Un badge rojo en el botón "Alertas" del menú lateral (`#nav-alertas-badge`) avisa cuántos hay
+   pendientes sin tener que entrar a la pestaña. Cada tarjeta muestra credencial/equipo/fecha y dos
+   acciones:
+   - **"Vincular a miembro existente"** — buscador de miembros (mismo patrón que el buscador de
+     Pagos), guarda `accesoCredencialId` en el miembro elegido, marca el acceso como `resuelto:true`
+     y crea la asistencia pendiente con la fecha/hora original del equipo.
+   - **"Dar de alta como miembro nuevo"** — abre el modal normal de alta con la credencial
+     precargada; al guardar, aplica la misma lógica de arriba (marcar resuelto + crear la
+     asistencia). Cancelar el modal sin guardar no deja un vínculo pendiente colgado para la
+     siguiente alta.
+3. Lectura acotada: `accesosNoIdentificados` se carga con `where('resuelto','==',false)` (mismo
+   criterio anti-fuga-de-lecturas que ya se aplicó al Portal de Empleados) — no se relee el histórico
+   ya resuelto en cada carga.
+
+**Nota de factibilidad importante — leer antes de desplegar:**
+- Hace falta el **plan Blaze** (pago por uso) activo en el proyecto de Firebase
+  (`mi-gimnasio-8d528`) — el plan gratuito Spark no permite desplegar Cloud Functions. Sin esto,
+  `firebase deploy --only functions` falla.
+- La carpeta `functions/` ya existe en el repo con su `package.json` — correr `npm install` dentro
+  de `functions/` antes de desplegar (no se commitea `node_modules/`, ver `functions/.gitignore`).
+- El costo real para un gimnasio chico es mínimo (unas cuantas invocaciones al día por miembro, muy
+  por debajo de la capa gratuita de invocaciones de Cloud Functions incluso en Blaze) — pero es la
+  **primera vez que el proyecto tiene un costo de infraestructura más allá de Firestore/Auth**, vale
+  la pena que Luis lo sepa antes de desplegar, no asumirlo callado.
+- Tras el primer `firebase deploy --only functions`, la URL a configurar en el equipo (menú "Server
+  Address" / "Cloud Server Address" del SenseFace 7A) es la que imprime la terminal, algo como
+  `https://us-central1-mi-gimnasio-8d528.cloudfunctions.net/adms` — **sin** `/iclock` al final, el
+  equipo agrega `/iclock/cdata` y `/iclock/getrequest` por su cuenta.
+- **`equiposAutorizados` no tiene UI propia todavía** — el pedido original solo listaba 2 cambios de
+  interfaz (el campo `accesoCredencialId` y la vista de accesos sin asignar), así que por ahora el
+  SN del equipo de cada gimnasio se agrega a mano en la consola de Firebase (Firestore → documento
+  `usuarios/{gymId}` → agregar el array `equiposAutorizados`). Si se quiere un campo en el panel
+  para hacerlo sin salir de GymTrack, es un cambio chico aparte — avisar si se quiere ahora.
+- La vinculación automática del ID (mandarle un comando al equipo en vez de captura manual, que es
+  lo que usaría `GET /iclock/getrequest`) queda pendiente como mejora futura, ya conversada y
+  evaluada aparte — no implementada en esta parte.
+
+**Verificado:**
+- `node --check` sobre `functions/index.js` y sobre el script principal de `index.html` (sin
+  errores de sintaxis).
+- Prueba nueva de Playwright contra `index.html` real (`test_acceso_biometrico.mjs`, 24/24 OK):
+  guardar miembro con `accesoCredencialId` y que persista en Firestore; rechazo de credencial
+  duplicada con el nombre del dueño actual en el aviso; `editMiembro`/`verPerfil` la muestran;
+  `renderAccesosNoIdentificados` oculta la sección y el badge cuando no hay pendientes y los muestra
+  correctamente cuando sí; vincular a miembro existente actualiza el miembro, marca `resuelto:true`,
+  vacía la lista local y crea la asistencia con la fecha original del equipo; dar de alta como
+  miembro nuevo desde un acceso pendiente precarga la credencial, resuelve el acceso pendiente al
+  guardar y limpia el estado; cancelar ese modal sin guardar no deja un vínculo colgado para la
+  siguiente alta.
+- Prueba nueva de Node contra `functions/index.js` real (levantando un servidor http real sobre el
+  Express app exportado, con un Firestore falso en memoria — no una reimplementación de la lógica,
+  `test_adms_function.cjs`, 28/28 OK): rechazo 403 de SN no autorizado en las tres rutas; handshake
+  con el bloque de opciones correcto; `getrequest` responde "OK"; un evento con PIN que sí matchea
+  crea la asistencia con el formato exacto `{miembroId, fecha}` y la fecha del equipo (no
+  `Date.now()`); reenviar el mismo evento no duplica la asistencia (idempotencia); un PIN sin dueño
+  cae en `accesosNoIdentificados` con todos los campos pedidos; un solo POST con varias líneas
+  (incluida una vacía) procesa cada una por separado; `table=OPERLOG` confirma recepción sin guardar
+  nada; una línea sin tabs se procesa igual por el fallback de regex.
+
 ## 2026-09-20 — Foto de perfil de miembros (manual + importación en lote)
 
 **Qué se hizo:** se pidió agregar una foto de perfil simple por miembro (solo referencia visual,
