@@ -4,6 +4,33 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-22 — Importador de Excel: columna opcional accesoCredencialId
+
+**Qué se hizo:** extensión del Control de acceso biométrico de más arriba, pedida durante el
+primer despliegue real con un cliente. La plantilla descargable y el importador de miembros
+(`descargarPlantilla`/`importarMiembros`/`_guardarImportados`) ahora aceptan una columna opcional
+`accesoCredencialId` — mismo patrón ya usado para `archivoFoto` (Foto de perfil de miembros):
+opcional, se deja vacía si nadie está enrolado todavía en el equipo, nunca detiene la importación.
+
+**Protección agregada (nueva, no pedida explícita pero necesaria):** dos miembros con la misma
+credencial romperían el emparejamiento del equipo (la Cloud Function se queda con el primero que
+encuentre). `_depurarCredencialesImport()` revisa el lote ANTES de escribir nada: si una fila trae
+una credencial repetida dentro del mismo Excel, o que ya está asignada a otro miembro existente,
+se le quita SOLO ese campo (el miembro se importa igual, sin credencial) y se avisa al staff con un
+`alert()` listando cuáles quedaron así, para vincularlas a mano después (Alertas → Accesos sin
+asignar, o editando al miembro). No se descarta ninguna fila por esto.
+
+**Verificado:** `node --check` sin errores. Prueba nueva de Playwright contra el `index.html` real
+(`test_importar_credencial.mjs`, 12/12 OK): credencial única se conserva; dos filas con la misma
+credencial en el Excel quedan ambas sin credencial (no se puede saber cuál es la real); una fila
+que colisiona con un miembro ya existente también queda limpia; fila sin credencial no truena;
+`_guardarImportados` persiste `accesoCredencialId` tanto en Firestore como en el array local, y un
+miembro sin credencial en el Excel queda con `null` (no string vacío). Se re-corrió la suite de
+Control de acceso biométrico (24/24) sin regresiones — de paso se encontró y corrigió un hueco real
+en el propio arnés de pruebas (el stub de Firestore no soportaba `doc(coleccionRef)`, el patrón de
+auto-ID del lado cliente que usa `_guardarImportados`; sin el arreglo, la prueba nueva escribía en
+la ruta equivocada).
+
 ## 2026-09-22 — Control de acceso biométrico (ZKTeco SenseFace 7A, protocolo ADMS) — primer uso de Cloud Functions
 
 **Qué se hizo:** el gimnasio ya tiene instalado un equipo de huella/rostro ZKTeco SenseFace 7A, que

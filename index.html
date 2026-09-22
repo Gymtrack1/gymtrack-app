@@ -2255,10 +2255,16 @@ function descargarPlantilla(){
     // Excel — no distingue mayúsculas/minúsculas ("Juan_Perez.JPG" y "juan_perez.jpg" son lo
     // mismo). Déjalo vacío si no tienes foto para ese miembro; nunca detiene la importación.
     'archivoFoto':'juan_perez.jpg',
+    // accesoCredencialId (opcional, ver CHANGELOG.md — Control de acceso biométrico): el ID/PIN
+    // que el equipo biométrico (ej. ZKTeco) le asignó a esta persona al enrolarla. Solo tiene
+    // sentido llenar esta columna si YA enrolaste a todos en el equipo de antemano — si nadie
+    // está enrolado todavía, déjala vacía: los check-ins van a "Accesos sin asignar" (Alertas) y
+    // se vinculan uno por uno desde ahí, sin necesidad de reimportar nada.
+    'accesoCredencialId':'1001',
     'Notas':'Fila de ejemplo — puedes borrarla'
   }];
   const ws=XLSX.utils.json_to_sheet(ejemplo);
-  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:22},{wch:20},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Miembros',ws);
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
@@ -2277,6 +2283,28 @@ function seleccionarFotosImportacion(input){
   if(!contador)return;
   if(fotosImportacionSeleccionadas.length){contador.textContent=`(${fotosImportacionSeleccionadas.length})`;contador.style.display='inline';}
   else{contador.style.display='none';}
+}
+
+// Detecta accesoCredencialId repetidos antes de importar (ver CHANGELOG.md, Control de acceso
+// biométrico): a diferencia de nombre/teléfono (que solo avisan), aquí SÍ hay que actuar solo —
+// dos miembros con la misma credencial rompen el emparejamiento del equipo (la Cloud Function se
+// queda con el primero que encuentre, el otro nunca haría match). No se cancela la importación
+// por esto: a la fila en conflicto se le quita SOLO ese campo (se importa igual, solo sin
+// credencial vinculada) y se reporta cuáles quedaron así para vincularlas a mano después.
+function _depurarCredencialesImport(rows){
+  const conteo=new Map();
+  rows.forEach(r=>{if(r.accesoCredencialId)conteo.set(r.accesoCredencialId,(conteo.get(r.accesoCredencialId)||0)+1);});
+  const conflictos=[];
+  rows.forEach(r=>{
+    if(!r.accesoCredencialId)return;
+    const repetidaEnLote=conteo.get(r.accesoCredencialId)>1;
+    const yaExiste=miembros.some(m=>m.accesoCredencialId===r.accesoCredencialId);
+    if(repetidaEnLote||yaExiste){
+      conflictos.push({nombre:r.nombre,credencialId:r.accesoCredencialId,motivo:repetidaEnLote?'repetida en el Excel':'ya asignada a otro miembro'});
+      r.accesoCredencialId='';
+    }
+  });
+  return conflictos;
 }
 
 // IMPORTAR MIEMBROS DESDE EXCEL
@@ -2311,6 +2339,7 @@ async function importarMiembros(input){
           fechaVencimiento: get('Fecha de vencimiento','Fecha Vencimiento','Vencimiento'),
           montoPagado: get('Monto pagado','Monto Pagado','Monto','Precio'),
           archivoFoto: get('archivoFoto','Archivo de foto','ArchivoFoto','Foto'),
+          accesoCredencialId: get('accesoCredencialId','ID de credencial','Credencial de acceso','ID de acceso'),
           notas:      get('Notas')
         };
       };
@@ -2318,6 +2347,12 @@ async function importarMiembros(input){
       const rows=filas.map(normalizar).filter(r=>r.nombre); // ignorar filas sin nombre
 
       if(!rows.length){toast('No se encontró ningún miembro con nombre válido','err');return;}
+
+      const conflictosCredencial=_depurarCredencialesImport(rows);
+      if(conflictosCredencial.length){
+        alert(`⚠️ ${conflictosCredencial.length} fila(s) traían un ID de credencial de acceso repetido — se van a importar SIN esa credencial (vincúlalas a mano después, desde Alertas → Accesos sin asignar, o editando al miembro):\n\n`+
+          conflictosCredencial.map(c=>`${c.nombre}: ${c.credencialId} (${c.motivo})`).join('\n'));
+      }
 
       // Detectar posibles duplicados
       const duplicados=rows.filter(r=>
@@ -2414,6 +2449,7 @@ async function _guardarImportados(rows){
           categoriaMembresia: r.categoriaMembresia||null,
           metaSemanal: normalizarMetaSemanal(r.metaSemanal),
           notas:     r.notas||'',
+          accesoCredencialId: r.accesoCredencialId||null,
           numero:    maxNum+i+1,
           fechaNacimiento,
           estatura:  null,
