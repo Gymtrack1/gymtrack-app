@@ -4,6 +4,37 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-22 — Vincular credenciales de acceso en lote (miembros ya existentes)
+
+**Qué se hizo:** surgió durante el despliegue real — un gimnasio con ~5,000 miembros no puede
+vincular sus credenciales una por una desde "Accesos sin asignar" cuando enrolan a todos de golpe
+en el equipo biométrico. La columna `accesoCredencialId` del importador normal (entrada anterior)
+solo sirve para dar de alta miembros NUEVOS — no actualiza a los que ya existen.
+
+Nuevo botón en Miembros, **"🔗 Vincular credenciales"** (+ "📋 Plantilla credenciales"): sube un
+Excel de Nombre (o Número) + ID de credencial y actualiza el `accesoCredencialId` de miembros que
+YA EXISTEN — nunca crea miembros nuevos, nunca toca ningún otro campo.
+
+- Empareja por **Número** si esa columna viene (exacto, sin ambigüedad posible) o si no por
+  **Nombre** (normalizado, sin acentos/mayúsculas — mismo criterio que el buscador de miembros).
+- Si un nombre coincide con MÁS de un miembro (dos "Juan Pérez", por ejemplo), esa fila NO se
+  aplica — se reporta para resolver a mano (agregando el Número, o vinculando desde el perfil).
+- Si no encuentra ningún miembro con ese nombre/número, tampoco se aplica — se reporta igual.
+- Misma protección anti-colisión que ya tenía el importador normal: una credencial repetida en el
+  Excel, o que ya está asignada a otro miembro, deja esa fila sin aplicar y la reporta — nunca dos
+  miembros terminan con la misma credencial.
+- Escribe por lotes (`writeBatch`, 400 filas por tanda) para que 5,000 filas no sean 5,000
+  peticiones sueltas.
+
+**Verificado:** `node --check` sin errores. Prueba nueva de Playwright contra el `index.html` real
+(`test_vincular_lote.mjs`, 12/12 OK): resuelve por número; resuelve por nombre sin acentos ni
+mayúsculas; nombre ambiguo entre dos miembros no se aplica y se reporta; miembro que YA tenía otra
+credencial sí se puede reasignar (editar es válido); credencial repetida en el mismo Excel no se
+aplica a ninguna de las dos filas involucradas; la escritura real (Firestore fake + array local)
+actualiza solo el campo `accesoCredencialId` de miembros existentes sin crear ninguno nuevo. Se
+re-corrieron las suites de Control de acceso biométrico (24/24) y de la columna del importador
+normal (12/12) sin regresiones.
+
 ## 2026-09-22 — Importador de Excel: columna opcional accesoCredencialId
 
 **Qué se hizo:** extensión del Control de acceso biométrico de más arriba, pedida durante el

@@ -415,6 +415,15 @@ contenedor, igual que app-screen/admin-screen. -->
           <input type="file" id="input-importar-xlsx" accept=".xlsx,.xls" style="display:none" onchange="importarMiembros(this)">
         </label>
         <button onclick="exportarMiembros()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📤 Exportar Excel</button>
+        <!-- Vincular credenciales en lote (control de acceso biométrico, ver CHANGELOG.md): a
+             diferencia de "Importar Excel" (siempre crea miembros nuevos), esto SOLO actualiza el
+             accesoCredencialId de miembros que YA EXISTEN — pensado para cuando ya se enrolaron
+             cientos/miles de personas en el equipo y hay que vincularlas todas de un jalón. -->
+        <button onclick="descargarPlantillaVincular()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif" title="Plantilla para vincular credenciales de acceso a miembros que ya existen en GymTrack">📋 Plantilla credenciales</button>
+        <label style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:4px" title="Excel con Nombre (o Número) + ID de credencial — vincula miembros YA EXISTENTES, no da de alta a nadie nuevo">
+          🔗 Vincular credenciales
+          <input type="file" id="input-vincular-credenciales" accept=".xlsx,.xls" style="display:none" onchange="vincularCredencialesEnLote(this)">
+        </label>
         <button onclick="abrirModalCategorias()" style="background:var(--surface2);color:var(--text-surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🏷️ Categorías</button>
         <button onclick="openModal('modal-miembro')" style="background:var(--accent);color:var(--text-accent);border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nuevo Miembro</button>
       </div>
@@ -2557,6 +2566,141 @@ async function _guardarImportados(rows){
   if(inputFotos)inputFotos.value='';
   const contadorFotosEl=document.getElementById('import-fotos-contador');
   if(contadorFotosEl)contadorFotosEl.style.display='none';
+}
+
+// VINCULAR CREDENCIALES EN LOTE (control de acceso biométrico, ver CHANGELOG.md): distinto de
+// importarMiembros — este NUNCA crea miembros nuevos, solo actualiza el accesoCredencialId de
+// miembros que YA EXISTEN en GymTrack. Pensado para cuando el gimnasio enrola a cientos/miles de
+// personas de golpe en el equipo biométrico y necesita vincularlas todas de un jalón, en vez de
+// una por una desde "Accesos sin asignar" (ver CHANGELOG.md).
+function descargarPlantillaVincular(){
+  const ejemplo=[{'Nombre':'Juan Pérez','Número':'1','accesoCredencialId':'1001'}];
+  const ws=XLSX.utils.json_to_sheet(ejemplo);
+  ws['!cols']=[{wch:28},{wch:10},{wch:20}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,'Vincular',ws);
+  XLSX.writeFile(wb,'GymTrack_Plantilla_Vincular_Credenciales.xlsx');
+  toast('Plantilla descargada ✓');
+}
+
+const VINCULAR_BATCH_SIZE=400; // 1 write por fila (solo accesoCredencialId) — margen bajo el límite de 500 por batch
+
+// Resuelve cada fila del Excel a un miembro EXISTENTE (nunca crea uno nuevo) y aplica la misma
+// protección anti-colisión que _depurarCredencialesImport: una credencial no puede terminar
+// asignada a dos miembros distintos, ni entre dos filas de este mismo Excel ni contra un miembro
+// que ya la tenía asignada a alguien más. Separada de vincularCredencialesEnLote (que solo se
+// encarga de leer el archivo y escribir en Firestore) para poder probarla directo, sin XLSX real.
+function _resolverVinculosCredenciales(filasNorm,miembrosActuales){
+  const norm=s=>String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  // Por número si viene esa columna (exacto, sin ambigüedad posible), si no por nombre
+  // (normalizado, sin acentos/mayúsculas — mismo criterio que el buscador de miembros).
+  const porNumero=new Map(miembrosActuales.map(m=>[String(m.numero||''),m]));
+  const porNombre=new Map();
+  miembrosActuales.forEach(m=>{
+    const k=norm(m.nombre);
+    if(!porNombre.has(k))porNombre.set(k,[]);
+    porNombre.get(k).push(m);
+  });
+  const resueltas=[],sinCoincidencia=[],ambiguas=[];
+  filasNorm.forEach(r=>{
+    let miembro=null;
+    if(r.numero&&porNumero.has(r.numero)){
+      miembro=porNumero.get(r.numero);
+    }else if(r.nombre){
+      const candidatos=porNombre.get(norm(r.nombre))||[];
+      if(candidatos.length===1)miembro=candidatos[0];
+      else if(candidatos.length>1){ambiguas.push(r);return;}
+    }
+    if(!miembro){sinCoincidencia.push(r);return;}
+    resueltas.push({miembro,credencialId:r.credencialId});
+  });
+
+  const conteo=new Map();
+  resueltas.forEach(r=>conteo.set(r.credencialId,(conteo.get(r.credencialId)||0)+1));
+  const conflictos=[];
+  const aplicar=resueltas.filter(r=>{
+    const repetidaEnLote=conteo.get(r.credencialId)>1;
+    const otroDueño=miembrosActuales.find(m=>m.id!==r.miembro.id&&m.accesoCredencialId===r.credencialId);
+    if(repetidaEnLote||otroDueño){
+      conflictos.push({nombre:r.miembro.nombre,credencialId:r.credencialId,motivo:repetidaEnLote?'repetida en el Excel':`ya asignada a ${otroDueño.nombre}`});
+      return false;
+    }
+    return true;
+  });
+  return{aplicar,sinCoincidencia,ambiguas,conflictos};
+}
+
+async function vincularCredencialesEnLote(input){
+  const file=input.files[0];
+  if(!file)return;
+  input.value='';
+  const reader=new FileReader();
+  reader.onload=async(e)=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const filas=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!filas.length){toast('El archivo está vacío','err');return;}
+
+      const get=(row,...keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!=='')return String(row[k]).trim();}return '';};
+      const filasNorm=filas.map(row=>({
+        nombre: get(row,'Nombre*','Nombre'),
+        numero: get(row,'Número','Numero','#'),
+        credencialId: get(row,'accesoCredencialId','ID de credencial','Credencial de acceso','ID de acceso')
+      })).filter(r=>r.credencialId&&(r.nombre||r.numero));
+
+      if(!filasNorm.length){toast('No se encontró ninguna fila con nombre/número y credencial','err');return;}
+
+      const{aplicar,sinCoincidencia,ambiguas,conflictos}=_resolverVinculosCredenciales(filasNorm,miembros);
+
+      if(!aplicar.length){
+        toast('Ninguna fila se pudo vincular — revisa nombres/números y credenciales duplicadas','err');
+        if(conflictos.length)alert('Conflictos de credencial:\n\n'+conflictos.map(c=>`${c.nombre}: ${c.credencialId} (${c.motivo})`).join('\n'));
+        return;
+      }
+
+      const avisarSalida=(ev)=>{ev.preventDefault();ev.returnValue='';return '';};
+      window.addEventListener('beforeunload',avisarSalida);
+      toastPersistente(`Vinculando 0 / ${aplicar.length}...`);
+      try{
+        for(let start=0;start<aplicar.length;start+=VINCULAR_BATCH_SIZE){
+          const chunk=aplicar.slice(start,start+VINCULAR_BATCH_SIZE);
+          const batch=writeBatchFn(db);
+          chunk.forEach(r=>batch.update(userDoc('miembros',r.miembro.id),{accesoCredencialId:r.credencialId}));
+          await batch.commit();
+          chunk.forEach(r=>_actualizarLocal(miembros,r.miembro.id,{accesoCredencialId:r.credencialId}));
+          toastPersistente(`Vinculando ${Math.min(start+VINCULAR_BATCH_SIZE,aplicar.length)} / ${aplicar.length}...`);
+        }
+      }catch(err){
+        console.error('vincularCredencialesEnLote error:',err);
+        toast('Error al vincular: '+err.message,'err');
+        return;
+      }finally{
+        window.removeEventListener('beforeunload',avisarSalida);
+      }
+
+      if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
+      renderAccesosNoIdentificados();
+
+      const partes=[`✓ ${aplicar.length} credencial${aplicar.length===1?'':'es'} vinculada${aplicar.length===1?'':'s'}`];
+      if(sinCoincidencia.length)partes.push(`${sinCoincidencia.length} sin encontrar coincidencia`);
+      if(ambiguas.length)partes.push(`${ambiguas.length} con nombre repetido entre varios miembros`);
+      if(conflictos.length)partes.push(`${conflictos.length} con credencial en conflicto`);
+      toast(partes.join(' — '));
+
+      if(sinCoincidencia.length||ambiguas.length||conflictos.length){
+        let detalle='';
+        if(sinCoincidencia.length)detalle+=`\nSin coincidencia:\n${sinCoincidencia.map(r=>`${r.nombre||r.numero} (${r.credencialId})`).join('\n')}\n`;
+        if(ambiguas.length)detalle+=`\nNombre repetido en varios miembros (usa la columna Número para desambiguar):\n${ambiguas.map(r=>`${r.nombre} (${r.credencialId})`).join('\n')}\n`;
+        if(conflictos.length)detalle+=`\nCredencial en conflicto:\n${conflictos.map(c=>`${c.nombre}: ${c.credencialId} (${c.motivo})`).join('\n')}\n`;
+        alert('Filas que necesitan revisión manual:\n'+detalle);
+      }
+    }catch(err){
+      console.error('vincularCredencialesEnLote error:',err);
+      toast('Error al leer el archivo: '+err.message,'err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // CORREGIR FECHAS DE PAGOS IMPORTADOS
