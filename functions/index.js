@@ -39,6 +39,15 @@
 // { credencialId, equipoId, fechaHora, gimnasioUid, resuelto:false } — el staff lo resuelve desde
 // index.html (sección "Accesos sin asignar" en Alertas).
 
+// El equipo manda la fecha/hora como texto SIN zona horaria (ej. "2024-03-05 09:15:22") — es su
+// hora local. Cloud Functions corre el contenedor en UTC por defecto (el `region` del deploy es
+// solo DÓNDE corre el servidor, no en qué huso horario interpreta un new Date() sin zona) — sin
+// esto, "09:15:22" se leería como 9:15am UTC en vez de 9:15am hora de México, corriendo cada
+// asistencia ~6 horas. Se fija ANTES de cualquier require/Date para que tome efecto en todo el
+// proceso. LÍMITE CONOCIDO: asume que el equipo está en huso horario de Ciudad de México — un
+// gimnasio en otro huso (ej. Tijuana) necesitaría esto configurable por gimnasio, no implementado.
+process.env.TZ = 'America/Mexico_City';
+
 const {onRequest} = require('firebase-functions/v2/https');
 const {logger} = require('firebase-functions');
 const admin = require('firebase-admin');
