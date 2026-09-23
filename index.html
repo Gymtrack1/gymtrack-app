@@ -443,8 +443,8 @@ contenedor, igual que app-screen/admin-screen. -->
     <div class="header-row"><div class="page-title">Pagos</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="abrirModalInscripcion()">🎫 Inscripción</button><button class="btn btn-ghost" onclick="abrirModalPromociones()">🏷️ Promociones</button><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Promoción</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th></tr></thead>
-        <tbody id="tabla-pagos"><tr><td colspan="8" class="loading">Cargando...</td></tr></tbody>
+        <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Promoción</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-pagos"><tr><td colspan="9" class="loading">Cargando...</td></tr></tbody>
       </table>
     </div>
     <div id="pagos-paginacion"></div>
@@ -792,6 +792,23 @@ contenedor, igual que app-screen/admin-screen. -->
     <div class="form-actions">
       <button class="btn btn-ghost" id="pago-btn-cancelar" onclick="closeModal('modal-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="savePago()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR VENCIMIENTO (ver CHANGELOG.md): extender/corregir la fecha de vencimiento de un
+     pago YA registrado, sin tener que tocar monto/plan/forma de pago. -->
+<div class="modal-overlay" id="modal-editar-vencimiento">
+  <div class="modal">
+    <h2>Editar vencimiento</h2>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--text-surface)">
+      <strong id="ev-miembro-display"></strong> · <span id="ev-plan-display"></span>
+    </div>
+    <input type="hidden" id="ev-pago-id">
+    <div class="form-group"><label>Nueva fecha de vencimiento</label><input type="date" id="ev-fecha-fin"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-editar-vencimiento')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarVencimientoPago()">Guardar</button>
     </div>
   </div>
 </div>
@@ -2744,13 +2761,13 @@ async function corregirFechasImportadasAuto(){
 function renderPagos(){
   const tbody=document.getElementById('tabla-pagos');
   const sorted=[...pagos].sort((a,b)=>b.fechaPago-a.fechaPago);
-  if(!sorted.length){tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';renderPagosPaginacion(0,1);return;}
+  if(!sorted.length){tbody.innerHTML='<tr><td colspan="9"><div class="empty"><div class="empty-icon">💳</div><div>No hay pagos</div></div></td></tr>';renderPagosPaginacion(0,1);return;}
   const totalPaginas=Math.max(1,Math.ceil(sorted.length/PAGOS_PAGE_SIZE));
   if(pagosPage>totalPaginas)pagosPage=totalPaginas;
   if(pagosPage<1)pagosPage=1;
   const start=(pagosPage-1)*PAGOS_PAGE_SIZE;
   const pagina=sorted.slice(start,start+PAGOS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${p.monto}${p.inscripcion?`<div style="font-size:10px;color:var(--muted)">incl. $${p.inscripcion} inscripción</div>`:''}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${p.monto}${p.inscripcion?`<div style="font-size:10px;color:var(--muted)">incl. $${p.inscripcion} inscripción</div>`:''}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td><td><button class="btn btn-ghost btn-sm" onclick="editarVencimientoPago('${p.id}')" title="Editar/extender la fecha de vencimiento de este pago">✏️</button></td></tr>`;}).join('');
   renderPagosPaginacion(sorted.length,totalPaginas);
 }
 function renderPagosPaginacion(total,totalPaginas){
@@ -4170,6 +4187,35 @@ async function savePago(){
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
   toast('Pago registrado ✓');
 }
+
+// EDITAR VENCIMIENTO DE UN PAGO YA REGISTRADO (ver CHANGELOG.md): a diferencia de savePago, esto
+// NO reabre el modal completo (monto/plan/forma de pago no cambian) — solo deja extender o
+// corregir la fecha de vencimiento. Útil para cortesías puntuales o para corregir un error de
+// captura sin tener que borrar y volver a registrar todo el pago.
+function editarVencimientoPago(pagoId){
+  const p=pagos.find(x=>x.id===pagoId);if(!p)return;
+  const m=miembrosPorId.get(p.miembroId);
+  document.getElementById('ev-pago-id').value=pagoId;
+  document.getElementById('ev-miembro-display').textContent=m?m.nombre:'—';
+  document.getElementById('ev-plan-display').textContent=p.planNombre;
+  document.getElementById('ev-fecha-fin').value=fmtDateInputVal(p.fechaFin);
+  openModal('modal-editar-vencimiento');
+}
+async function guardarVencimientoPago(){
+  const pagoId=document.getElementById('ev-pago-id').value;
+  const fechaStr=document.getElementById('ev-fecha-fin').value;
+  if(!fechaStr)return alert('Elige una fecha');
+  const p=pagos.find(x=>x.id===pagoId);if(!p)return;
+  const fechaFin=new Date(fechaStr+'T12:00:00').getTime();
+  await updateDoc(userDoc('pagos',pagoId),{fechaFin});
+  _actualizarLocal(pagos,pagoId,{fechaFin});
+  recalcPagosPorMiembro();
+  sincronizarMiembroPublico(p.miembroId); // el vencimiento cambió — refleja el nuevo estado en el portal
+  closeModal('modal-editar-vencimiento');
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
+  toast('Vencimiento actualizado ✓');
+}
+
 // FIX: openModal('modal-pago') resetea el buscador de miembro (populateMiembrosSelect sin
 // selectedId) — por eso openModal() se llama PRIMERO y la preselección se fija DESPUÉS, nunca al
 // revés, o el reset del modal borraría lo que acabamos de preseleccionar.

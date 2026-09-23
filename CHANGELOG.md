@@ -4,6 +4,29 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — Editar/extender el vencimiento de un pago ya registrado
+
+**Qué se hizo:** hasta ahora la tabla de Pagos era de solo lectura — una vez registrado un pago no
+había forma de corregir o extender su fecha de vencimiento sin borrar todo el registro y volver a
+capturarlo. Se pidió poder editarla directamente (ej. una cortesía puntual, o corregir un error de
+captura).
+
+Nuevo botón ✏️ por fila en la pestaña Pagos, columna "Acciones" — abre un modal chico
+("Editar vencimiento") con SOLO la fecha de vencimiento editable; monto, plan, forma de pago y
+fecha de pago del registro original no se tocan. Al guardar:
+- `updateDoc` en el pago (`fechaFin`), parcheo local del array `pagos` y de `pagosPorMiembroFin`
+  (mismo patrón que `savePago`, sin releer la colección completa).
+- Sincroniza el espejo público del portal (`sincronizarMiembroPublico`) para que el vencimiento
+  que ve el cliente en su QR también quede al día.
+
+**Verificado:** `node --check` sin errores. Prueba nueva de Playwright contra el `index.html` real
+(`test_editar_vencimiento.mjs`, 14/14 OK): el modal precarga correctamente miembro/plan/fecha
+original; guardar una nueva fecha actualiza `fechaFin` tanto en Firestore (fake) como en el array
+local; `getVencimiento()` refleja el cambio de inmediato (confirma que `recalcPagosPorMiembro`
+corrió); el resto de los campos del pago (monto, plan, forma de pago, fecha de pago) quedan
+intactos — solo cambia el vencimiento. Se re-corrieron las suites de Control de acceso biométrico
+(24/24), columna del importador (12/12) y vincular en lote (12/12) sin regresiones.
+
 ## 2026-09-22 — Vincular credenciales de acceso en lote (miembros ya existentes)
 
 **Qué se hizo:** surgió durante el despliegue real — un gimnasio con ~5,000 miembros no puede
