@@ -4,6 +4,41 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — Admin: "Ver panel" de cualquier gimnasio, sin tocar su login
+
+**Qué se hizo:** tras las partes anteriores (reset de contraseña/PIN), Luis aclaró lo que en
+realidad necesitaba: no ver contraseñas, sino poder entrar al panel de cualquier gimnasio —
+revisar cómo lo están usando y corregir algo si hace falta — sin que el gym se entere. Eso sí se
+podía construir limpio, y no necesitaba ninguna Cloud Function nueva: la sesión del admin YA tenía
+permiso de lectura/escritura sobre los datos de cualquier gimnasio (`isAdmin()` en
+firestore.rules) — solo faltaba una forma de que el panel apuntara ahí.
+
+**Cómo funciona:** nuevo botón **"👁️ Ver panel"** en cada tarjeta de gimnasio (Admin). Al
+entrar:
+- Cambia la variable `uid` del lado del cliente al id de ESE gimnasio y vuelve a correr
+  `loadPlan()`/`loadAll()` — la sesión real de Firebase Auth sigue siendo la del admin en todo
+  momento, nunca se inicia sesión como el gym ni se toca su contraseña. Como `isAdmin()` ya cubre
+  cualquier `usuarios/{gymId}`, las lecturas/escrituras funcionan igual que si fuera el propio
+  dueño del gimnasio.
+- Deliberadamente NO reusa el listener `onSnapshot`/polling de `firebaseReady` (esos están
+  pensados para una sesión de horas) — es una carga puntual; si el admin quiere datos frescos,
+  vuelve a entrar.
+- Banner naranja fijo arriba de toda la pantalla ("👁️ Viendo el panel de X como Admin") con botón
+  **"🔙 Volver a Admin"** — para no perder de vista en qué cuenta se está parado mientras se
+  navega/edita.
+- Las pestañas con PIN (Finanzas, Empleados) se saltan el PIN mientras se ve como admin — pedirlo
+  no agregaría seguridad real (el admin ya demostró quién es antes de poder llegar aquí) y el PIN
+  de ESE gym es algo que ni el propio admin puede recuperar (ver entradas anteriores).
+
+**Verificado:** `node --check` sin errores. Prueba nueva de Playwright contra el `index.html` real
+(`test_admin_ver_panel.mjs`, 15/15 OK): el botón está presente; entrar cambia `uid` al gym
+correcto, oculta Admin y muestra la app con el banner y el nombre correctos; `loadAll()` carga los
+datos REALES de ese gimnasio (no los del admin); las pestañas con PIN se activan directo sin pedir
+el PIN; `volverAAdmin()` regresa todo (variable, pantallas, banner) a su estado normal. Se
+re-corrieron las suites de Control de acceso biométrico (24/24), columna del importador (12/12),
+vincular en lote (12/12), editar vencimiento (14/14) y reset de contraseña/PIN (23/23) sin
+regresiones.
+
 ## 2026-09-23 — El PIN de Finanzas de un gym también lo elige el admin, no se genera solo
 
 **Qué se hizo:** faltaba aplicarle al PIN de Finanzas el mismo cambio que ya se le hizo a la

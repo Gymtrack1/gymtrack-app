@@ -360,6 +360,14 @@ contenedor, igual que app-screen/admin-screen. -->
 
 <!-- APP -->
 <div id="app-screen">
+<!-- Banner de "viendo como" (Admin, ver CHANGELOG.md): visible SOLO cuando el admin entró al
+     panel de un gimnasio ajeno para revisarlo/corregirlo — nunca se activa en una sesión normal
+     de un gym viendo su propio panel. Recordatorio visual para no confundirse de cuenta mientras
+     se navega/edita. -->
+<div id="banner-impersonando" style="display:none;background:#d97706;color:#fff;padding:10px 16px;text-align:center;font-weight:700;font-family:'DM Sans',sans-serif;font-size:13px">
+  👁️ Viendo el panel de <span id="banner-impersonando-nombre"></span> como Admin
+  <button onclick="volverAAdmin()" style="margin-left:12px;background:#fff;color:#d97706;border:none;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔙 Volver a Admin</button>
+</div>
 <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Abrir menú">☰</button>
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 <nav id="app-nav">
@@ -1165,6 +1173,9 @@ let userPlan='sencillo';
 let userFunciones=[];
 let planListener=null,listenerRetries=0,planPollInterval=null;
 let sesionInicializada=false; // evita reinicializar (loadAll + setInterval) si 'firebaseReady' se dispara más de una vez
+// "Ver panel" desde Admin (ver CHANGELOG.md): true mientras el admin está viendo/editando el
+// panel de OTRO gimnasio con su propia sesión — nunca se activa en una sesión normal del gym.
+let viendoComoAdmin=false;
 const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
 const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym!{producto}';
@@ -1722,6 +1733,7 @@ async function loadAdminGyms(){
           <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button>
           <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button>
         </div>
+        <button class="btn btn-primary btn-sm" onclick="verComoGym('${g.id}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Entra al panel de este gimnasio, con tu propia sesión de admin — nunca se toca su login">👁️ Ver panel</button>
         <button class="btn btn-ghost btn-sm" onclick="resetearPasswordGym('${escAttr(g.email).replace(/'/g,"\\'")}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Genera una contraseña nueva para el login de este gimnasio">🔑 Contraseña</button>
         <button class="btn btn-ghost btn-sm" onclick="resetearPinFinanzasGym('${g.id}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Genera un PIN nuevo de Finanzas/Empleados para este gimnasio">🔑 PIN Finanzas</button>
         <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
@@ -1770,6 +1782,38 @@ async function toggleFuncion(gymId,seccionId,plan,funcionesActuales){
   }
 }
 async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
+
+// VER PANEL DE OTRO GIMNASIO COMO ADMIN (ver CHANGELOG.md) — pedido explícito: el admin quiere
+// poder revisar cómo está usando GymTrack cada cliente (y corregir algo si hace falta) SIN tocar
+// su login ni que se enteren. No hace falta autenticarse como ellos ni conocer su contraseña: la
+// propia sesión de admin ya tiene permiso de lectura/escritura sobre CUALQUIER usuarios/{gymId}
+// (isAdmin() en firestore.rules) — lo único que faltaba era una forma de que el panel apunte sus
+// datos a ese gymId en vez de al del admin. `uid` es una variable de JS del lado del cliente, no
+// algo ligado a la sesión real de Firebase Auth (que sigue siendo la del admin en todo momento) —
+// cambiarla y volver a correr loadPlan()/loadAll() basta para "entrar" sin ningún login de por
+// medio. Deliberadamente NO se llama al mismo código de 'firebaseReady' (evita duplicar el
+// listener onSnapshot / el polling de respaldo del plan, pensados para una sesión de gym que dura
+// horas — aquí basta una carga puntual; si el admin quiere datos frescos, vuelve a entrar).
+async function verComoGym(gymId,displayName){
+  if(!confirm(`¿Entrar al panel de ${displayName}?\n\nVas a ver y poder editar sus datos reales, con tu propia sesión de admin — su cuenta nunca se entera (no se toca su login).`))return;
+  uid=gymId;
+  viendoComoAdmin=true;
+  document.getElementById('admin-screen').style.display='none';
+  document.getElementById('app-screen').style.display='block';
+  document.getElementById('banner-impersonando').style.display='block';
+  document.getElementById('banner-impersonando-nombre').textContent=displayName;
+  document.getElementById('user-email').textContent=displayName;
+  document.getElementById('fecha-hoy').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  activarTab('dashboard');
+  await loadPlan();applyPlan();await loadAll();
+}
+function volverAAdmin(){
+  viendoComoAdmin=false;
+  document.getElementById('app-screen').style.display='none';
+  document.getElementById('banner-impersonando').style.display='none';
+  document.getElementById('admin-screen').style.display='block';
+  loadAdminGyms();
+}
 
 // RESETEAR CONTRASEÑA/PIN de un gimnasio desde Admin (ver CHANGELOG.md) — control sin necesitar
 // ver el valor viejo: ni las contraseñas de login (Firebase Auth las guarda cifradas, nadie las
@@ -5217,7 +5261,11 @@ function showTab(name,event){
     toast('Esta sección no está activada en tu plan 🔒','err');
     return;
   }
-  if(PIN_PROTEGIDO.includes(name)){
+  // El admin viendo el panel de otro gimnasio (ver CHANGELOG.md, verComoGym) no conoce el PIN
+  // de Finanzas de ESE gym (nadie puede recuperarlo, ni el propio admin) — pedírselo aquí solo
+  // bloquearía el acceso que ya se ganó al entrar como admin, sin agregar seguridad real (ya
+  // demostró quién es antes de poder llegar a este panel).
+  if(PIN_PROTEGIDO.includes(name)&&!viendoComoAdmin){
     pinTabPendiente=name;
     pinEventPendiente=event;
     abrirModalPin();
