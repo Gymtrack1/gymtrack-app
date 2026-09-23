@@ -3474,7 +3474,11 @@ function renderEstadoCuenta(){
   for(let i=5;i>=0;i--){
     const base=new Date(hoy.getFullYear(),hoy.getMonth()-i,1);
     const ini=base.getTime();
-    const fin=new Date(base.getFullYear(),base.getMonth()+1,0,23,59,59).getTime();
+    // En el mes actual (i===0) el tope no debe ser fin de mes sino "ahora": los días que faltan
+    // del mes todavía no ocurren, y un pago fechado ahí sería el mismo tipo de dato inválido que
+    // ya se filtra en "Este mes" (ver corrección de 2026-09-23) — si no, esta gráfica y esa tarjeta
+    // vuelven a mostrar números distintos para el mismo mes.
+    const fin=i===0?ahora:new Date(base.getFullYear(),base.getMonth()+1,0,23,59,59).getTime();
     const ingPagos=pagos.filter(p=>p.fechaPago>=ini&&p.fechaPago<=fin).reduce((s,p)=>s+p.monto,0);
     const ingVentas=ventas.filter(v=>v.fecha>=ini&&v.fecha<=fin).reduce((s,v)=>s+(v.total||0),0);
     mesesLabels.push(base.toLocaleDateString('es-MX',{month:'short'}));

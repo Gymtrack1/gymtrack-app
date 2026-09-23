@@ -4,6 +4,24 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — Fix: la gráfica de Tendencia también contaba días del mes que aún no llegan
+
+**Qué se hizo:** tras el fix anterior de "Este mes", Luis reportó que la brecha se redujo mucho
+pero seguía sin coincidir exacto con la gráfica de Tendencia ($824,800 vs $948,060 para
+septiembre). Causa: el fix anterior le puso tope "ahora" a "Este mes", pero la gráfica de
+Tendencia seguía usando "fin de mes" como tope para el mes actual — así que un pago fechado,
+por ejemplo, el 27 de septiembre (con hoy 23 de septiembre) lo contaba la gráfica pero no la
+tarjeta, aunque ese pago tampoco debería existir todavía.
+
+**Qué se cambió:** el bucket del mes actual (`i===0`) en la gráfica de Tendencia ahora también
+topa en "ahora" en vez de en fin de mes, igual que "Este mes". Los meses ya cerrados (anteriores
+al actual) no cambian — su tope natural sigue siendo el fin de ese mes.
+
+**Verificado:** se extendió la prueba de Playwright del fix anterior con un tercer pago fechado
+2 días adelante (mismo mes, día que aún no llega) y se confirmó que ni "Este mes" ni el bucket
+del mes actual de Tendencia lo cuentan, y que ambos números coinciden exacto entre sí. Suite
+completa (108 pruebas de 7 partes) sin regresiones.
+
 ## 2026-09-23 — Fix: "Este mes" en Finanzas podía inflarse con pagos de fecha futura
 
 **Qué se hizo:** Luis reportó que Finanzas mostraba ~$5,179,480 en "Este mes" para un gimnasio,
