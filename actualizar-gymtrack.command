@@ -7,17 +7,19 @@ echo "  Actualizando GymTrack desde GitHub"
 echo "======================================"
 echo ""
 
-if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-  echo "⚠️  Tienes cambios locales sin guardar (no solo en index.html — puede ser cualquier"
-  echo "   archivo, por ejemplo firebase.json después de un despliegue)."
+if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+  echo "⚠️  Tienes cambios locales sin guardar en un archivo de GymTrack (por ejemplo"
+  echo "   firebase.json después de un despliegue)."
   echo "   Este script NO los va a borrar. Avísale a Claude antes de continuar."
   echo ""
-  git status --porcelain
+  git status --porcelain --untracked-files=no
   echo ""
   echo "Presiona Enter para cerrar esta ventana."
   read
   exit 1
 fi
+# Archivos sueltos que guardaste en esta misma carpeta (Excels, PDFs, etc.) NO son parte de
+# GymTrack (git nunca los rastrea) y no le estorban al pull — no hace falta avisar por esos.
 
 git pull origin main
 PULL_STATUS=$?
