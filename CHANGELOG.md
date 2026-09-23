@@ -4,6 +4,36 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — Fix: "Este mes" en Finanzas podía inflarse con pagos de fecha futura
+
+**Qué se hizo:** Luis reportó que Finanzas mostraba ~$5,179,480 en "Este mes" para un gimnasio,
+mientras que la gráfica de Tendencia de Ingresos mostraba ~$948,060 para ese mismo mes —
+una diferencia de ~$4.2M sin explicación aparente.
+
+**Causa:** `renderEstadoCuenta()` calculaba "Este mes"/"Esta semana"/"Esta quincena" (y sus
+gastos/asistencias/ventas) filtrando solo con un límite inferior (`fecha >= inicioDelPeriodo`),
+sin límite superior. Si algún pago tenía `fechaPago` en el futuro (por ejemplo, un typo de año
+al capturar/importar), ese pago se sumaba igual a "Este mes" indefinidamente hacia adelante en
+el tiempo. La gráfica de Tendencia, en cambio, sí acotaba cada mes con `fecha <= finDeEseMes`,
+por eso no mostraba esos pagos fantasma — de ahí la discrepancia entre los dos números.
+
+**Qué se cambió:** se agregó el límite superior "ahora" (`<=ahora`) a los filtros de
+Este Mes/Semana/Quincena para pagos, ventas, gastos y asistencias, igual que ya lo hacía la
+gráfica de Tendencia. Así ambos números vuelven a coincidir, y un pago con fecha inválida en
+el futuro deja de inflar los totales de "este mes" (sigue existiendo en Pagos, solo ya no se
+cuenta como ingreso de un período que todavía no ocurre).
+
+**Verificado:** prueba nueva (Playwright) que siembra un pago real de hoy ($500) y un pago
+con `fechaPago` 2 años en el futuro ($5,000,000, simulando el bug real) — confirma que "Este
+mes" solo suma el pago real y que el HTML renderizado ya no muestra el monto fantasma.
+Además se re-corrió toda la suite de pruebas existente (100 pruebas de otras 6 partes) sin
+regresiones.
+
+**Pendiente del lado de Luis:** el fix evita que esos pagos con fecha mala sigan inflando
+Finanzas, pero no los borra — siguen en la tabla de Pagos con su fecha incorrecta. Vale la pena
+que revise la pestaña Pagos de American Gym ordenada por fecha para encontrar cuáles son y
+corregirles la fecha (con el editor de vencimiento ya existente) o investigar de dónde salieron.
+
 ## 2026-09-23 — Admin: "Ver panel" de cualquier gimnasio, sin tocar su login
 
 **Qué se hizo:** tras las partes anteriores (reset de contraseña/PIN), Luis aclaró lo que en

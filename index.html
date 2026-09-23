@@ -3429,10 +3429,14 @@ function renderEstadoCuenta(){
   // FIX 7: usar PLANES correctamente
   if(!userFunciones.includes('estadocuenta')){el.innerHTML=lockedFeature('Estado de Cuenta y Finanzas','tu plan actual');return;}
   const hoy=new Date();
+  const ahora=hoy.getTime();
   const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
   const inicioSemana=new Date(hoy);inicioSemana.setDate(hoy.getDate()-((hoy.getDay()+6)%7));inicioSemana.setHours(0,0,0,0);
-  const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime());
-  const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime());
+  // Límite superior "ahora": sin esto, un pago con fecha mal capturada/importada en el futuro
+  // (ej. un typo de año) se colaba en "Este mes"/"Esta semana"/etc. aunque nunca haya ocurrido
+  // todavía, inflando el total sin que la gráfica de Tendencia (que sí acota cada mes) lo reflejara.
+  const pagosMes=pagos.filter(p=>p.fechaPago>=inicioMes.getTime()&&p.fechaPago<=ahora);
+  const pagosSemana=pagos.filter(p=>p.fechaPago>=inicioSemana.getTime()&&p.fechaPago<=ahora);
   const pagosHoy=pagos.filter(p=>new Date(p.fechaPago).toDateString()===hoy.toDateString());
   const ventasHoy=ventas.filter(v=>new Date(v.fecha).toDateString()===hoy.toDateString());
   const totalVentasHoy=ventasHoy.reduce((s,v)=>s+(v.total||0),0);
@@ -3440,22 +3444,22 @@ function renderEstadoCuenta(){
   const totalSemana=pagosSemana.reduce((s,p)=>s+p.monto,0);
   const totalHoy=pagosHoy.reduce((s,p)=>s+p.monto,0);
   const totalHistorico=pagos.reduce((s,p)=>s+p.monto,0);
-  const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime()).length;
-  const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime()).length;
+  const asistMes=asistencias.filter(a=>a.fecha>=inicioMes.getTime()&&a.fecha<=ahora).length;
+  const asistSemana=asistencias.filter(a=>a.fecha>=inicioSemana.getTime()&&a.fecha<=ahora).length;
   const asistHoy=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoy.toDateString()).length;
-  const ventasMes=ventas.filter(v=>v.fecha>=inicioMes.getTime());
+  const ventasMes=ventas.filter(v=>v.fecha>=inicioMes.getTime()&&v.fecha<=ahora);
   const totalVentasMes=ventasMes.reduce((s,v)=>s+(v.total||0),0);
-  const ventasSemana=ventas.filter(v=>v.fecha>=inicioSemana.getTime());
+  const ventasSemana=ventas.filter(v=>v.fecha>=inicioSemana.getTime()&&v.fecha<=ahora);
   const totalVentasSemana=ventasSemana.reduce((s,v)=>s+(v.total||0),0);
   const inicioQuincena=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()<=15?1:16);inicioQuincena.setHours(0,0,0,0);
-  const pagosQuincena=pagos.filter(p=>p.fechaPago>=inicioQuincena.getTime());
+  const pagosQuincena=pagos.filter(p=>p.fechaPago>=inicioQuincena.getTime()&&p.fechaPago<=ahora);
   const totalQuincena=pagosQuincena.reduce((s,p)=>s+p.monto,0);
-  const ventasQuincena=ventas.filter(v=>v.fecha>=inicioQuincena.getTime());
+  const ventasQuincena=ventas.filter(v=>v.fecha>=inicioQuincena.getTime()&&v.fecha<=ahora);
   const totalVentasQuincena=ventasQuincena.reduce((s,v)=>s+(v.total||0),0);
   const gastosHoy=gastos.filter(g=>new Date(g.fecha).toDateString()===hoy.toDateString());
-  const gastosSemana=gastos.filter(g=>g.fecha>=inicioSemana.getTime());
-  const gastosQuincena=gastos.filter(g=>g.fecha>=inicioQuincena.getTime());
-  const gastosMes=gastos.filter(g=>g.fecha>=inicioMes.getTime());
+  const gastosSemana=gastos.filter(g=>g.fecha>=inicioSemana.getTime()&&g.fecha<=ahora);
+  const gastosQuincena=gastos.filter(g=>g.fecha>=inicioQuincena.getTime()&&g.fecha<=ahora);
+  const gastosMes=gastos.filter(g=>g.fecha>=inicioMes.getTime()&&g.fecha<=ahora);
   const corteHoy=corteCaja(pagosHoy,ventasHoy,gastosHoy,false);
   const corteSemana=corteCaja(pagosSemana,ventasSemana,gastosSemana,false);
   const corteQuincena=corteCaja(pagosQuincena,ventasQuincena,gastosQuincena,false);
