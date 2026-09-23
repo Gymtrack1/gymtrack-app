@@ -4,6 +4,61 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — Panel de Admin: resetear contraseña y PIN de Finanzas de un gimnasio
+
+**Qué se hizo:** se pidió que el admin (`luismolinac06@gmail.com`) pudiera "ver" las contraseñas
+y PINs de cualquier gimnasio para tener control y detectar mal uso. **Eso no se implementó tal
+cual porque no es posible ni deseable:** Firebase Auth guarda las contraseñas cifradas de forma
+irreversible (nadie, ni el admin, ni este código, puede leer la real), y los PIN de este proyecto
+ya se guardan hasheados (SHA-256) desde un cambio anterior, por el mismo motivo — deshacer eso
+sería un retroceso de seguridad real. Se le explicó esto a Luis y, en su lugar, se construyó lo que
+sí logra el mismo objetivo (control sin necesitar ver secretos): **resetear** la contraseña o el
+PIN de Finanzas de cualquier gimnasio, generando uno nuevo al instante para pasárselo — el viejo
+queda inválido de inmediato, igual criterio que ya usa "reenviar PIN" en Empleados.
+
+**Segundo uso de Cloud Functions del proyecto** (`functions/index.js`, nueva función
+`resetGymPassword`, sin relación con el control de acceso biométrico ya existente):
+- Hace falta una Cloud Function porque el SDK de cliente (index.html) solo puede cambiar la
+  contraseña de la PROPIA cuenta ya autenticada, nunca la de otra — cambiarle la contraseña a otro
+  usuario requiere el Admin SDK (`admin.auth().updateUser`), que solo corre en un backend de
+  confianza. La consola de Firebase tampoco deja fijar una contraseña nueva directamente, solo
+  mandar un correo de restablecimiento que el dueño del gym tendría que revisar — esto se la
+  entrega al admin al instante.
+- Seguridad: valida que quien llama esté autenticado Y que su correo sea exactamente
+  `luismolinac06@gmail.com`, usando el token de Firebase Auth que el propio SDK manda (nunca un
+  valor que el cliente pueda falsificar).
+- Resuelve el gimnasio por CORREO (`admin.auth().getUserByEmail`), no por el id del documento en
+  `usuarios/` — antes del primer login de un gym, su doc vive en `usuarios/pending_<email>` (un id
+  inventado, no un uid real de Firebase Auth), así que buscar por correo es lo único que funciona
+  en los dos casos (antes y después de que el gym migre a su doc con uid real).
+- Contraseña generada con `crypto.randomInt` (no `Math.random`, por ser una credencial real de
+  login), 12 caracteres, sin caracteres ambiguos (0/O, 1/l/I) para que se lea fácil por WhatsApp.
+
+**En `index.html` (panel de Admin, cada tarjeta de gimnasio):**
+- Botón **"🔑 Contraseña"** → llama a `resetGymPassword` y muestra la contraseña nueva en un
+  `alert()` — no se guarda en ningún lado, se pierde si no se copia ahí mismo.
+- Botón **"🔑 PIN Finanzas"** → genera un PIN nuevo (`_generarPinAleatorio`, ya existente),
+  lo hashea (`sha256Hex`, ya existente) y actualiza `usuarios/{gymId}.pinFinanzas` directo desde
+  el cliente (el admin ya tiene permiso de escritura en cualquier doc de `usuarios/` vía
+  `isAdmin()` en firestore.rules — no hizo falta Cloud Function para esta parte).
+- Reset de PINs de EMPLEADOS individuales por gimnasio queda FUERA de esta parte — el panel de
+  Admin hoy no tiene ninguna vista para entrar al detalle de empleados de un gym; sería una
+  ampliación aparte si se quiere más adelante.
+
+**Verificado:** `node --check` sin errores en `functions/index.js` e `index.html`. Prueba nueva de
+Node contra `functions/index.js` real (`test_reset_gym_password.cjs`, 9/9 OK, usando el método
+`.run()` que expone `onCall` de firebase-functions v2 para pruebas locales sin emulador): rechaza
+sin autenticación; rechaza a cualquiera que no sea el admin; rechaza sin correo; rechaza un correo
+sin cuenta de Auth; genera una contraseña de 12 caracteres sin ambigüedades y la aplica de verdad
+en el usuario de Auth (fake); dos resets seguidos nunca repiten la misma contraseña. Prueba nueva
+de Playwright contra el `index.html` real, booteando como admin (`test_admin_reset.mjs`, 11/11
+OK): el panel renderiza los botones nuevos; resetear contraseña llama a la función con el correo
+correcto (no con el id del documento) y muestra la contraseña devuelta; resetear PIN de Finanzas
+deja guardado un hash SHA-256 en Firestore — NUNCA el PIN en texto plano — mientras que el `alert`
+sí se lo muestra al admin para que lo comunique. Se re-corrieron las suites de Control de acceso
+biométrico (24/24 + 28/28 de la función), columna del importador (12/12), vincular en lote (12/12)
+y editar vencimiento (14/14) sin regresiones.
+
 ## 2026-09-23 — Editar/extender el vencimiento de un pago ya registrado
 
 **Qué se hizo:** hasta ahora la tabla de Pagos era de solo lectura — una vez registrado un pago no

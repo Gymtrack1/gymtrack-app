@@ -13,10 +13,15 @@
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+  // Cloud Functions callable (ver CHANGELOG.md — resetear contraseña de un gimnasio desde Admin):
+  // mismo proyecto/región que la función adms (functions/index.js). Solo el panel de Admin la usa.
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
   const firebaseConfig = { apiKey:"AIzaSyDP2XgeXRfnuu2skfXvgFf9_xkRC9pLJOQ", authDomain:"mi-gimnasio-8d528.firebaseapp.com", projectId:"mi-gimnasio-8d528", storageBucket:"mi-gimnasio-8d528.firebasestorage.app", messagingSenderId:"19052651365", appId:"1:19052651365:web:6914d31e8dbbd63330b78c" };
   const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
+  const functionsInstance=getFunctions(app,'us-central1');
   window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._query=query; window._where=where; window._writeBatch=writeBatch; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
   window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
+  window._resetGymPassword=httpsCallable(functionsInstance,'resetGymPassword');
   const ADMIN_EMAIL='luismolinac06@gmail.com';
 
   // PORTAL PÚBLICO DEL CLIENTE (un solo QR por gimnasio -> músculo/ejercicio/progreso/peso
@@ -1117,7 +1122,7 @@ let chartHorasPicoCompras=null;
 let chartProgresoPerfil=null,chartPesoPerfil=null;
 let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
-let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn;
+let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn,resetGymPasswordFn;
 let storage,storageRef,uploadBytesFn,getDownloadURLFn,deleteObjectFn;
 let userPlan='sencillo';
 let userFunciones=[];
@@ -1606,6 +1611,7 @@ window.addEventListener('adminReady',async()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; writeBatchFn=window._writeBatch;
+  resetGymPasswordFn=window._resetGymPassword;
   document.getElementById('user-email-admin').textContent=window._auth.currentUser.email;
   // El panel de super-admin nunca debe heredar la personalización de ningún gym — por si
   // este navegador tenía cacheado en localStorage el branding de una cuenta de gym (ver
@@ -1679,6 +1685,8 @@ async function loadAdminGyms(){
           <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button>
           <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button>
         </div>
+        <button class="btn btn-ghost btn-sm" onclick="resetearPasswordGym('${escAttr(g.email).replace(/'/g,"\\'")}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Genera una contraseña nueva para el login de este gimnasio">🔑 Contraseña</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetearPinFinanzasGym('${g.id}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Genera un PIN nuevo de Finanzas/Empleados para este gimnasio">🔑 PIN Finanzas</button>
         <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
       </div>
       <div class="funciones-wrap">
@@ -1725,6 +1733,29 @@ async function toggleFuncion(gymId,seccionId,plan,funcionesActuales){
   }
 }
 async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
+
+// RESETEAR CONTRASEÑA/PIN de un gimnasio desde Admin (ver CHANGELOG.md) — control sin necesitar
+// ver el valor viejo: ni las contraseñas de login (Firebase Auth las guarda cifradas, nadie las
+// puede "ver", ni siquiera el admin) ni los PIN (guardados hasheados) se pueden mostrar tal
+// cual — lo que sí se puede es generar uno NUEVO y dárselo al dueño del gym, dejando el viejo
+// inválido. Igual criterio que ya usa "reenviar PIN" en Empleados (Parte 18, ver CHANGELOG.md).
+async function resetearPasswordGym(email,displayName){
+  if(!confirm(`¿Resetear la contraseña de acceso de ${displayName}?\n\nLa contraseña actual deja de funcionar de inmediato — tendrás que pasarle la nueva.`))return;
+  try{
+    const resultado=await resetGymPasswordFn({email});
+    const nuevaPassword=resultado.data.password;
+    alert(`Nueva contraseña para ${displayName} (${email}):\n\n${nuevaPassword}\n\nComunícasela de forma segura — no se puede volver a mostrar. Si la pierdes, genera otra.`);
+  }catch(e){alert('Error al resetear la contraseña: '+e.message);}
+}
+async function resetearPinFinanzasGym(gymId,displayName){
+  if(!confirm(`¿Resetear el PIN de Finanzas/Empleados de ${displayName}?\n\nEl PIN actual deja de funcionar de inmediato.`))return;
+  try{
+    const nuevoPin=_generarPinAleatorio();
+    const hash=await sha256Hex(nuevoPin);
+    await updateDoc(docFn(db,'usuarios',gymId),{pinFinanzas:hash});
+    alert(`Nuevo PIN de Finanzas/Empleados para ${displayName}:\n\n${nuevoPin}\n\nComunícaselo de forma segura — no se puede volver a mostrar.`);
+  }catch(e){alert('Error al resetear el PIN: '+e.message);}
+}
 async function saveNuevoGym(){
   const email=document.getElementById('ng-email').value.trim();
   const plan=document.getElementById('ng-plan').value;
