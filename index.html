@@ -937,6 +937,25 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 </div>
 
+<!-- MODAL RESETEAR CONTRASEÑA DE GYM (Admin, ver CHANGELOG.md): la contraseña la escribe el
+     admin — a propósito no se genera sola. Campos type="text" (no "password") para que el admin
+     pueda ver lo que está escribiendo al fijarle la clave a otra cuenta. -->
+<div class="modal-overlay" id="modal-reset-password-gym">
+  <div class="modal">
+    <h2>Nueva contraseña</h2>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--text-surface)">
+      <strong id="rpg-nombre-display"></strong> · <span id="rpg-email-display"></span>
+    </div>
+    <input type="hidden" id="rpg-email">
+    <div class="form-group"><label>Nueva contraseña (mínimo 6 caracteres)</label><input type="text" id="rpg-password" autocomplete="off"></div>
+    <div class="form-group"><label>Confirmar contraseña</label><input type="text" id="rpg-password-confirm" autocomplete="off"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-reset-password-gym')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarResetPasswordGym()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PIN FINANZAS/EMPLEADOS -->
 <div class="modal-overlay" id="modal-pin">
   <div class="modal" style="max-width:360px">
@@ -1737,15 +1756,29 @@ async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await d
 // RESETEAR CONTRASEÑA/PIN de un gimnasio desde Admin (ver CHANGELOG.md) — control sin necesitar
 // ver el valor viejo: ni las contraseñas de login (Firebase Auth las guarda cifradas, nadie las
 // puede "ver", ni siquiera el admin) ni los PIN (guardados hasheados) se pueden mostrar tal
-// cual — lo que sí se puede es generar uno NUEVO y dárselo al dueño del gym, dejando el viejo
-// inválido. Igual criterio que ya usa "reenviar PIN" en Empleados (Parte 18, ver CHANGELOG.md).
-async function resetearPasswordGym(email,displayName){
-  if(!confirm(`¿Resetear la contraseña de acceso de ${displayName}?\n\nLa contraseña actual deja de funcionar de inmediato — tendrás que pasarle la nueva.`))return;
+// cual — lo que sí se puede es cambiarlos por uno NUEVO. La contraseña la escribe el propio
+// admin (modal-reset-password-gym) — pedido explícito: no quiere que se genere sola, la quiere
+// elegir él. El PIN de Finanzas sí se sigue generando al azar (más abajo), porque ahí no se pidió
+// lo mismo y un PIN corto no tiene el mismo peso que una contraseña de login.
+function resetearPasswordGym(email,displayName){
+  document.getElementById('rpg-email').value=email;
+  document.getElementById('rpg-nombre-display').textContent=displayName;
+  document.getElementById('rpg-email-display').textContent=email;
+  document.getElementById('rpg-password').value='';
+  document.getElementById('rpg-password-confirm').value='';
+  openModal('modal-reset-password-gym');
+}
+async function confirmarResetPasswordGym(){
+  const email=document.getElementById('rpg-email').value;
+  const pass=document.getElementById('rpg-password').value;
+  const passConfirm=document.getElementById('rpg-password-confirm').value;
+  if(!pass||pass.length<6)return alert('La contraseña debe tener al menos 6 caracteres');
+  if(pass!==passConfirm)return alert('Las contraseñas no coinciden');
   try{
-    const resultado=await resetGymPasswordFn({email});
-    const nuevaPassword=resultado.data.password;
-    alert(`Nueva contraseña para ${displayName} (${email}):\n\n${nuevaPassword}\n\nComunícasela de forma segura — no se puede volver a mostrar. Si la pierdes, genera otra.`);
-  }catch(e){alert('Error al resetear la contraseña: '+e.message);}
+    await resetGymPasswordFn({email,newPassword:pass});
+    closeModal('modal-reset-password-gym');
+    toast('Contraseña actualizada ✓');
+  }catch(e){alert('Error al actualizar la contraseña: '+e.message);}
 }
 async function resetearPinFinanzasGym(gymId,displayName){
   if(!confirm(`¿Resetear el PIN de Finanzas/Empleados de ${displayName}?\n\nEl PIN actual deja de funcionar de inmediato.`))return;

@@ -227,36 +227,30 @@ exports.adms = onRequest({region: 'us-central1'}, app);
 // gimnasio, y el SDK de cliente (el que usa index.html) solo puede cambiar la contraseña de LA
 // PROPIA cuenta ya autenticada, nunca la de otra cuenta. Cambiarle la contraseña a OTRO usuario
 // requiere el Admin SDK (admin.auth().updateUser), que solo puede correr en un backend de
-// confianza — de ahí esta función. La consola de Firebase tampoco permite fijar una contraseña
-// nueva directamente, solo mandar un correo de restablecimiento (que el dueño del gym tendría que
-// revisar y confirmar) — esto genera la contraseña nueva al instante para que el admin se la pueda
-// pasar directo (ej. por WhatsApp), igual que ya se hace con los PIN de empleados.
+// confianza — de ahí esta función.
+//
+// LA CONTRASEÑA NUEVA LA ESCRIBE EL ADMIN, no se genera aquí — versión anterior de esta parte
+// generaba una al azar, pero el admin pidió explícitamente poder elegirla él mismo en vez de que
+// "Google le dé una". Esta función solo valida el mínimo de Firebase Auth (6 caracteres) y la
+// aplica — la fortaleza/formato de la contraseña queda a criterio del admin.
 //
 // SEGURIDAD: valida que quien llama esté autenticado Y que su correo sea exactamente el del admin
 // (mismo criterio que ADMIN_EMAIL en index.html/firestore.rules) — usa el token de Firebase Auth
 // que el SDK de cliente manda automáticamente en una función onCall, nunca un valor que el cliente
-// pueda falsificar a mano. Verifica además que el uid recibido corresponda a un documento real en
-// usuarios/, para no resetear por error la contraseña de una cuenta de Firebase Auth ajena a este
-// proyecto por un typo.
+// pueda falsificar a mano.
 const ADMIN_EMAIL = 'luismolinac06@gmail.com';
-
-function generarPasswordAleatoria(len = 12) {
-  // Alfabeto sin caracteres ambiguos (0/O, 1/l/I) — la contraseña se lee y se copia a mano/por
-  // WhatsApp, así que debe distinguirse fácil a simple vista. crypto.randomInt (no Math.random)
-  // porque esto genera una credencial real de login, no un identificador cualquiera.
-  const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let pass = '';
-  for (let i = 0; i < len; i++) pass += alfabeto[crypto.randomInt(alfabeto.length)];
-  return pass;
-}
 
 exports.resetGymPassword = onCall({region: 'us-central1'}, async (request) => {
   if (!request.auth || request.auth.token.email !== ADMIN_EMAIL) {
     throw new HttpsError('permission-denied', 'Solo el admin puede resetear contraseñas.');
   }
   const email = request.data && request.data.email;
+  const newPassword = request.data && request.data.newPassword;
   if (!email || typeof email !== 'string') {
     throw new HttpsError('invalid-argument', 'Falta el correo del gimnasio.');
+  }
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+    throw new HttpsError('invalid-argument', 'La contraseña nueva debe tener al menos 6 caracteres.');
   }
   // Se resuelve por correo, NO por el id del documento en usuarios/: antes del primer login de
   // ese gimnasio, su doc vive en usuarios/pending_<email> (un id inventado, no un uid real de
@@ -269,13 +263,12 @@ exports.resetGymPassword = onCall({region: 'us-central1'}, async (request) => {
   } catch (err) {
     throw new HttpsError('not-found', 'Ese gimnasio todavía no tiene una cuenta de acceso creada en Firebase Auth.');
   }
-  const nuevaPassword = generarPasswordAleatoria();
   try {
-    await admin.auth().updateUser(userRecord.uid, {password: nuevaPassword});
+    await admin.auth().updateUser(userRecord.uid, {password: newPassword});
   } catch (err) {
     logger.error('resetGymPassword: fallo updateUser', {email, uid: userRecord.uid, error: err.message});
-    throw new HttpsError('internal', 'No se pudo resetear la contraseña: ' + err.message);
+    throw new HttpsError('internal', 'No se pudo actualizar la contraseña: ' + err.message);
   }
-  logger.info('resetGymPassword: contraseña reseteada por el admin', {email, uid: userRecord.uid});
-  return {password: nuevaPassword};
+  logger.info('resetGymPassword: contraseña actualizada por el admin', {email, uid: userRecord.uid});
+  return {ok: true};
 });

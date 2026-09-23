@@ -4,6 +4,35 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — Reset de contraseña de gym: la elige el admin, no se genera sola
+
+**Qué se hizo:** ajuste sobre la parte anterior (reset de contraseña/PIN desde Admin) — al
+probarlo, Luis aclaró que no quería que el sistema generara la contraseña nueva, sino escribirla
+él mismo. Se cambió el flujo de punta a punta:
+
+- `resetearPasswordGym` ya NO llama directo a la Cloud Function con un `confirm()` — abre un modal
+  (`modal-reset-password-gym`) con dos campos (`type="text"`, no `"password"`, para que el admin
+  vea lo que escribe al fijarle la clave a otra cuenta): nueva contraseña + confirmación.
+- Valida en el cliente antes de llamar a la función: mínimo 6 caracteres, y que ambos campos
+  coincidan — evita una llamada a la nube por un typo.
+- `functions/index.js` — `resetGymPassword` ya no genera nada (`generarPasswordAleatoria` se
+  quitó por completo): recibe `newPassword` del cliente, valida el mismo mínimo de 6 caracteres
+  que exige Firebase Auth, y la aplica tal cual con `admin.auth().updateUser`. Devuelve `{ok:true}`
+  en vez de una contraseña generada.
+- El PIN de Finanzas (`resetearPinFinanzasGym`) se queda igual que antes (sí se genera al azar) —
+  no se pidió lo mismo para ese caso, y un PIN corto no tiene el mismo peso que una contraseña de
+  login real.
+
+**Verificado:** `node --check` sin errores en ambos archivos. Prueba de Node contra
+`functions/index.js` real actualizada (`test_reset_gym_password.cjs`, 9/9 OK): rechaza sin
+`newPassword`; rechaza una contraseña de menos de 6 caracteres; aplica EXACTAMENTE la contraseña
+recibida (no una generada) en el usuario de Auth (fake). Prueba de Playwright contra el
+`index.html` real actualizada (`test_admin_reset.mjs`, 18/18 OK): `resetearPasswordGym` abre el
+modal sin llamar todavía a la función; contraseñas que no coinciden o son muy cortas no disparan
+la llamada; una contraseña válida y coincidente se manda tal cual el admin la escribió. Se
+re-corrieron las suites de Control de acceso biométrico (24/24), columna del importador (12/12),
+vincular en lote (12/12) y editar vencimiento (14/14) sin regresiones.
+
 ## 2026-09-23 — Panel de Admin: resetear contraseña y PIN de Finanzas de un gimnasio
 
 **Qué se hizo:** se pidió que el admin (`luismolinac06@gmail.com`) pudiera "ver" las contraseñas
