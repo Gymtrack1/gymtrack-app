@@ -956,6 +956,24 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 </div>
 
+<!-- MODAL RESETEAR PIN DE FINANZAS DE UN GYM (Admin, ver CHANGELOG.md): mismo criterio que el
+     de contraseña — lo escribe el admin, no se genera solo. -->
+<div class="modal-overlay" id="modal-reset-pin-finanzas-gym">
+  <div class="modal" style="max-width:360px">
+    <h2>Nuevo PIN de Finanzas</h2>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--text-surface)">
+      <strong id="rpin-nombre-display"></strong>
+    </div>
+    <input type="hidden" id="rpin-gym-id">
+    <div class="form-group"><label>Nuevo PIN (mínimo 4 dígitos)</label><input type="text" id="rpin-pin" autocomplete="off"></div>
+    <div class="form-group"><label>Confirmar PIN</label><input type="text" id="rpin-pin-confirm" autocomplete="off"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-reset-pin-finanzas-gym')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarResetPinFinanzasGym()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PIN FINANZAS/EMPLEADOS -->
 <div class="modal-overlay" id="modal-pin">
   <div class="modal" style="max-width:360px">
@@ -1756,10 +1774,9 @@ async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await d
 // RESETEAR CONTRASEÑA/PIN de un gimnasio desde Admin (ver CHANGELOG.md) — control sin necesitar
 // ver el valor viejo: ni las contraseñas de login (Firebase Auth las guarda cifradas, nadie las
 // puede "ver", ni siquiera el admin) ni los PIN (guardados hasheados) se pueden mostrar tal
-// cual — lo que sí se puede es cambiarlos por uno NUEVO. La contraseña la escribe el propio
-// admin (modal-reset-password-gym) — pedido explícito: no quiere que se genere sola, la quiere
-// elegir él. El PIN de Finanzas sí se sigue generando al azar (más abajo), porque ahí no se pidió
-// lo mismo y un PIN corto no tiene el mismo peso que una contraseña de login.
+// cual — lo que sí se puede es cambiarlos por uno NUEVO. Tanto la contraseña como el PIN de
+// Finanzas los escribe el propio admin (nunca se generan solos) — mismo pedido explícito para
+// los dos: quiere elegirlos él, no que "se los dé Google".
 function resetearPasswordGym(email,displayName){
   document.getElementById('rpg-email').value=email;
   document.getElementById('rpg-nombre-display').textContent=displayName;
@@ -1780,14 +1797,25 @@ async function confirmarResetPasswordGym(){
     toast('Contraseña actualizada ✓');
   }catch(e){alert('Error al actualizar la contraseña: '+e.message);}
 }
-async function resetearPinFinanzasGym(gymId,displayName){
-  if(!confirm(`¿Resetear el PIN de Finanzas/Empleados de ${displayName}?\n\nEl PIN actual deja de funcionar de inmediato.`))return;
+function resetearPinFinanzasGym(gymId,displayName){
+  document.getElementById('rpin-gym-id').value=gymId;
+  document.getElementById('rpin-nombre-display').textContent=displayName;
+  document.getElementById('rpin-pin').value='';
+  document.getElementById('rpin-pin-confirm').value='';
+  openModal('modal-reset-pin-finanzas-gym');
+}
+async function confirmarResetPinFinanzasGym(){
+  const gymId=document.getElementById('rpin-gym-id').value;
+  const pin=document.getElementById('rpin-pin').value.trim();
+  const pinConfirm=document.getElementById('rpin-pin-confirm').value.trim();
+  if(!pin||pin.length<4)return alert('El PIN debe tener al menos 4 dígitos');
+  if(pin!==pinConfirm)return alert('Los PIN no coinciden');
   try{
-    const nuevoPin=_generarPinAleatorio();
-    const hash=await sha256Hex(nuevoPin);
+    const hash=await sha256Hex(pin);
     await updateDoc(docFn(db,'usuarios',gymId),{pinFinanzas:hash});
-    alert(`Nuevo PIN de Finanzas/Empleados para ${displayName}:\n\n${nuevoPin}\n\nComunícaselo de forma segura — no se puede volver a mostrar.`);
-  }catch(e){alert('Error al resetear el PIN: '+e.message);}
+    closeModal('modal-reset-pin-finanzas-gym');
+    toast('PIN de Finanzas actualizado ✓');
+  }catch(e){alert('Error al actualizar el PIN: '+e.message);}
 }
 async function saveNuevoGym(){
   const email=document.getElementById('ng-email').value.trim();

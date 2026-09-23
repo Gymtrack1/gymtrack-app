@@ -4,6 +4,26 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-23 — El PIN de Finanzas de un gym también lo elige el admin, no se genera solo
+
+**Qué se hizo:** faltaba aplicarle al PIN de Finanzas el mismo cambio que ya se le hizo a la
+contraseña (entrada anterior) — Luis reportó que el PIN se le seguía generando solo. Mismo
+criterio, mismo patrón: `resetearPinFinanzasGym` ya no usa `confirm()` + `_generarPinAleatorio()`
+directo — abre un modal (`modal-reset-pin-finanzas-gym`) con dos campos (nuevo PIN + confirmación,
+mínimo 4 dígitos, mismo mínimo que ya exige `submitPin` del lado del propio gym). Valida en el
+cliente antes de escribir nada en Firestore: PIN corto o que no coincide con su confirmación no
+llega a guardarse. Se sigue hasheando con `sha256Hex` antes de guardar — el PIN en texto plano
+nunca toca Firestore, solo vive en el navegador del admin mientras llena el modal.
+
+**Verificado:** `node --check` sin errores. Prueba de Playwright contra el `index.html` real
+actualizada (`test_admin_reset.mjs`, 23/23 OK): el botón abre el modal en vez de generar el PIN
+directo; un PIN de menos de 4 dígitos o que no coincide con su confirmación no se guarda (el
+`pinFinanzas` sigue siendo el de antes); un PIN válido se guarda como hash SHA-256 que corresponde
+EXACTAMENTE al valor que escribió el admin (verificado contra un hash calculado aparte con Node,
+no solo "parece un hash"). Se re-corrieron las suites de Control de acceso biométrico (24/24),
+columna del importador (12/12), vincular en lote (12/12) y editar vencimiento (14/14) sin
+regresiones.
+
 ## 2026-09-23 — Reset de contraseña de gym: la elige el admin, no se genera sola
 
 **Qué se hizo:** ajuste sobre la parte anterior (reset de contraseña/PIN desde Admin) — al
