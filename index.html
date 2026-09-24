@@ -1660,6 +1660,12 @@ window.addEventListener('adminReady',async()=>{
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; writeBatchFn=window._writeBatch;
   resetGymPasswordFn=window._resetGymPassword;
+  // Igual que firebaseReady: sin esto, subirFotoMiembro/onLogoFileChange/onFondoFileChange
+  // truenan con "storageRef is not a function" en cuanto el admin entra a un gym con "Ver
+  // panel" e intenta cambiar su logo/fondo/foto de un miembro — storage.rules ya permite al
+  // admin escribir en cualquier gymId, lo que faltaba era cargar el SDK de Storage aquí.
+  storage=window._storage; storageRef=window._storageRef; uploadBytesFn=window._uploadBytes;
+  getDownloadURLFn=window._getDownloadURL; deleteObjectFn=window._deleteObject;
   document.getElementById('user-email-admin').textContent=window._auth.currentUser.email;
   // El panel de super-admin nunca debe heredar la personalización de ningún gym — por si
   // este navegador tenía cacheado en localStorage el branding de una cuenta de gym (ver

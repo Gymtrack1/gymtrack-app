@@ -4,6 +4,28 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-24 — Fix: subir el logo (o fondo/foto) fallaba estando en "Ver panel" como admin
+
+**Qué se hizo:** Luis reportó un error al entrar al panel de un gimnasio con "Ver panel" y tratar
+de cambiar el logo.
+
+**Causa:** `onLogoFileChange`/`subirFotoMiembro`/el subir-fondo usan variables globales
+(`storage`, `storageRef`, `uploadBytesFn`, `getDownloadURLFn`) que el listener `firebaseReady`
+llena al iniciar sesión como un gym normal — pero el listener `adminReady` (por el que entra
+Luis) nunca las llenaba. Esas variables quedaban `undefined` durante toda la sesión de admin,
+así que en cuanto "Ver panel" reutilizaba esas mismas funciones para subir un archivo, tronaba
+con "storageRef is not a function". `storage.rules` ya permitía al admin escribir en cualquier
+gymId desde antes (no era un problema de permisos) — lo que faltaba era cargar el SDK de
+Storage también en la rama de admin.
+
+**Qué se cambió:** `adminReady` ahora copia `storage`/`storageRef`/`uploadBytesFn`/
+`getDownloadURLFn`/`deleteObjectFn` desde `window._storage` etc., igual que ya hacía
+`firebaseReady`.
+
+**Verificado:** prueba nueva (Playwright) que arranca como admin, confirma que esas variables
+son funciones válidas (no `undefined`), entra a un gym con `verComoGym`, y sube un logo de
+prueba sin que truene. Suite completa (113 pruebas de 8 partes) sin regresiones.
+
 ## 2026-09-23 — Fix: la gráfica de Tendencia también contaba días del mes que aún no llegan
 
 **Qué se hizo:** tras el fix anterior de "Este mes", Luis reportó que la brecha se redujo mucho
