@@ -29,6 +29,9 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembros', 'm1'), { nombre: 'Juan', telefono: '5551234567', direccion: 'Calle Falsa 123', notas: 'nota privada' });
   await setDoc(doc(db, 'usuarios', 'uidB', 'miembros', 'm2'), { nombre: 'Pedro' });
   await setDoc(doc(db, 'usuarios', 'pending_gymC_test_com'), { email: 'gymC@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true });
+  // Suspensión de cuenta (2026-09-30, ver CHANGELOG.md)
+  await setDoc(doc(db, 'usuarios', 'uidE'), { email: 'gymE@test.com', uid: 'uidE', plan: 'sencillo', funciones: ['dashboard'], suspendido: true, suspendidoCambiadoEn: Date.now() });
+  await setDoc(doc(db, 'usuarios', 'pending_gymF_test_com'), { email: 'gymF@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true, suspendido: true, suspendidoCambiadoEn: Date.now() });
   // Datos del portal QR (Parte 1/2/3, ver CHANGELOG.md)
   await setDoc(doc(db, 'usuarios', 'uidA', 'inventario', 'maq1'), { nombre: 'Press de banca', cantidad: 1, estado: 'bueno' });
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { numero: 1, nombre: 'Juan', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
@@ -42,6 +45,8 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
 const gymA = testEnv.authenticatedContext('uidA', { email: 'gymA@test.com' }).firestore();
 const gymB = testEnv.authenticatedContext('uidB', { email: 'gymB@test.com' }).firestore();
 const gymC = testEnv.authenticatedContext('uidC', { email: 'gymC@test.com' }).firestore(); // aún no migrado
+const gymE = testEnv.authenticatedContext('uidE', { email: 'gymE@test.com' }).firestore(); // suspendido
+const gymF = testEnv.authenticatedContext('uidF', { email: 'gymF@test.com' }).firestore(); // migrando desde un pending_ suspendido
 const admin = testEnv.authenticatedContext('adminUid', { email: 'luismolinac06@gmail.com' }).firestore();
 const anon = testEnv.unauthenticatedContext().firestore();
 const cliente = testEnv.authenticatedContext('clienteAnonUid', {}).firestore(); // signInAnonymously: auth!=null, sin email
@@ -94,6 +99,36 @@ await check('Gym A NO puede borrar el pending_ de otro (ya migrado, pero probamo
   });
   await deleteDoc(doc(gymA, 'usuarios', 'pending_gymD_test_com'));
 })(), false);
+
+console.log('\n--- Suspensión de cuenta (2026-09-30, ver CHANGELOG.md) ---');
+await check('Gym E (suspendido) NO puede reactivarse a sí mismo cambiando suspendido a false', updateDoc(doc(gymE, 'usuarios', 'uidE'), { suspendido: false }), false);
+await check('Gym E (suspendido) NO puede tocar suspendidoCambiadoEn aunque no cambie suspendido', updateDoc(doc(gymE, 'usuarios', 'uidE'), { suspendidoCambiadoEn: Date.now() }), false);
+await check('Gym E (suspendido) NO puede colar suspendido:false junto con un cambio legítimo (pinFinanzas)', updateDoc(doc(gymE, 'usuarios', 'uidE'), { pinFinanzas: 'nuevo-hash', suspendido: false }), false);
+await check('Gym E (suspendido) SÍ puede seguir editando lo que ya podía (pinFinanzas, sin tocar suspendido)', updateDoc(doc(gymE, 'usuarios', 'uidE'), { pinFinanzas: 'nuevo-hash-ok' }), true);
+await check('Gym E (suspendido) SÍ puede seguir editando su personalización visual (colorAcento/logoUrl)', updateDoc(doc(gymE, 'usuarios', 'uidE'), { colorAcento: '#111111', logoUrl: 'https://ejemplo.com/logo.png' }), true);
+await check('Admin SÍ puede reactivar a Gym E (suspendido:false)', updateDoc(doc(admin, 'usuarios', 'uidE'), { suspendido: false, suspendidoCambiadoEn: Date.now() }), true);
+await check('Admin SÍ puede volver a suspender a Gym E', updateDoc(doc(admin, 'usuarios', 'uidE'), { suspendido: true, suspendidoCambiadoEn: Date.now() }), true);
+
+await check('Gym E (suspendido) NO puede borrar su propio doc REAL para recrearlo sin la suspensión', deleteDoc(doc(gymE, 'usuarios', 'uidE')), false);
+await check('Admin SÍ puede borrar el doc real de un gimnasio (elimina cliente)', (async()=>{
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'usuarios', 'uidTemporal'), { email: 'temporal@test.com', uid: 'uidTemporal' });
+  });
+  await deleteDoc(doc(admin, 'usuarios', 'uidTemporal'));
+})(), true);
+
+await check('Gym E NO puede crear un doc de OTRO gimnasio ya con suspendido:false (aislamiento normal, sigue aplicando)', setDoc(doc(gymE, 'usuarios', 'uidNuevoAjeno'), { email: 'otro@test.com', uid: 'uidNuevoAjeno', suspendido: false }), false);
+await check('Un gimnasio NUEVO (sin pending_ suspendido) NO puede crear su propio doc con suspendido:false explícito', setDoc(doc(gymB, 'usuarios', 'uidB'), { email: 'gymB@test.com', uid: 'uidB', plan: 'pro', funciones: ['dashboard'], suspendido: false }), false);
+
+await check('Gym F puede encontrar su pending_ (que SÍ estaba suspendido) por email', (async()=>{
+  const q = query(collection(gymF, 'usuarios'), where('email','==','gymF@test.com'));
+  const snap = await getDocs(q);
+  if (snap.empty) throw new Error('no encontró su pending_');
+})(), true);
+await check('Gym F NO puede migrar quitándose la suspensión al crear su doc real (suspendido:false)', setDoc(doc(gymF, 'usuarios', 'uidF'), { email: 'gymF@test.com', uid: 'uidF', plan: 'pro', funciones: ['dashboard'], pendiente: false, suspendido: false }), false);
+await check('Gym F SÍ puede migrar conservando la suspensión tal cual traía el pending_ (suspendido:true, igual que hace loadPlan() con el spread de "...data")', setDoc(doc(gymF, 'usuarios', 'uidF'), { email: 'gymF@test.com', uid: 'uidF', plan: 'pro', funciones: ['dashboard'], pendiente: false, suspendido: true, suspendidoCambiadoEn: Date.now() }), true);
+await check('Gym F ya migrado (y todavía suspendido) puede borrar su pending_ normal', deleteDoc(doc(gymF, 'usuarios', 'pending_gymF_test_com')), true);
+await check('Gym F, ya con su doc real, sigue sin poder auto-reactivarse', updateDoc(doc(gymF, 'usuarios', 'uidF'), { suspendido: false }), false);
 
 console.log('\n--- Portal público del cliente (auth anónima, un solo QR por gimnasio -> menú de músculos/ejercicios) ---');
 await check('Cliente anónimo NO puede leer el Equipo del Gym (ya no hace falta, la biblioteca de ejercicios es estática en index.html, no vive en Firestore)', getDoc(doc(cliente, 'usuarios', 'uidA', 'inventario', 'maq1')), false);
@@ -150,7 +185,16 @@ await check('El staff (dueño del gym) sigue pudiendo leer y escribir inventario
 await check('Gym B (otro gimnasio) también puede leer el espejo público de Gym A (dato no sensible, por diseño)', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembrosPublicos', 'm1')), true);
 await check('Cliente anónimo puede leer el espejo público de personalización (colores/logo) de un gimnasio', getDoc(doc(cliente, 'usuarios', 'uidA', 'config', 'personalizacion')), true);
 await check('Cliente anónimo NO puede escribir/alterar la personalización pública', setDoc(doc(cliente, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#000000' }), false);
+await check('El staff (dueño) SÍ puede seguir escribiendo su propia personalización (config/personalizacion no es config/estado)', setDoc(doc(gymA, 'usuarios', 'uidA', 'config', 'personalizacion'), { colorAcento: '#00FF00', colorFondo: null, colorTarjetas: null, logoUrl: null }), true);
 await check('Pero Gym B sigue sin poder leer el documento completo de miembros/ de Gym A', getDoc(doc(gymB, 'usuarios', 'uidA', 'miembros', 'm1')), false);
+
+console.log('\n--- Espejo público de suspensión para el portal (usuarios/{gymId}/config/estado, 2026-09-30) ---');
+await check('Admin SÍ puede crear/escribir config/estado (lo que hace setSuspendido() en index.html)', setDoc(doc(admin, 'usuarios', 'uidE', 'config', 'estado'), { suspendido: true }), true);
+await check('El staff (dueño del gym) NO puede escribir su propio config/estado, ni para "desactivar" su propio aviso', setDoc(doc(gymE, 'usuarios', 'uidE', 'config', 'estado'), { suspendido: false }), false);
+await check('El staff (dueño del gym) tampoco puede escribirlo vía update', updateDoc(doc(gymE, 'usuarios', 'uidE', 'config', 'estado'), { suspendido: false }), false);
+await check('Cliente anónimo (portal) puede LEER config/estado (lo consulta portalGymSuspendido() antes de mostrar nada)', getDoc(doc(cliente, 'usuarios', 'uidE', 'config', 'estado')), true);
+await check('Cliente anónimo NO puede escribir/alterar config/estado', setDoc(doc(cliente, 'usuarios', 'uidE', 'config', 'estado'), { suspendido: false }), false);
+await check('Gym B (otro gimnasio) NO puede escribir el config/estado de Gym E (ni siquiera de su propio gym con este doc en particular, probado arriba — aquí además cruzando gimnasios)', setDoc(doc(gymB, 'usuarios', 'uidE', 'config', 'estado'), { suspendido: false }), false);
 
 console.log('\n--- Buzón de sugerencias (?gym=...&sugerencia=1, modo aparte, 100% anónimo) ---');
 await check('Cliente anónimo puede crear una sugerencia válida (categoria de la lista, texto <=500, leida:false)', setDoc(doc(cliente, 'usuarios', 'uidA', 'sugerencias', 's1'), { categoria: 'Limpieza', texto: 'Los vestidores podrían estar más limpios', fecha: Date.now(), leida: false }), true);

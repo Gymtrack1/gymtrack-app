@@ -1749,6 +1749,11 @@ async function setSuspendido(gymId,suspender,displayName){
   if(!confirm(msg))return;
   try{
     await updateDoc(docFn(db,'usuarios',gymId),{suspendido:suspender,suspendidoCambiadoEn:Date.now()});
+    // Espejo público mínimo (2026-09-30, ver CHANGELOG.md): el portal QR se autentica anónimo y
+    // no puede leer usuarios/{gymId} directo (ahí vive pinFinanzas, email, etc), así que la
+    // suspensión también se refleja aquí — el único campo que necesita ver portalReady antes de
+    // mostrar nada. Solo el admin puede escribir este doc (ver firestore.rules, config/estado).
+    await setDoc(gymDoc(gymId,'config','estado'),{suspendido:suspender});
     toast(suspender?'Cliente suspendido ⛔':'Cliente reactivado ✓');
     await loadAdminGyms();
   }catch(e){alert('Error al cambiar el estado: '+e.message);}
@@ -5763,10 +5768,19 @@ function renderPlanFitnessIA(elId,plan,toggleFn,editOpts){
     </div>`;
 }
 
-window.addEventListener('portalReady',()=>{
+window.addEventListener('portalReady',async()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; queryFn=window._query; whereFn=window._where;
+  // Cuenta suspendida (2026-09-30, ver CHANGELOG.md): se revisa ANTES de mostrar cualquiera de
+  // los 3 modos del portal (cliente, sugerencias, staff) — un gimnasio suspendido no debe seguir
+  // recibiendo registros de progreso/sugerencias ni dejar que el staff use su Vista de Progreso.
+  // Ver portalGymSuspendido() más abajo: si el doc config/estado no existe (gimnasio que nunca
+  // fue suspendido), el portal sigue funcionando normal, sin ningún cambio de comportamiento.
+  if(await portalGymSuspendido()){
+    document.getElementById('portal-content').innerHTML=`<div class="ec-card"><div class="empty"><div class="empty-icon">🚧</div><div>Este servicio no está disponible por el momento. Pregunta en recepción.</div></div></div>`;
+    return;
+  }
   // El formulario se muestra YA, sin esperar la personalización — si esa lectura a Firestore
   // se traba (mala conexión, o simplemente tarda), el cliente igual puede identificarse. Los
   // colores/logo del gym se aplican en cuanto lleguen, en paralelo (fire-and-forget); si nunca
@@ -5779,6 +5793,17 @@ window.addEventListener('portalReady',()=>{
   else if(window._portalSugerencia)renderPortalSugerenciasForm();
   else renderPortalIdentify();
 });
+
+// Espejo público de solo {suspendido} (ver firestore.rules, config/estado) — el portal se
+// autentica anónimo y no puede leer usuarios/{gymId} directo (ahí vive el campo real). Fail-open
+// a propósito: cualquier error de lectura (doc no existe, sin conexión, etc) se trata como NO
+// suspendido, para que un problema de red nunca bloquee el portal de un gimnasio activo.
+async function portalGymSuspendido(){
+  try{
+    const snap=await getDoc(gymDoc(window._portalGym,'config','estado'));
+    return snap.exists() && snap.data().suspendido===true;
+  }catch(e){return false;}
+}
 
 // Aplica la personalización visual del gimnasio (colorAcento/colorFondo/colorTarjetas/logoUrl)
 // al portal — lee usuarios/{gym}/config/personalizacion (espejo público, ver

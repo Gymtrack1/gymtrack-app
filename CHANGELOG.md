@@ -4,6 +4,63 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-30 — Cierra los 2 límites conocidos de la suspensión de cuenta (2026-09-29)
+
+**Qué se hizo:** la entrada anterior ("Sin planes... botón Suspender/Reactivar") dejaba dos huecos
+documentados: (1) un gimnasio podía quitarse la suspensión a sí mismo llamando al SDK de
+Firestore directo (sin pasar por la UI), y (2) el portal QR (sesión anónima, no puede leer
+`usuarios/{gymId}`) seguía funcionando normal para un gimnasio suspendido. Se cierran los dos.
+
+**Qué se cambió — `firestore.rules`:**
+- `usuarios/{gymId}` — `update`: un gimnasio (no-admin) ya no puede tocar los campos `suspendido`
+  ni `suspendidoCambiadoEn` (`affectedKeys().hasAny([...])`); todo lo demás que ya podía editar
+  (pinFinanzas, msgWhatsApp/Recordatorio, colores/logo/fondos, montoInscripcion, qrSincronizado,
+  email/uid) sigue igual.
+- `usuarios/{gymId}` — `create`: un gimnasio no puede crear su propio doc con `suspendido:false`
+  — solo ausente (cuenta que nunca fue suspendida) o `true` (migración honesta de un `pending_`
+  que sí estaba suspendido; `loadPlan()` en index.html ya copiaba ese campo tal cual via
+  `...data`, no hizo falta tocar JS para esta parte).
+- `usuarios/{gymId}` — `delete`: `ownsByEmail()` por sí sola también era cierta para el doc REAL
+  de un gimnasio (trae su propio email) — sin candado, un gimnasio suspendido podía borrar su
+  doc real y recrearlo (`create`) sin el campo, saltándose la suspensión por completo. Ahora
+  `ownsByEmail()` para borrar solo aplica si el id del documento empieza con `pending_` (la
+  convención que ya usa `loadPlan()`/`tempId`), que es lo único que este borrado necesitaba
+  seguir permitiendo.
+- `usuarios/{gymId}/config/{docId}` — nuevo documento `config/estado` (`{suspendido}`), espejo
+  público mínimo para el portal (que no puede leer el doc real). Lectura: cualquier autenticado
+  (igual que `config/personalizacion`). Escritura: **solo admin**, nunca el dueño — si el dueño
+  pudiera escribirlo, un gimnasio suspendido podría apagar su propio aviso en el portal.
+  `config/personalizacion` no cambia (sigue editable por el dueño). Se excluyó `config` de la
+  regla genérica de colecciones (`match /{coleccion}/{docId}`) porque, al combinarse las reglas
+  con OR, esa regla por sí sola le habría dado al dueño permiso de escritura sobre
+  `config/estado` sin que la condición nueva pudiera evitarlo.
+
+**Qué se cambió — `index.html`:**
+- `setSuspendido()` ahora también hace `setDoc(usuarios/{gymId}/config/estado, {suspendido})`
+  además de actualizar el doc real, en la misma llamada.
+- `portalReady` ahora llama a una nueva `portalGymSuspendido()` (lee `config/estado`) ANTES de
+  renderizar cualquiera de los 3 modos del portal (cliente, sugerencias `?sugerencia=1`, staff
+  `?staff=1`). Si está suspendido, muestra un aviso simple ("Este servicio no está disponible por
+  el momento. Pregunta en recepción") en vez del portal. Fail-open a propósito: si el doc no
+  existe o falla la lectura (sin conexión, etc), el portal funciona normal — un problema de red
+  nunca debe bloquear a un gimnasio activo.
+
+**Verificado:**
+- `rules-test/test.mjs` contra el emulador (`npm test` en `rules-test/`): 22 casos nuevos
+  (gimnasio no puede cambiar `suspendido`/`suspendidoCambiadoEn`, ni colarlos junto con un cambio
+  legítimo; sigue pudiendo editar pinFinanzas/personalización; no puede crear su doc con
+  `suspendido:false`; sí puede migrar conservando `suspendido:true` de un `pending_` suspendido;
+  no puede borrar su doc real pero sí su `pending_`; no puede escribir `config/estado`, ni el
+  suyo ni el de otro gimnasio; el admin sí puede todo lo anterior) — **108 OK / 0 FAIL** en total
+  (suite completa, sin regresiones). `rules-test/firestore.rules` (copia usada por el emulador)
+  se sincronizó con el `firestore.rules` real, que estaba desactualizada desde antes de esta
+  parte.
+- Playwright nuevo (`test_suspension.mjs`) contra el `index.html` real: confirma que
+  Suspender/Reactivar en el panel admin escribe ambos documentos, y que los 3 modos del portal
+  (cliente, sugerencias, staff) muestran el aviso cuando `suspendido:true`, funcionan normal
+  cuando `suspendido:false`, y funcionan normal cuando el doc no existe — **16/16**. Suite
+  completa de Playwright (9 archivos) — **129/129**, sin regresiones.
+
 ## 2026-09-30 — Fix visual: el correo de un cliente se encimaba con los botones en Panel Admin
 
 **Qué se hizo:** tras quitar los planes (ver entrada anterior), Luis reportó que en la tarjeta de

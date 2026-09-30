@@ -16,8 +16,13 @@ rules_version = '2';
 //   usuarios/{gymId}/registrosProgreso/{id} series registradas desde el QR (ver más abajo)
 //   usuarios/{gymId}/pesoCorporal/{id}      peso corporal (staff + portal QR, ver más abajo)
 //   usuarios/{gymId}/config/personalizacion espejo público de colores/logo (ver más abajo)
+//   usuarios/{gymId}/config/estado          espejo público de {suspendido} (ver más abajo,
+//                                            2026-09-30 — a diferencia de personalizacion, solo
+//                                            el admin puede escribirlo, nunca el dueño)
 //   usuarios/{gymId}/sugerencias/{id}       buzón anónimo del portal QR (ver más abajo)
 //   usuarios/{gymId}/empleadosPublicos/{id} espejo público mínimo por empleado (ver más abajo)
+//   usuarios/{gymId}/accesosNoIdentificados/{id} eventos del control de acceso biométrico sin
+//                                            miembro asignado (ver más abajo, CONTROL DE ACCESO)
 //
 // Objetivo principal: que un gimnasio NUNCA pueda leer ni escribir los
 // datos de otro gimnasio, sin importar que llame al SDK de Firestore
@@ -157,6 +162,31 @@ rules_version = '2';
 //   clientes, no uno).
 //
 // ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// CONTROL DE ACCESO BIOMÉTRICO (ZKTeco, protocolo ADMS, ver CHANGELOG.md) — NO agrega reglas
+// nuevas: la Cloud Function receptora (functions/index.js) usa el Admin SDK, que SALTA por
+// completo estas reglas de seguridad (son solo para el SDK/cliente de index.html). Se documenta
+// aquí solo para que quede claro qué colecciones/campos toca y por qué ya están cubiertos:
+//
+//   usuarios/{gymId}.equiposAutorizados — array de SN (números de serie) de los equipos
+//     biométricos que le pertenecen a este gimnasio. Campo normal del doc usuarios/{gymId}, ya
+//     cubierto por la regla `allow update: if isAdmin() || isOwnerDoc(gymId);` de arriba — el
+//     staff lo edita como cualquier otro campo de su cuenta. La Cloud Function lo LEE con el
+//     Admin SDK (fuera de estas reglas) para resolver a qué gimnasio pertenece un evento entrante
+//     por el SN del equipo, y así no aceptar datos de un equipo no registrado.
+//
+//   usuarios/{gymId}/miembros/{id}.accesoCredencialId — el ID/PIN que el equipo asignó al
+//     miembro al enrolarlo (captura manual desde index.html). Campo normal del documento, sin
+//     regla aparte (ya cubierto por la regla genérica de colecciones operativas, más abajo).
+//
+//   usuarios/{gymId}/accesosNoIdentificados/{id} — eventos de acceso cuyo accesoCredencialId no
+//     coincidía con ningún miembro al momento de llegar (la Cloud Function los crea con el Admin
+//     SDK). El staff los lee/resuelve desde index.html (sección "Accesos sin asignar", tab
+//     Alertas) con el SDK normal — cubierto por la misma regla genérica de abajo, sin necesitar
+//     una regla propia (es una subcolección de un solo nivel bajo usuarios/{gymId}, igual que
+//     asistencias o pagos).
+//
+// ─────────────────────────────────────────────────────────────────────────
 // AGENTE DE IA: META Y PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md) — NO es
 // una colección nueva, son dos campos más dentro del documento miembros/{id}
 // ya existente (metaFitness y planFitnessIA), agregados a la misma excepción
@@ -212,17 +242,49 @@ service cloud.firestore {
 
       // Creación: admin da de alta clientes (uid real o pending_<email>).
       // Un gimnasio solo puede crear su propio doc (uid real), en su
-      // primer login.
-      allow create: if isAdmin() || isOwnerDoc(gymId);
+      // primer login o al migrarse desde pending_<email> (loadPlan() en
+      // index.html hace `setDoc(usuarios/{uid}, {...dataDelPendiente, uid,
+      // email, pendiente:false, migradoEn})` — un spread del doc pending_,
+      // así que si ese pending_ ya estaba suspendido, el campo `suspendido`
+      // viaja tal cual dentro de `data`).
+      //
+      // 2026-09-30 (ver CHANGELOG.md): un gimnasio NO puede crear su propio
+      // doc con `suspendido:false` — solo puede quedar ausente (cuenta que
+      // nunca fue suspendida) o en `true` (migración honesta de un pending_
+      // que sí estaba suspendido). Esto cierra el hueco de "me suspenden,
+      // borro mi doc, lo recreo sin el campo" — ver también la regla de
+      // `delete` más abajo, que ya no deja borrar el doc real (uid), solo el
+      // pending_.
+      allow create: if isAdmin() || (
+        isOwnerDoc(gymId) &&
+        (!('suspendido' in request.resource.data) || request.resource.data.suspendido == true)
+      );
 
       // Actualización: admin puede editar cualquier cuenta (plan,
-      // funciones, etc). Un gimnasio solo puede editar su propio doc
-      // (pinFinanzas, msgWhatsApp, msgWhatsAppRecordatorio, y la migración pending_ -> uid real).
-      allow update: if isAdmin() || isOwnerDoc(gymId);
+      // funciones, etc). Un gimnasio puede editar su propio doc
+      // (pinFinanzas, msgWhatsApp, msgWhatsAppRecordatorio, colores/logo/
+      // fondos, montoInscripcion, qrSincronizado, email/uid, etc) PERO
+      // 2026-09-30 (ver CHANGELOG.md): nunca los campos `suspendido` ni
+      // `suspendidoCambiadoEn` — esos solo los toca el admin (setSuspendido()
+      // en index.html), para que un gimnasio suspendido no pueda
+      // reactivarse a sí mismo llamando al SDK directo.
+      allow update: if isAdmin() || (
+        isOwnerDoc(gymId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspendido', 'suspendidoCambiadoEn'])
+      );
 
       // Borrado: admin (elimina clientes), o el propio dueño borrando su
-      // doc "pending_<email>" tras migrarse a su uid real.
-      allow delete: if isAdmin() || ownsByEmail();
+      // doc "pending_<email>" tras migrarse a su uid real. 2026-09-30 (ver
+      // CHANGELOG.md): ownsByEmail() por sí solo también sería cierto para
+      // el doc REAL de un gimnasio (usuarios/{uid} también trae su propio
+      // email) — sin el candado de abajo, un gimnasio suspendido podría
+      // borrar su doc real y recrearlo desde cero (create) sin el campo
+      // `suspendido`, saltándose por completo la suspensión. Restringido a
+      // que el id del documento empiece con "pending_" (la única convención
+      // de nombre que usa index.html para el doc temporal, ver
+      // loadPlan()/tempId), que es exactamente lo único que este borrado
+      // necesita seguir permitiendo.
+      allow delete: if isAdmin() || (ownsByEmail() && gymId.matches('^pending_.*'));
 
       // ── PORTAL PÚBLICO DEL CLIENTE — ver nota extensa arriba ──
 
@@ -256,10 +318,29 @@ service cloud.firestore {
         allow read, create: if isSignedIn();
       }
 
-      // Espejo público de personalización visual (colores/logo) — solo lectura, el portal
-      // nunca lo modifica. Alta/edición sigue siendo del staff vía la regla genérica de abajo.
+      // usuarios/{gymId}/config/{docId} — dos documentos distintos, mismo patrón de "espejo
+      // público de solo lectura para el portal", pero con dueños de ESCRITURA distintos:
+      //
+      //   config/personalizacion — colores/logo/fondos (sincronizarPersonalizacionPublica()).
+      //     Lectura pública; escritura del staff (dueño) o admin, igual que siempre.
+      //
+      //   config/estado — {suspendido: true/false} (2026-09-30, ver CHANGELOG.md). El portal NO
+      //     puede leer usuarios/{gymId} directo (ahí vive el `suspendido` real), así que
+      //     setSuspendido() en index.html, además de actualizar el doc real, espeja este único
+      //     campo aquí para que portalReady lo pueda consultar antes de mostrar nada. Lectura
+      //     pública iigual que personalizacion, pero escritura SOLO admin — a propósito, NUNCA
+      //     el dueño: si el dueño pudiera escribir este doc, un gimnasio suspendido podría
+      //     desactivar su propio aviso de suspensión en el portal sin que el admin lo reactive.
+      //     Si el doc no existe (gimnasio que nunca fue suspendido), el portal funciona normal.
+      //
+      // OJO: por eso 'config' se excluye explícitamente de la regla genérica de más abajo
+      // (match /{coleccion}/{docId}) — esa regla por sí sola le daría al dueño permiso de
+      // escritura sobre CUALQUIER doc de CUALQUIER subcolección, incluido config/estado, sin
+      // que la condición de abajo (docId != 'estado') pudiera evitarlo (Firestore combina
+      // reglas que apliquen a la misma ruta con OR, nunca con AND).
       match /config/{docId} {
         allow read: if isSignedIn();
+        allow write: if isAdmin() || (isOwnerDoc(gymId) && docId != 'estado');
       }
 
       // Excepción de escritura sobre miembros/: el portal público necesita
@@ -346,8 +427,12 @@ service cloud.firestore {
       // sigue exactamente igual que antes de agregar el portal: las reglas
       // de arriba son ADICIONALES (Firestore concede acceso si CUALQUIER
       // regla que aplique a la ruta lo permite), nunca reemplazan esta.
+      //
+      // 'config' se excluye a propósito (2026-09-30, ver CHANGELOG.md): tiene su propia regla
+      // completa y más específica arriba (con distinto dueño de escritura por documento —
+      // config/estado es solo del admin), y dejarla también aquí anularía esa restricción vía OR.
       match /{coleccion}/{docId} {
-        allow read, write: if isAdmin() || isOwnerDoc(gymId);
+        allow read, write: if coleccion != 'config' && (isAdmin() || isOwnerDoc(gymId));
       }
     }
 
