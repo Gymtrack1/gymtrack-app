@@ -103,6 +103,11 @@
   .user-info{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;align-items:stretch;gap:8px;font-size:11px;color:var(--muted);}
   .user-info button{width:100%;}
   .plan-badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;text-align:center;}
+  .estado-cuenta-badge{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;}
+  .estado-cuenta-badge.activa{background:rgba(31,157,85,0.12);color:var(--green);}
+  .estado-cuenta-badge.suspendida{background:rgba(220,59,48,0.12);color:var(--red);}
+  #suspendida-screen{display:none;position:fixed;inset:0;z-index:998;background:var(--bg);align-items:center;justify-content:center;padding:24px;}
+  #suspendida-screen .login-box{text-align:center;}
   .plan-sencillo{background:rgba(133,132,122,0.18);color:var(--muted);}
   .plan-pro{background:rgba(37,99,235,0.12);color:var(--blue);}
   .plan-premium{background:rgba(198,230,0,0.18);color:var(--accent);}
@@ -346,9 +351,8 @@ contenedor, igual que app-screen/admin-screen. -->
   <div class="admin-main">
     <div class="admin-stats">
       <div class="admin-stat"><div class="admin-stat-num accent" id="a-total">0</div><div class="admin-stat-label">Clientes</div></div>
-      <div class="admin-stat"><div class="admin-stat-num" style="color:var(--muted)" id="a-sencillo">0</div><div class="admin-stat-label">Sencillo</div></div>
-      <div class="admin-stat"><div class="admin-stat-num blue" id="a-pro">0</div><div class="admin-stat-label">Pro</div></div>
-      <div class="admin-stat"><div class="admin-stat-num accent" id="a-premium">0</div><div class="admin-stat-label">Premium</div></div>
+      <div class="admin-stat"><div class="admin-stat-num" style="color:var(--green)" id="a-activos">0</div><div class="admin-stat-label">Activos</div></div>
+      <div class="admin-stat"><div class="admin-stat-num" style="color:var(--red)" id="a-suspendidos">0</div><div class="admin-stat-label">Suspendidos</div></div>
     </div>
     <div class="header-row">
       <div class="page-title">Clientes</div>
@@ -359,6 +363,15 @@ contenedor, igual que app-screen/admin-screen. -->
 </div>
 
 <!-- APP -->
+<div id="suspendida-screen">
+  <div class="login-box">
+    <div style="font-size:44px;margin-bottom:12px">⛔</div>
+    <div class="login-logo" style="font-size:32px">CUENTA SUSPENDIDA</div>
+    <div style="color:var(--muted);font-size:14px;line-height:1.5;margin:12px 0 24px">El acceso a GymTrack de este gimnasio está pausado. Tu información está guardada y no se ha borrado nada.<br><br>Para reactivarla, contacta a GymTrack por WhatsApp al <strong>81 2434 4871</strong>.</div>
+    <a class="btn btn-primary" style="display:inline-block;text-decoration:none;margin-bottom:10px" href="https://wa.me/528124344871" target="_blank" rel="noopener">Enviar WhatsApp</a><br>
+    <button class="btn btn-ghost" onclick="doLogout()">Cerrar sesión</button>
+  </div>
+</div>
 <div id="app-screen">
 <!-- Banner de "viendo como" (Admin, ver CHANGELOG.md): visible SOLO cuando el admin entró al
      panel de un gimnasio ajeno para revisarlo/corregirlo — nunca se activa en una sesión normal
@@ -383,9 +396,7 @@ contenedor, igual que app-screen/admin-screen. -->
   <button class="nav-btn" id="nav-inventario" onclick="showTab('inventario',event)">Inventario</button>
   <button class="nav-btn" id="nav-qr" onclick="showTab('qr',event)">QR y Sugerencias</button>
   <div class="user-info">
-    <span class="plan-badge" id="plan-badge"></span>
     <button onclick="abrirModalPersonalizacion()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-surface);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Personaliza el color, logo y fondos de tu gimnasio">🎨 Personalizar</button>
-    <button onclick="sincronizarPlan()" style="background:rgba(198,230,0,0.15);border:1px solid rgba(152,174,0,0.4);color:var(--accent);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Forzar lectura del plan desde Firestore">🔄 Sincronizar plan</button>
     <span id="user-email" style="font-size:11px"></span>
     <button class="btn-logout" onclick="doLogout()">Salir</button>
   </div>
@@ -936,7 +947,6 @@ contenedor, igual que app-screen/admin-screen. -->
   <div class="modal">
     <h2>Nuevo Cliente</h2>
     <div class="form-group"><label>Email del gimnasio</label><input type="email" id="ng-email" placeholder="gimnasio@gmail.com"></div>
-    <div class="form-group"><label>Plan inicial</label><select id="ng-plan"><option value="sencillo">Sencillo</option><option value="pro">Pro</option><option value="premium">Premium</option></select></div>
     <div class="form-group"><label>Nombre del gimnasio (opcional)</label><input type="text" id="ng-nombre" placeholder="Gym Fuerza MTY"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-nuevo-gym')">Cancelar</button>
@@ -1169,8 +1179,12 @@ let chartPeriodo={hoy:null,semana:null,quincena:null,mes:null};
 let tipoGraficaPeriodo={hoy:'pie',semana:'pie',quincena:'pie',mes:'pie'};
 let db,col,addDoc,getDocs,docFn,updateDoc,deleteDoc,setDoc,getDoc,uid,queryFn,whereFn,writeBatchFn,resetGymPasswordFn;
 let storage,storageRef,uploadBytesFn,getDownloadURLFn,deleteObjectFn;
-let userPlan='sencillo';
-let userFunciones=[];
+// SIN PLANES (2026-09-29, ver CHANGELOG.md): todos los gimnasios reciben el sistema completo —
+// userFunciones SIEMPRE trae las 8 secciones, sin importar el plan/funciones viejos guardados en
+// Firestore. Lo único que el admin controla ahora es si la cuenta está activa o suspendida
+// (campo `suspendido` en usuarios/{uid}, ver aplicarSuspension()).
+let userFunciones=['dashboard','miembros','pagos','asistencia','alertas','estadocuenta','empleados','inventario'];
+let cuentaSuspendida=false;
 let planListener=null,listenerRetries=0,planPollInterval=null;
 let sesionInicializada=false; // evita reinicializar (loadAll + setInterval) si 'firebaseReady' se dispara más de una vez
 // "Ver panel" desde Admin (ver CHANGELOG.md): true mientras el admin está viendo/editando el
@@ -1212,8 +1226,6 @@ let qrSincronizado=false;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
 let pinTabPendiente=null,pinEventPendiente=null;
 
-// Límite de secciones por plan
-const PLAN_LIMITE={sencillo:3,pro:6,premium:8};
 
 // Las 8 secciones disponibles
 const TODAS_SECCIONES=[
@@ -1227,11 +1239,9 @@ const TODAS_SECCIONES=[
   {id:'inventario',label:'Inventario'},
 ];
 
-// Funciones por defecto según plan (siempre incluye las primeras N secciones)
-function defaultFunciones(plan){
-  const ids=TODAS_SECCIONES.map(s=>s.id);
-  const limite=PLAN_LIMITE[plan]||3;
-  return ids.slice(0,limite);
+// Sin planes: todas las cuentas tienen todas las secciones (ver nota junto a userFunciones).
+function defaultFunciones(){
+  return TODAS_SECCIONES.map(s=>s.id);
 }
 
 function userCol(name){return col(db,`usuarios/${uid}/${name}`);}
@@ -1495,21 +1505,12 @@ window.addEventListener('firebaseReady',async()=>{
         listenerRetries=0;
         if(!snap.exists())return;
         const data=snap.data();
-        const planAnterior=userPlan;
-        const funcionesAnterior=JSON.stringify(userFunciones);
-        userPlan=data.plan||'sencillo';
-        userFunciones=(data.funciones&&data.funciones.length>0)?data.funciones:defaultFunciones(userPlan);
+        userFunciones=defaultFunciones();
+        cuentaSuspendida=data.suspendido===true;
         pinFinanzas=data.pinFinanzas||null;
         montoInscripcion=data.montoInscripcion||null;
         qrSincronizado=data.qrSincronizado||false;
-        console.log('🔄 onSnapshot plan:',userPlan,'funciones:',userFunciones);
         applyPlan();
-        if(planAnterior!==userPlan||funcionesAnterior!==JSON.stringify(userFunciones)){
-          toast('Plan actualizado: '+userPlan+' ✓');
-          renderAlertas();renderRecordatoriosPendientes();renderEmpleados();renderInventario();renderEstadoCuenta();
-          renderDashboard();renderPagos();renderAsistencia();
-          if(isTabActive('miembros'))renderMiembros(document.getElementById('search-miembros').value);
-        }
       },
       (err)=>{
         console.error('⚠️ onSnapshot error:',err);
@@ -1539,12 +1540,10 @@ window.addEventListener('firebaseReady',async()=>{
     try{
       const s=await getDoc(docFn(db,'usuarios',uid));
       if(!s.exists())return;
-      const p=s.data().plan||'sencillo';
-      const f=s.data().funciones||[];
-      if(p!==userPlan||JSON.stringify(f)!==JSON.stringify(userFunciones)){
-        console.log('⏱ Auto-sync detectó cambio de plan:',p,f);
-        userPlan=p;userFunciones=f;applyPlan();
-        toast('Plan sincronizado: '+p+' ✓');
+      const susp=s.data().suspendido===true;
+      if(susp!==cuentaSuspendida){
+        console.log('⏱ Auto-sync detectó cambio de suspensión:',susp);
+        cuentaSuspendida=susp;applyPlan();
       }
     }catch(e){}
   },120000);
@@ -1558,8 +1557,8 @@ async function loadPlan(){
     if(snap.exists()){
       // Documento propio encontrado — usar directo
       const d = snap.data();
-      userPlan = d.plan||'sencillo';
-      userFunciones = (d.funciones&&d.funciones.length>0) ? d.funciones : defaultFunciones(userPlan);
+      userFunciones = defaultFunciones();
+      cuentaSuspendida = d.suspendido===true;
       pinFinanzas = d.pinFinanzas||null;
       montoInscripcion = d.montoInscripcion||null;
       qrSincronizado = d.qrSincronizado||false;
@@ -1600,8 +1599,8 @@ async function loadPlan(){
 
     if(match){
       const data = match.data();
-      userPlan = data.plan||'sencillo';
-      userFunciones = (data.funciones&&data.funciones.length>0) ? data.funciones : defaultFunciones(userPlan);
+      userFunciones = defaultFunciones();
+      cuentaSuspendida = data.suspendido===true;
       // Migrar al doc con uid real, conservando plan y funciones
       await setDoc(docFn(db,'usuarios',uid), {
         ...data,
@@ -1615,30 +1614,38 @@ async function loadPlan(){
       console.log('✅ Cuenta migrada de',match.id,'a uid',uid);
     } else {
       // Primera vez, sin doc previo
-      userPlan = 'sencillo';
-      userFunciones = defaultFunciones('sencillo');
+      userFunciones = defaultFunciones();
+      cuentaSuspendida = false;
       await setDoc(docFn(db,'usuarios',uid),{
-        email, plan:'sencillo', funciones:userFunciones, uid, creadoEn:Date.now()
+        email, funciones:userFunciones, uid, creadoEn:Date.now()
       });
     }
   }catch(e){
     console.error('loadPlan error:',e);
-    userPlan='sencillo';
-    userFunciones=defaultFunciones('sencillo');
+    userFunciones=defaultFunciones();
   }
 }
 
 function applyPlan(){
-  const badge=document.getElementById('plan-badge');
-  badge.textContent=userPlan.charAt(0).toUpperCase()+userPlan.slice(1);
-  badge.className=`plan-badge plan-${userPlan}`;
-  // Cada sección se activa solo si está en userFunciones (dashboard siempre libre)
+  // Sin planes: userFunciones siempre trae todas las secciones, así que ninguna queda bloqueada.
   TODAS_SECCIONES.forEach(s=>{
     const btn=document.getElementById('nav-'+s.id);
     if(!btn)return;
     if(userFunciones.includes(s.id)||s.id==='dashboard')btn.classList.remove('locked');
     else btn.classList.add('locked');
   });
+  aplicarSuspension();
+}
+
+// CUENTA SUSPENDIDA (2026-09-29, ver CHANGELOG.md): el admin la activa con el botón
+// "Suspender" de su panel (campo `suspendido:true` en usuarios/{gymId}), p. ej. por falta de
+// pago. El gimnasio ve una pantalla completa de aviso y no puede usar nada; sus datos NO se
+// borran y todo vuelve a funcionar en cuanto el admin lo reactiva (el listener onSnapshot lo
+// detecta al instante). El admin entrando con "Ver panel" nunca ve este aviso.
+function aplicarSuspension(){
+  const el=document.getElementById('suspendida-screen');
+  if(!el)return;
+  el.style.display=(cuentaSuspendida&&!viendoComoAdmin)?'flex':'none';
 }
 
 async function sincronizarPlan(){
@@ -1646,10 +1653,9 @@ async function sincronizarPlan(){
     const s=await getDoc(docFn(db,'usuarios',uid));
     if(!s.exists())return;
     const d=s.data();
-    userPlan=d.plan||'sencillo';
-    userFunciones=(d.funciones&&d.funciones.length>0)?d.funciones:defaultFunciones(userPlan);
+    userFunciones=defaultFunciones();
+    cuentaSuspendida=d.suspendido===true;
     applyPlan();
-    toast('Plan: '+userPlan+' | '+userFunciones.length+' secciones ✓');
   }catch(e){toast('Error al sincronizar: '+e.message,'err');}
 }
 
@@ -1692,13 +1698,12 @@ async function loadAdminGyms(){
   });
 
   // Debug: mostrar en consola todos los docs para diagnóstico
-  console.log('Todos los docs en /usuarios:', todos.map(d=>({id:d.id,email:d.email,plan:d.plan})));
-  console.log('Clientes filtrados:', gyms.map(g=>({id:g.id,email:g.email,plan:g.plan})));
+  console.log('Todos los docs en /usuarios:', todos.map(d=>({id:d.id,email:d.email,suspendido:d.suspendido})));
+  console.log('Clientes filtrados:', gyms.map(g=>({id:g.id,email:g.email,suspendido:g.suspendido})));
 
   document.getElementById('a-total').textContent=gyms.length;
-  document.getElementById('a-sencillo').textContent=gyms.filter(g=>(!g.plan||g.plan==='sencillo')).length;
-  document.getElementById('a-pro').textContent=gyms.filter(g=>g.plan==='pro').length;
-  document.getElementById('a-premium').textContent=gyms.filter(g=>g.plan==='premium').length;
+  document.getElementById('a-activos').textContent=gyms.filter(g=>g.suspendido!==true).length;
+  document.getElementById('a-suspendidos').textContent=gyms.filter(g=>g.suspendido===true).length;
   const lista=document.getElementById('lista-gyms');
   if(!gyms.length){
     // Mostrar diagnóstico si no hay clientes
@@ -1712,21 +1717,10 @@ async function loadAdminGyms(){
     return;
   }
   lista.innerHTML=gyms.map(g=>{
-    const plan=g.plan||'sencillo';
-    const funciones=g.funciones||[];
-    const limite=PLAN_LIMITE[plan]||3;
+    const suspendido=g.suspendido===true;
     const displayName=g.nombre||g.email||g.id;
     const displayEmail=g.email||(g.pendiente?'Pendiente de primer login':'—');
-    const contadorClass=funciones.length>=limite?'ok':'warn';
-    const checkboxes=TODAS_SECCIONES.map(s=>{
-      const activa=funciones.includes(s.id);
-      const disabled=plan==='premium'?'disabled':'';
-      const funcionesJson=JSON.stringify(funciones).replace(/"/g,"'");
-      return`<label class="funcion-item ${activa?'activa':''}" onclick="event.preventDefault();toggleFuncion('${g.id}','${s.id}','${plan}',${funcionesJson})">
-        <input type="checkbox" ${activa?'checked':''} ${disabled} style="pointer-events:none">
-        ${s.label}
-      </label>`;
-    }).join('');
+    const nombreJs=escAttr(displayName).replace(/'/g,"\\'");
     return`<div class="gym-card" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div style="flex:1;min-width:160px">
@@ -1734,58 +1728,30 @@ async function loadAdminGyms(){
           <div style="font-size:11px;color:var(--muted)">${displayEmail}</div>
           ${g.pendiente===true?'<span style="font-size:10px;background:rgba(217,119,6,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
         </div>
-        <div class="plan-selector">
-          <button class="plan-opt ${plan==='sencillo'?'active-sencillo':''}" onclick="setPlan('${g.id}','sencillo',this)">Sencillo</button>
-          <button class="plan-opt ${plan==='pro'?'active-pro':''}" onclick="setPlan('${g.id}','pro',this)">Pro</button>
-          <button class="plan-opt ${plan==='premium'?'active-premium':''}" onclick="setPlan('${g.id}','premium',this)">Premium</button>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="verComoGym('${g.id}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Entra al panel de este gimnasio, con tu propia sesión de admin — nunca se toca su login">👁️ Ver panel</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetearPasswordGym('${escAttr(g.email).replace(/'/g,"\\'")}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Genera una contraseña nueva para el login de este gimnasio">🔑 Contraseña</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetearPinFinanzasGym('${g.id}','${escAttr(displayName).replace(/'/g,"\\'")}')" title="Genera un PIN nuevo de Finanzas/Empleados para este gimnasio">🔑 PIN Finanzas</button>
+        <span class="estado-cuenta-badge ${suspendido?'suspendida':'activa'}">${suspendido?'⛔ Suspendido':'✅ Activo'}</span>
+        ${suspendido
+          ?`<button class="btn btn-primary btn-sm" onclick="setSuspendido('${g.id}',false,'${nombreJs}')" title="Vuelve a dar acceso completo al gimnasio">Reactivar</button>`
+          :`<button class="btn btn-ghost btn-sm" onclick="setSuspendido('${g.id}',true,'${nombreJs}')" title="El gimnasio deja de poder usar el sistema hasta que lo reactives. No se borra nada.">⛔ Suspender</button>`}
+        <button class="btn btn-primary btn-sm" onclick="verComoGym('${g.id}','${nombreJs}')" title="Entra al panel de este gimnasio, con tu propia sesión de admin — nunca se toca su login">👁️ Ver panel</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetearPasswordGym('${escAttr(g.email).replace(/'/g,"\\'")}','${nombreJs}')" title="Genera una contraseña nueva para el login de este gimnasio">🔑 Contraseña</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetearPinFinanzasGym('${g.id}','${nombreJs}')" title="Genera un PIN nuevo de Finanzas/Empleados para este gimnasio">🔑 PIN Finanzas</button>
         <button class="btn btn-danger btn-sm" onclick="delGym('${g.id}')">Eliminar</button>
-      </div>
-      <div class="funciones-wrap">
-        <div class="funciones-titulo">
-          <span>Secciones activas</span>
-          <span class="funciones-contador ${contadorClass}">${funciones.length}/${limite} ${plan==='premium'?'(todas)':''}</span>
-        </div>
-        <div class="funciones-grid">${checkboxes}</div>
       </div>
     </div>`;
   }).join('');
 }
 
-async function setPlan(gymId,plan,btn){
-  // Siempre asignar funciones según plan (defaults o todas para premium)
-  const updates={plan, funciones:defaultFunciones(plan)};
+// Sin planes: el admin solo activa o suspende la cuenta (ver aplicarSuspension()).
+async function setSuspendido(gymId,suspender,displayName){
+  const msg=suspender
+    ?`¿Suspender a ${displayName}?\n\nNo podrá usar GymTrack hasta que lo reactives. Sus datos NO se borran.`
+    :`¿Reactivar a ${displayName}?\n\nVuelve a tener acceso completo de inmediato.`;
+  if(!confirm(msg))return;
   try{
-    await updateDoc(docFn(db,'usuarios',gymId),updates);
-    toast('Plan actualizado a '+plan+' ✓');
+    await updateDoc(docFn(db,'usuarios',gymId),{suspendido:suspender,suspendidoCambiadoEn:Date.now()});
+    toast(suspender?'Cliente suspendido ⛔':'Cliente reactivado ✓');
     await loadAdminGyms();
-  }catch(e){alert('Error al cambiar plan: '+e.message);}
-}
-
-async function toggleFuncion(gymId,seccionId,plan,funcionesActuales){
-  let funciones=Array.isArray(funcionesActuales)?[...funcionesActuales]:[];
-  const limite=PLAN_LIMITE[plan]||3;
-  if(funciones.includes(seccionId)){
-    funciones=funciones.filter(f=>f!==seccionId);
-  } else {
-    if(funciones.length>=limite){
-      toast(`Plan ${plan} solo permite ${limite} secciones 🔒`,'err');
-      return;
-    }
-    funciones=[...funciones,seccionId];
-  }
-  try{
-    await updateDoc(docFn(db,'usuarios',gymId),{funciones});
-    console.log('✅ Funciones guardadas:',gymId,funciones);
-    toast('Sección actualizada ✓');
-    await loadAdminGyms();
-  }catch(e){
-    console.error('❌ Error:',e);
-    alert('Error al guardar: '+e.message);
-  }
+  }catch(e){alert('Error al cambiar el estado: '+e.message);}
 }
 async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
 
@@ -1869,14 +1835,13 @@ async function confirmarResetPinFinanzasGym(){
 }
 async function saveNuevoGym(){
   const email=document.getElementById('ng-email').value.trim();
-  const plan=document.getElementById('ng-plan').value;
   const nombre=document.getElementById('ng-nombre').value.trim();
   if(!email)return alert('El email es obligatorio');
   const btn=document.querySelector('#modal-nuevo-gym .btn-primary');
   btn.textContent='Guardando...'; btn.disabled=true;
   try{
     const tempId='pending_'+email.replace(/[^a-zA-Z0-9]/g,'_');
-    await setDoc(docFn(db,'usuarios',tempId),{email,plan,nombre:nombre||'',funciones:defaultFunciones(plan),pendiente:true,creadoEn:Date.now()});
+    await setDoc(docFn(db,'usuarios',tempId),{email,nombre:nombre||'',funciones:defaultFunciones(),pendiente:true,creadoEn:Date.now()});
     closeModal('modal-nuevo-gym');
     await loadAdminGyms();
     toast('Cliente agregado ✓');
@@ -1910,6 +1875,7 @@ async function doLogout(){
   if(planPollInterval){clearInterval(planPollInterval);planPollInterval=null;}
   listenerRetries=0;
   sesionInicializada=false;
+  cuentaSuspendida=false;aplicarSuspension();
   miembros=[];pagos=[];asistencias=[];empleados=[];inventario=[];productos=[];ventas=[];gastos=[];
   categoriasMembresia=[];promociones=[];registrosProgreso=[];pesoCorporal=[];sugerencias=[];
   await window._signOut(window._auth);

@@ -4,6 +4,40 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-29 — Sin planes: todos los gimnasios tienen el sistema completo + botón Suspender/Reactivar
+
+**Qué se hizo:** Luis decidió dejar de vender por planes (Sencillo/Pro/Premium): cada gimnasio
+recibe el sistema completo y el precio se negocia por gimnasio. El código seguía bloqueando
+secciones según el plan guardado — y una cuenta nueva quedaba en Sencillo (solo 3 secciones)
+en su primer login si no se le cambiaba el plan a mano.
+
+**Qué se cambió:**
+- `userFunciones` siempre trae las 8 secciones (`defaultFunciones()` ya no recibe plan), sin
+  importar el `plan`/`funciones` viejos guardados en Firestore — esos campos se ignoran, no se
+  borran. Cuentas nuevas y migradas desde `pending_` ya no reciben campo `plan`.
+- Se quitaron del gimnasio la etiqueta de plan y el botón "🔄 Sincronizar plan"; del admin, los
+  botones Sencillo/Pro/Premium, los contadores por plan, las casillas de "Secciones activas" y
+  el campo "Plan inicial" de Nuevo Cliente. `setPlan`, `toggleFuncion` y `PLAN_LIMITE` se
+  eliminaron.
+- Nuevo: botón **⛔ Suspender / Reactivar** por cliente en el panel de admin (campo
+  `suspendido` en `usuarios/{gymId}`) y contadores Activos/Suspendidos. Un gimnasio suspendido
+  ve una pantalla completa "CUENTA SUSPENDIDA" con el WhatsApp de contacto y "Cerrar sesión";
+  no se borra ningún dato y al reactivarlo el listener `onSnapshot` lo quita al instante. El
+  admin en "Ver panel" nunca ve ese aviso. Pensado para la cláusula de suspensión por atraso
+  del contrato de servicio.
+- Límite conocido (igual que el que ya documenta firestore.rules para plan/funciones): las
+  reglas actuales no impiden que un gimnasio con conocimientos técnicos se quite él mismo el
+  `suspendido` llamando al SDK directo. El portal QR de los clientes del gimnasio sigue
+  funcionando aunque la cuenta esté suspendida.
+
+**Verificado:** `node --check` sin errores. Prueba nueva de Playwright contra el `index.html`
+real con Firebase simulado (`test_sin_planes.mjs`, 42/42 OK): gym con plan viejo Sencillo ve las
+8 secciones sin candados; primer login y migración desde `pending_` sin plan; gym suspendido ve
+el aviso, bloquea clics a la app, y se quita/pone en vivo al cambiar `suspendido`; admin
+suspende/reactiva (incluido un nombre con apóstrofe), contadores correctos, "Ver panel" de un
+gym suspendido sin aviso, Nuevo Cliente sin plan. La misma prueba contra la versión anterior
+falla (confirma que detecta el bloqueo por plan).
+
 ## 2026-09-24 — Fix: subir el logo (o fondo/foto) fallaba estando en "Ver panel" como admin
 
 **Qué se hizo:** Luis reportó un error al entrar al panel de un gimnasio con "Ver panel" y tratar
