@@ -193,7 +193,7 @@
   .admin-stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;}
   .admin-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
   .gym-card{background:var(--surface);color:var(--text-surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap;}
-  .gym-email{font-weight:600;font-size:14px;flex:1;min-width:160px;}
+  .gym-email{font-weight:600;font-size:14px;flex:1;min-width:160px;overflow-wrap:anywhere;}
   .plan-selector{display:flex;gap:6px;flex-wrap:wrap;}
   .plan-opt{border:1px solid var(--border);background:none;color:var(--muted);padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.2s;}
   .plan-opt.active-sencillo{background:rgba(133,132,122,0.18);color:var(--text);border-color:var(--muted);}
@@ -1723,9 +1723,9 @@ async function loadAdminGyms(){
     const nombreJs=escAttr(displayName).replace(/'/g,"\\'");
     return`<div class="gym-card" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-        <div style="flex:1;min-width:160px">
+        <div style="flex:1;min-width:220px;overflow-wrap:anywhere">
           <div class="gym-email">${displayName}</div>
-          <div style="font-size:11px;color:var(--muted)">${displayEmail}</div>
+          <div style="font-size:11px;color:var(--muted);overflow-wrap:anywhere">${displayEmail}</div>
           ${g.pendiente===true?'<span style="font-size:10px;background:rgba(217,119,6,0.15);color:var(--orange);padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block">Pendiente primer login</span>':''}
         </div>
         <span class="estado-cuenta-badge ${suspendido?'suspendida':'activa'}">${suspendido?'⛔ Suspendido':'✅ Activo'}</span>

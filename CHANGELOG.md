@@ -4,6 +4,27 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-09-30 — Fix visual: el correo de un cliente se encimaba con los botones en Panel Admin
+
+**Qué se hizo:** tras quitar los planes (ver entrada anterior), Luis reportó que en la tarjeta de
+cada cliente el correo se veía encimado con la insignia "✅ Activo" y los botones de al lado.
+
+**Causa:** el bloque de nombre+correo tenía `min-width:160px` dentro de una fila flex, pero un
+correo (`americangym215@gmail.com`) es una sola palabra sin espacios — si no cabe en esa caja,
+el navegador no la puede partir sola en dos líneas (necesita `overflow-wrap` explícito), así que
+en vez de hacer wrap se desborda por encima de lo que esté a la derecha. No se reprodujo en las
+pruebas automatizadas porque corren sin las fuentes reales (Google Fonts bloqueadas en el
+entorno de prueba), que rinden más angosto que en un navegador real.
+
+**Qué se cambió:** se subió el ancho mínimo de ese bloque (160px → 220px) y se agregó
+`overflow-wrap:anywhere` tanto al nombre como al correo, para que cualquier texto largo (nombre
+o correo) haga wrap dentro de su propia caja en vez de invadir los botones vecinos, sin importar
+qué tan angosta esté la ventana.
+
+**Verificado:** capturas de pantalla (Playwright) en varios anchos de ventana (2000px, 900px,
+700px) y con un nombre/correo deliberadamente larguísimos — el texto ya envuelve limpio sin
+tocar los botones en ningún caso. Suite completa (113 pruebas de 8 partes) sin regresiones.
+
 ## 2026-09-29 — Sin planes: todos los gimnasios tienen el sistema completo + botón Suspender/Reactivar
 
 **Qué se hizo:** Luis decidió dejar de vender por planes (Sencillo/Pro/Premium): cada gimnasio
