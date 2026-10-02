@@ -11,7 +11,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   // Cloud Functions callable (ver CHANGELOG.md — resetear contraseña de un gimnasio desde Admin):
   // mismo proyecto/región que la función adms (functions/index.js). Solo el panel de Admin la usa.
@@ -20,6 +20,10 @@
   const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
   const functionsInstance=getFunctions(app,'us-central1');
   window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._query=query; window._where=where; window._writeBatch=writeBatch; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
+  // Modo Check-in (ver CHANGELOG.md) — reautenticación real de Firebase Auth para salir. El
+  // script grande de abajo (línea ~1206, un <script> normal, NO type="module") no tiene acceso
+  // directo a estos imports — mismo motivo por el que todo lo demás aquí se pasa por window._*.
+  window._EmailAuthProvider=EmailAuthProvider; window._reauthenticateWithCredential=reauthenticateWithCredential;
   window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
   window._resetGymPassword=httpsCallable(functionsInstance,'resetGymPassword');
   const ADMIN_EMAIL='luismolinac06@gmail.com';
@@ -83,12 +87,26 @@
   .login-logo-img{display:none;max-height:64px;max-width:220px;object-fit:contain;margin:0 auto 4px;}
   .login-sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:32px;}
   .login-error{background:rgba(220,59,48,0.1);border:1px solid rgba(220,59,48,0.3);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none;}
-  #app-screen{display:none;} #admin-screen{display:none;} #portal-screen{display:none;}
+  #app-screen{display:none;} #admin-screen{display:none;} #portal-screen{display:none;} #checkin-screen{display:none;}
   #portal-screen{min-height:100vh;padding:24px 16px 60px;}
   .portal-box{max-width:480px;margin:0 auto;}
   .portal-header{text-align:center;margin-bottom:20px;}
   .portal-header .login-logo{margin-bottom:2px;}
   .portal-hello{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;}
+  /* MODO CHECK-IN (autoservicio, ver CHANGELOG.md) — pantalla completa, aparte de app-screen
+     (misma familia que admin-screen/portal-screen), pensada para quedar fija en una tablet en
+     recepción. Botones grandes (min 64px) para dedos, no solo para mouse. */
+  #checkin-screen{min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;position:relative;}
+  .checkin-box{max-width:420px;width:100%;}
+  .checkin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .checkin-keypad button{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;min-height:72px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text-surface);cursor:pointer;}
+  .checkin-keypad button:active{background:var(--surface2);}
+  .checkin-keypad .checkin-key-accion{background:var(--surface2);color:var(--muted);font-size:24px;}
+  .checkin-keypad .checkin-key-confirmar{background:var(--accent);color:var(--text-accent);}
+  #checkin-resultado{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:32px;z-index:50;}
+  #checkin-resultado.show{display:flex;}
+  #checkin-resultado .checkin-resultado-nombre{font-family:'Bebas Neue',sans-serif;font-size:48px;letter-spacing:2px;margin-bottom:12px;}
+  #checkin-resultado .checkin-resultado-msg{font-size:22px;font-weight:700;}
   /* Barra lateral izquierda (antes barra horizontal arriba) — logo, pestañas y los controles
      de la derecha (plan/Personalizar/Sincronizar/Salir) van todos apilados de arriba hacia
      abajo, en ese orden. En pantallas angostas (celular) queda oculta fuera de pantalla y se
@@ -397,6 +415,7 @@ contenedor, igual que app-screen/admin-screen. -->
   <button class="nav-btn" id="nav-qr" onclick="showTab('qr',event)">QR y Sugerencias</button>
   <div class="user-info">
     <button onclick="abrirModalPersonalizacion()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-surface);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Personaliza el color, logo y fondos de tu gimnasio">🎨 Personalizar</button>
+    <button onclick="activarModoCheckin()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-surface);padding:5px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif" title="Pantalla de autoservicio para que los clientes registren su entrada tecleando su número">🖥️ Modo Check-in</button>
     <span id="user-email" style="font-size:11px"></span>
     <button class="btn-logout" onclick="doLogout()">Salir</button>
   </div>
@@ -604,6 +623,56 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 
 </main>
+</div>
+
+<!-- MODO CHECK-IN (autoservicio en tablet, ver CHANGELOG.md) — pantalla completa, hermana de
+     app-screen/admin-screen/portal-screen (mismo patrón de activarModoCheckin()/salirModoCheckin()
+     mostrando/ocultando con style.display, nunca un overlay encima: app-screen queda oculto de
+     verdad, no solo tapado). Busca SIEMPRE en los arrays/Maps globales en memoria (miembros,
+     getVencimiento) — nunca copia nada aparte al activarse, así si loadAll() los actualiza
+     durante la sesión (ej. se registró un pago) el check-in ya lo ve sin reactivarse. -->
+<div id="checkin-screen">
+  <button onclick="abrirModalSalirCheckin()" title="Salir del Modo Check-in (pide tu contraseña)" style="position:absolute;top:16px;right:16px;background:var(--surface);border:1px solid var(--border);color:var(--muted);width:40px;height:40px;border-radius:50%;font-size:16px;cursor:pointer;z-index:5">🔒</button>
+  <div class="checkin-box">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:3px;text-align:center;margin-bottom:4px">CHECK-IN</div>
+    <div style="color:var(--muted);font-size:14px;text-align:center;margin-bottom:28px">Teclea tu número de miembro y presiona ✓</div>
+    <input type="text" id="checkin-input" inputmode="numeric" autocomplete="off" maxlength="6"
+      style="width:100%;box-sizing:border-box;font-size:48px;text-align:center;font-weight:800;padding:18px;border:2px solid var(--border);border-radius:14px;margin-bottom:20px;font-family:'Bebas Neue',sans-serif;letter-spacing:4px;background:var(--surface2);color:var(--text-surface)"
+      oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();checkinConfirmar();}">
+    <div class="checkin-keypad">
+      <button type="button" onclick="checkinTecla('1')">1</button>
+      <button type="button" onclick="checkinTecla('2')">2</button>
+      <button type="button" onclick="checkinTecla('3')">3</button>
+      <button type="button" onclick="checkinTecla('4')">4</button>
+      <button type="button" onclick="checkinTecla('5')">5</button>
+      <button type="button" onclick="checkinTecla('6')">6</button>
+      <button type="button" onclick="checkinTecla('7')">7</button>
+      <button type="button" onclick="checkinTecla('8')">8</button>
+      <button type="button" onclick="checkinTecla('9')">9</button>
+      <button type="button" class="checkin-key-accion" onclick="checkinBorrar()">⌫</button>
+      <button type="button" onclick="checkinTecla('0')">0</button>
+      <button type="button" class="checkin-key-confirmar" onclick="checkinConfirmar()">✓</button>
+    </div>
+  </div>
+  <div id="checkin-resultado">
+    <div class="checkin-resultado-nombre" id="checkin-resultado-nombre"></div>
+    <div class="checkin-resultado-msg" id="checkin-resultado-msg"></div>
+  </div>
+</div>
+
+<!-- MODAL SALIR DE MODO CHECK-IN (pide la contraseña real de la cuenta, ver CHANGELOG.md) -->
+<div class="modal-overlay" id="modal-checkin-exit">
+  <div class="modal" style="max-width:360px">
+    <h2>Salir de Modo Check-in</h2>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:16px">Escribe tu contraseña para volver al panel.</div>
+    <div class="login-error" id="checkin-exit-error"></div>
+    <div class="form-group"><label>Contraseña</label><input type="password" id="checkin-exit-password" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmarSalirCheckin();}"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-checkin-exit')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarSalirCheckin()">Salir</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL MIEMBRO -->
@@ -1190,6 +1259,11 @@ let sesionInicializada=false; // evita reinicializar (loadAll + setInterval) si 
 // "Ver panel" desde Admin (ver CHANGELOG.md): true mientras el admin está viendo/editando el
 // panel de OTRO gimnasio con su propia sesión — nunca se activa en una sesión normal del gym.
 let viendoComoAdmin=false;
+// MODO CHECK-IN (ver CHANGELOG.md): checkinBloqueado evita que una tecla (física o en pantalla)
+// durante los 3s en que se muestra el resultado de un check-in se cuele en el siguiente —
+// sin esto, un segundo cliente escaneando/tecleando rápido podría mezclar su número con el
+// resultado que todavía está en pantalla del anterior.
+let checkinBloqueado=false;
 const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
 const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym!{producto}';
@@ -4439,6 +4513,125 @@ async function registrarAsistencia(mid){
   renderDashboard();renderAsistencia();renderMiembros(document.getElementById('search-miembros').value);renderRecordatoriosPendientes();
   const m=miembros.find(x=>x.id===mid);
   toast(`Asistencia registrada — ${m?m.nombre:''} ✓`);
+}
+
+// MODO CHECK-IN (autoservicio en tablet, ver CHANGELOG.md): pantalla aparte donde el cliente
+// teclea su número de miembro (el mismo numero incremental que ya usa toda la app) y ve al
+// instante si su membresía está activa, por vencer o vencida — sin que el staff intervenga.
+// Diseño clave: NUNCA hace una lectura nueva a Firestore por check-in. Busca directo en los
+// arrays/Maps globales (miembros, getVencimiento) que ya mantiene loadAll() — los mismos que usa
+// el resto del panel — así que si esos arrays se actualizan durante la sesión (ej. loadAll trae
+// un pago nuevo), el check-in lo ve de inmediato sin tener que reactivarse. La única escritura es
+// un addDoc a asistencias (misma colección que ya usa registrarAsistencia), con _agregarLocal
+// para no releer nada después.
+function activarModoCheckin(){
+  document.getElementById('app-screen').style.display='none';
+  document.getElementById('checkin-screen').style.display='flex'; // flex, no 'block': el CSS de #checkin-screen centra con display:flex, y un style inline le gana a la regla de la hoja de estilos
+  checkinBloqueado=false;
+  checkinLimpiar();
+  closeSidebar();
+}
+function checkinLimpiar(){
+  const input=document.getElementById('checkin-input');
+  input.value='';
+  input.focus();
+}
+function checkinTecla(d){
+  if(checkinBloqueado)return;
+  const input=document.getElementById('checkin-input');
+  if(input.value.length>=6)return;
+  input.value+=d;
+  input.focus();
+}
+function checkinBorrar(){
+  if(checkinBloqueado)return;
+  const input=document.getElementById('checkin-input');
+  input.value=input.value.slice(0,-1);
+  input.focus();
+}
+async function checkinConfirmar(){
+  if(checkinBloqueado)return;
+  const input=document.getElementById('checkin-input');
+  const numeroStr=input.value.trim();
+  // Campo vacío: no hay nada que buscar, se queda tal cual en el teclado — decisión explícita
+  // (ver CHANGELOG.md), no es un resultado, así que no bloquea ni muestra nada.
+  if(!numeroStr)return;
+  const numero=parseInt(numeroStr,10);
+  const m=miembros.find(x=>x.numero===numero);
+  if(!m){
+    checkinMostrarResultado('gris','','Número no encontrado');
+    return;
+  }
+  const venc=getVencimiento(m.id);
+  // Sin ningún pago registrado: se trata igual que vencido (tampoco puede pasar) — decisión
+  // explícita confirmada, ver CHANGELOG.md. -1 es solo un valor negativo cualquiera para caer en
+  // la misma rama que "vencido hace tiempo" de abajo (mismo mensaje, mismo color).
+  const dias=venc?diasRestantes(venc):-1;
+  let tipo,msg,registrar;
+  if(dias<0){
+    tipo='rojo';msg='VENCIDO — Pasa a recepción';
+    // No se registra asistencia: no lo van a dejar pasar hasta que renueve, y al renovar
+    // volverán a teclear su número (ahí sí queda activo y se registra) — decisión explícita
+    // confirmada, ver CHANGELOG.md.
+    registrar=false;
+  }else if(dias<=5){
+    tipo='amarillo';msg=`Tu membresía vence en ${dias} día${dias===1?'':'s'}`;registrar=true;
+  }else{
+    tipo='verde';msg=`ACTIVO — Vence en ${dias} días`;registrar=true;
+  }
+  checkinMostrarResultado(tipo,m.nombre,msg);
+  if(registrar){
+    try{
+      const data={miembroId:m.id,numero:m.numero,nombre:m.nombre,fecha:Date.now(),estado:tipo==='verde'?'activo':'por-vencer',origen:'checkin'};
+      const ref=await addDoc(userCol('asistencias'),data);
+      _agregarLocal(asistencias,ref.id,data);
+    }catch(e){console.error('checkinConfirmar: no se pudo guardar la asistencia:',e);}
+  }
+}
+// tipo: 'verde'|'amarillo'|'rojo'|'gris'. Bloquea nuevas teclas (checkinBloqueado) mientras se ve
+// el resultado — decisión explícita (ver CHANGELOG.md): sin esto, un segundo cliente tecleando
+// rápido podría mezclar su número con el resultado que todavía está en pantalla del anterior.
+function checkinMostrarResultado(tipo,nombre,msg){
+  checkinBloqueado=true;
+  const el=document.getElementById('checkin-resultado');
+  const colores={verde:{bg:'var(--green)',fg:'#fff'},amarillo:{bg:'var(--orange)',fg:'#fff'},rojo:{bg:'var(--red)',fg:'#fff'},gris:{bg:'var(--muted)',fg:'#fff'}};
+  const c=colores[tipo]||colores.gris;
+  el.style.background=c.bg;el.style.color=c.fg;
+  document.getElementById('checkin-resultado-nombre').textContent=nombre||'';
+  document.getElementById('checkin-resultado-msg').textContent=msg;
+  el.classList.add('show');
+  setTimeout(()=>{
+    el.classList.remove('show');
+    checkinBloqueado=false;
+    checkinLimpiar();
+  },3000);
+}
+
+// Salir de Modo Check-in: pide la contraseña real de la cuenta (reautenticación de Firebase
+// Auth, NO un PIN) — ver CHANGELOG.md. Si el admin entró con "Ver panel", esto reautentica al
+// admin (la sesión real de Firebase Auth sigue siendo la suya en todo momento), que es lo
+// correcto: el admin nunca conoce la contraseña del gimnasio que está revisando.
+function abrirModalSalirCheckin(){
+  document.getElementById('checkin-exit-password').value='';
+  document.getElementById('checkin-exit-error').style.display='none';
+  openModal('modal-checkin-exit');
+}
+async function confirmarSalirCheckin(){
+  const pass=document.getElementById('checkin-exit-password').value;
+  const errEl=document.getElementById('checkin-exit-error');
+  errEl.style.display='none';
+  if(!pass)return;
+  try{
+    const cred=window._EmailAuthProvider.credential(window._auth.currentUser.email,pass);
+    await window._reauthenticateWithCredential(window._auth.currentUser,cred);
+    closeModal('modal-checkin-exit');
+    document.getElementById('checkin-screen').style.display='none';
+    document.getElementById('app-screen').style.display='block';
+  }catch(e){
+    console.error('confirmarSalirCheckin error:',e);
+    errEl.textContent='Contraseña incorrecta.';
+    errEl.style.display='block';
+  }
 }
 
 // EMPLEADOS

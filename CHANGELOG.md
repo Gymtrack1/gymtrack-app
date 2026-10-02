@@ -4,6 +4,53 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-02 — Modo Check-in: autoservicio en tablet para registrar entrada por número
+
+**Qué se hizo:** pantalla aparte (botón "🖥️ Modo Check-in" en la barra) para dejar una tablet en
+recepción donde el cliente teclea su número de miembro y ve al instante si puede pasar — sin
+intervención del staff.
+
+**Qué se cambió:**
+- `#checkin-screen` — pantalla completa nueva, hermana de `#app-screen`/`#admin-screen`/
+  `#portal-screen` (se oculta `app-screen` de verdad, no un overlay encima). Input grande +
+  teclado 0-9/⌫/✓ con botones de 72px mínimo (tablet). Funciona con teclado físico (Enter
+  confirma) y con los botones en pantalla.
+- `checkinConfirmar()` busca el miembro por `numero` **directo en el array global `miembros`**
+  (nunca copia nada aparte al activarse) y usa `getVencimiento()`/`diasRestantes()`, las mismas
+  funciones que ya usa el resto del panel — así si `loadAll()` actualiza esos datos durante la
+  sesión, el check-in los ve sin reactivarse. Clasifica: verde (activo), amarillo (≤5 días),
+  rojo (vencido o sin ningún pago registrado — mismo trato), gris (número no encontrado). Campo
+  vacío + Enter no hace nada (decisión explícita). **Decisión explícita sobre qué registra
+  asistencia:** activo y por vencer SÍ; vencido y no-encontrado NO (un vencido no pasa hasta
+  renovar — ahí sí vuelve a teclear su número y queda activo). Una sola escritura por check-in
+  (`addDoc` + `_agregarLocal`, mismo patrón que `registrarAsistencia`), con `{miembroId, numero,
+  nombre, fecha, estado, origen:'checkin'}`. El resultado se muestra 3s a pantalla completa;
+  mientras tanto el teclado se bloquea (`checkinBloqueado`) para que un segundo check-in rápido
+  no se mezcle con el anterior.
+- Salir pide la **contraseña real** de la cuenta (reautenticación de Firebase Auth —
+  `EmailAuthProvider`/`reauthenticateWithCredential`, nuevos imports — no un PIN). El archivo
+  tiene dos bloques de script (uno `type="module"` con los imports, uno normal enorme con el
+  resto de la app, puenteados por `window._*`) — se agregó `window._EmailAuthProvider`/
+  `window._reauthenticateWithCredential` siguiendo el mismo patrón que ya usa `window._auth`.
+
+**Firestore rules:** no hizo falta ningún cambio — la escritura en `asistencias` ya la cubre la
+regla genérica existente (`isAdmin() || isOwnerDoc(gymId)`).
+
+**Bugs reales encontrados y corregidos antes de terminar:**
+1. La reautenticación fallaba con "Contraseña incorrecta" incluso con la contraseña correcta —
+   causa: `auth`/`EmailAuthProvider` no existen en el script grande (no es un módulo), hacía
+   falta el puente `window._*` de arriba.
+2. `activarModoCheckin()` ponía `style.display='block'`, pero el CSS necesita `display:flex`
+   para centrar el teclado — un estilo inline le gana a la regla de la hoja de estilos, así que
+   salía pegado a la izquierda en vez de centrado.
+
+**Verificado:** suite de Playwright nueva (`test_checkin.mjs`, 36 casos: activo/por vencer/
+vencido/sin pago/no encontrado/campo vacío, teclado en pantalla, bloqueo durante el resultado,
+salir con contraseña correcta e incorrecta) + una segunda pasada con clics y tecleo REALES
+(`test_checkin_clicks.mjs`, `page.keyboard.type()`+Enter, `locator.click()`, 16 casos) en vez de
+llamar las funciones por código. Capturas de pantalla del teclado y del resultado verde a tamaño
+tablet. Suite completa del proyecto (12 archivos) — **181/181**, sin regresiones.
+
 ## 2026-09-30 — Cierra los 2 límites conocidos de la suspensión de cuenta (2026-09-29)
 
 **Qué se hizo:** la entrada anterior ("Sin planes... botón Suspender/Reactivar") dejaba dos huecos
