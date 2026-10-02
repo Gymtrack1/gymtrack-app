@@ -4,6 +4,34 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-02 — Modo Check-in: salir pide el PIN de Finanzas, ya no la contraseña
+
+**Qué se hizo:** Luis reportó que al salir de Modo Check-in y escribir la contraseña, Chrome
+mostraba su propio aviso nativo de "esta contraseña apareció en una filtración de datos"
+(Administrador de contraseñas de Google) — nada que ver con GymTrack, pero confundía. Pidió
+quitar la contraseña y usar el PIN en su lugar; confirmó que fuera el mismo PIN de Finanzas que
+ya existe, en vez de uno nuevo que configurar.
+
+**Qué se cambió:**
+- Se quitaron por completo la reautenticación de Firebase Auth (`EmailAuthProvider`/
+  `reauthenticateWithCredential`, los imports/puentes `window._*` que se habían agregado, y el
+  modal `modal-checkin-exit` con su campo de contraseña).
+- `abrirModalSalirCheckin()` ahora reutiliza tal cual el modal de PIN que ya existe
+  (`modal-pin`/`submitPin()`, con su hash, su compatibilidad con PINs viejos en texto plano, y
+  su "créalo si todavía no tienes uno") — una bandera nueva (`pinAccionPendiente`) le dice a
+  `submitPin()` que, al terminar, tiene que cerrar Check-in en vez de activar una pestaña.
+  `showTab()`/`abrirModalSalirCheckin()` se limpian la bandera del otro mutuamente, para que un
+  intento cancelado de uno no contamine un PIN correcto del otro.
+- Mismo criterio que ya aplicaba a Finanzas/Empleados: si el admin entró con "Ver panel", salir
+  de Check-in NO pide el PIN del gimnasio ajeno (no puede saberlo) — sale directo.
+- El modal ahora muestra un texto distinto según para qué se abrió ("Escribe el PIN de Finanzas
+  para salir de Modo Check-in" en vez del genérico de Finanzas/Empleados), para no confundir.
+
+**Verificado:** se actualizaron `test_checkin.mjs` (39 casos, antes 36 — se agregó el caso del
+bypass para "Ver panel") y `test_checkin_clicks.mjs` (15, clics y tecleo reales sobre el modal de
+PIN) para usar el PIN en vez de la contraseña. Suite completa del proyecto (11 archivos) —
+**183/183**, sin regresiones.
+
 ## 2026-10-02 — Modo Check-in: autoservicio en tablet para registrar entrada por número
 
 **Qué se hizo:** pantalla aparte (botón "🖥️ Modo Check-in" en la barra) para dejar una tablet en

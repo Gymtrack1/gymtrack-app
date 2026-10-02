@@ -11,7 +11,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, onSnapshot, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   // Cloud Functions callable (ver CHANGELOG.md — resetear contraseña de un gimnasio desde Admin):
   // mismo proyecto/región que la función adms (functions/index.js). Solo el panel de Admin la usa.
@@ -20,10 +20,6 @@
   const app=initializeApp(firebaseConfig); const db=getFirestore(app); const auth=getAuth(app); const storage=getStorage(app);
   const functionsInstance=getFunctions(app,'us-central1');
   window._db=db; window._auth=auth; window._col=collection; window._addDoc=addDoc; window._getDocs=getDocs; window._doc=doc; window._updateDoc=updateDoc; window._deleteDoc=deleteDoc; window._setDoc=setDoc; window._getDoc=getDoc; window._onSnapshot=onSnapshot; window._query=query; window._where=where; window._writeBatch=writeBatch; window._signIn=signInWithEmailAndPassword; window._signOut=signOut;
-  // Modo Check-in (ver CHANGELOG.md) — reautenticación real de Firebase Auth para salir. El
-  // script grande de abajo (línea ~1206, un <script> normal, NO type="module") no tiene acceso
-  // directo a estos imports — mismo motivo por el que todo lo demás aquí se pasa por window._*.
-  window._EmailAuthProvider=EmailAuthProvider; window._reauthenticateWithCredential=reauthenticateWithCredential;
   window._storage=storage; window._storageRef=storageRef; window._uploadBytes=uploadBytes; window._getDownloadURL=getDownloadURL; window._deleteObject=deleteObject;
   window._resetGymPassword=httpsCallable(functionsInstance,'resetGymPassword');
   const ADMIN_EMAIL='luismolinac06@gmail.com';
@@ -632,7 +628,7 @@ contenedor, igual que app-screen/admin-screen. -->
      getVencimiento) — nunca copia nada aparte al activarse, así si loadAll() los actualiza
      durante la sesión (ej. se registró un pago) el check-in ya lo ve sin reactivarse. -->
 <div id="checkin-screen">
-  <button onclick="abrirModalSalirCheckin()" title="Salir del Modo Check-in (pide tu contraseña)" style="position:absolute;top:16px;right:16px;background:var(--surface);border:1px solid var(--border);color:var(--muted);width:40px;height:40px;border-radius:50%;font-size:16px;cursor:pointer;z-index:5">🔒</button>
+  <button onclick="abrirModalSalirCheckin()" title="Salir del Modo Check-in (pide el PIN)" style="position:absolute;top:16px;right:16px;background:var(--surface);border:1px solid var(--border);color:var(--muted);width:40px;height:40px;border-radius:50%;font-size:16px;cursor:pointer;z-index:5">🔒</button>
   <div class="checkin-box">
     <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:3px;text-align:center;margin-bottom:4px">CHECK-IN</div>
     <div style="color:var(--muted);font-size:14px;text-align:center;margin-bottom:28px">Teclea tu número de miembro y presiona ✓</div>
@@ -658,20 +654,6 @@ contenedor, igual que app-screen/admin-screen. -->
   <div id="checkin-resultado">
     <div class="checkin-resultado-nombre" id="checkin-resultado-nombre"></div>
     <div class="checkin-resultado-msg" id="checkin-resultado-msg"></div>
-  </div>
-</div>
-
-<!-- MODAL SALIR DE MODO CHECK-IN (pide la contraseña real de la cuenta, ver CHANGELOG.md) -->
-<div class="modal-overlay" id="modal-checkin-exit">
-  <div class="modal" style="max-width:360px">
-    <h2>Salir de Modo Check-in</h2>
-    <div style="color:var(--muted);font-size:13px;margin-bottom:16px">Escribe tu contraseña para volver al panel.</div>
-    <div class="login-error" id="checkin-exit-error"></div>
-    <div class="form-group"><label>Contraseña</label><input type="password" id="checkin-exit-password" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmarSalirCheckin();}"></div>
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-checkin-exit')">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarSalirCheckin()">Salir</button>
-    </div>
   </div>
 </div>
 
@@ -1299,6 +1281,10 @@ let montoInscripcion=null;
 let qrSincronizado=false;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
 let pinTabPendiente=null,pinEventPendiente=null;
+// Modo Check-in (ver CHANGELOG.md): modal-pin/submitPin se reutiliza tal cual para salir de
+// Check-in (mismo PIN de Finanzas) — esta bandera le dice a submitPin() que, en vez de activar
+// una pestaña (pinTabPendiente), tiene que cerrar Check-in y volver al panel normal.
+let pinAccionPendiente=null;
 
 
 // Las 8 secciones disponibles
@@ -4607,31 +4593,25 @@ function checkinMostrarResultado(tipo,nombre,msg){
   },3000);
 }
 
-// Salir de Modo Check-in: pide la contraseña real de la cuenta (reautenticación de Firebase
-// Auth, NO un PIN) — ver CHANGELOG.md. Si el admin entró con "Ver panel", esto reautentica al
-// admin (la sesión real de Firebase Auth sigue siendo la suya en todo momento), que es lo
-// correcto: el admin nunca conoce la contraseña del gimnasio que está revisando.
+// Salir de Modo Check-in: pide el PIN de Finanzas que ya existe (reutiliza modal-pin/submitPin
+// tal cual, con su hash, su migración desde texto plano y su "créalo si todavía no tienes uno")
+// — ver CHANGELOG.md. Primero se probó con la contraseña real (reauthenticateWithCredential),
+// pero Chrome intercepta cualquier <input type="password"> con su propio aviso de "esta
+// contraseña apareció en una filtración de datos" (Administrador de contraseñas de Google) en
+// cuanto detecta una coincidencia — no tiene nada que ver con GymTrack, pero confundía. Decisión
+// explícita de Luis: usar el PIN de Finanzas, sin agregar un PIN nuevo que recordar.
 function abrirModalSalirCheckin(){
-  document.getElementById('checkin-exit-password').value='';
-  document.getElementById('checkin-exit-error').style.display='none';
-  openModal('modal-checkin-exit');
-}
-async function confirmarSalirCheckin(){
-  const pass=document.getElementById('checkin-exit-password').value;
-  const errEl=document.getElementById('checkin-exit-error');
-  errEl.style.display='none';
-  if(!pass)return;
-  try{
-    const cred=window._EmailAuthProvider.credential(window._auth.currentUser.email,pass);
-    await window._reauthenticateWithCredential(window._auth.currentUser,cred);
-    closeModal('modal-checkin-exit');
+  // Igual que showTab() con PIN_PROTEGIDO: el admin viendo el panel de otro gimnasio (ver
+  // CHANGELOG.md, verComoGym) no conoce el PIN de Finanzas de ESE gym — no tiene sentido
+  // pedírselo para salir de algo a lo que entró con su propia sesión de admin.
+  if(viendoComoAdmin){
     document.getElementById('checkin-screen').style.display='none';
     document.getElementById('app-screen').style.display='block';
-  }catch(e){
-    console.error('confirmarSalirCheckin error:',e);
-    errEl.textContent='Contraseña incorrecta.';
-    errEl.style.display='block';
+    return;
   }
+  pinAccionPendiente='checkin-exit';
+  pinTabPendiente=null;pinEventPendiente=null; // por si quedó pendiente un intento de entrar a otra pestaña cancelado antes
+  abrirModalPin();
 }
 
 // EMPLEADOS
@@ -5446,6 +5426,7 @@ function showTab(name,event){
   if(PIN_PROTEGIDO.includes(name)&&!viendoComoAdmin){
     pinTabPendiente=name;
     pinEventPendiente=event;
+    pinAccionPendiente=null; // por si quedó pendiente un "salir de Check-in" cancelado antes
     abrirModalPin();
     return;
   }
@@ -5482,13 +5463,20 @@ async function sha256Hex(str){
 function abrirModalPin(){
   document.getElementById('pin-input').value='';
   document.getElementById('pin-confirm-input').value='';
+  // Texto distinto si se abrió para salir de Modo Check-in (ver CHANGELOG.md) — el texto
+  // genérico de Finanzas/Empleados confundiría aquí, aunque sea técnicamente el mismo PIN.
+  const esSalirCheckin=pinAccionPendiente==='checkin-exit';
   if(!pinFinanzas){
     document.getElementById('modal-pin-title').textContent='Crea un PIN de acceso';
-    document.getElementById('modal-pin-desc').textContent='Este PIN protegerá Finanzas y Empleados. Se pedirá cada vez que entres a cualquiera de las dos secciones.';
+    document.getElementById('modal-pin-desc').textContent=esSalirCheckin
+      ?'Este PIN protegerá Finanzas, Empleados y la salida de Modo Check-in.'
+      :'Este PIN protegerá Finanzas y Empleados. Se pedirá cada vez que entres a cualquiera de las dos secciones.';
     document.getElementById('pin-confirm-group').style.display='block';
   }else{
     document.getElementById('modal-pin-title').textContent='Ingresa el PIN';
-    document.getElementById('modal-pin-desc').textContent='Finanzas y Empleados están protegidos con PIN.';
+    document.getElementById('modal-pin-desc').textContent=esSalirCheckin
+      ?'Escribe el PIN de Finanzas para salir de Modo Check-in.'
+      :'Finanzas y Empleados están protegidos con PIN.';
     document.getElementById('pin-confirm-group').style.display='none';
   }
   openModal('modal-pin');
@@ -5521,6 +5509,12 @@ async function submitPin(){
     }
   }
   closeModal('modal-pin');
+  if(pinAccionPendiente==='checkin-exit'){
+    pinAccionPendiente=null;
+    document.getElementById('checkin-screen').style.display='none';
+    document.getElementById('app-screen').style.display='block';
+    return;
+  }
   const n=pinTabPendiente,e=pinEventPendiente;
   pinTabPendiente=null;pinEventPendiente=null;
   if(n)activarTab(n,e);
