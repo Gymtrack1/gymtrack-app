@@ -4,6 +4,97 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-05 — Auditoría (Bloque B): huecos de seguridad
+
+### 7. Cerrado: cualquier cuenta de Firebase Auth obtenía un GymTrack completo gratis
+
+**Qué se hizo:** `loadPlan()` creaba `usuarios/{uid}` con TODAS las funciones la primera vez que
+alguien iniciaba sesión y no tenía doc propio ni `pending_` — y `firestore.rules` lo permitía
+para cualquier usuario autenticado (`isOwnerDoc(gymId)` nada más). Si el registro abierto está
+activo en la consola de Firebase (Authentication → Settings → User actions → "Enable create"),
+CUALQUIERA podía crear su propia cuenta de Google/correo y entrar a un GymTrack funcional sin que
+el admin lo supiera.
+
+**Qué se cambió:**
+- `loadPlan()` (`index.html`) ya NO crea nada en ese caso — marca `cuentaNoRegistrada=true`, y
+  `firebaseReady` muestra "Esta cuenta no está dada de alta en GymTrack. Contacta al
+  administrador." en la pantalla de login y cierra la sesión (vía `doLogout()`, que además limpia
+  el listener/polling que ya había arrancado).
+- `firestore.rules`: el `create` de `usuarios/{gymId}` ahora también exige
+  `request.auth.token.email != null` y que exista un doc `usuarios/pending_<correo>` (el que crea
+  "+ Nuevo Cliente" en el panel de Admin, **antes** del primer login de ese cliente).
+- `saveNuevoGym()` ya NO sanea el correo al construir el id del `pending_` (antes reemplazaba
+  todo lo que no fuera alfanumérico por `_`) — ahora es `'pending_' + email` tal cual. Las reglas
+  de seguridad no pueden aplicar una transformación tipo regex-replace, solo concatenar texto, y
+  Firestore permite casi cualquier carácter en un id de documento (solo prohíbe `/`, `.` y `..`
+  como id completo), así que la sanitización no hacía falta.
+- **Pendiente de revisar por Luis:** si ahora mismo hay algún cliente con alta pendiente (nunca
+  hizo su primer login), su `pending_` quedó creado con el formato VIEJO (correo saneado) y no
+  va a cumplir la regla nueva hasta que se recree. No tengo acceso a tu Firestore en vivo para
+  revisarlo yo mismo — si tienes algún cliente así, avísame antes de publicar esta regla.
+- **Recordatorio explícito (pedido en la auditoría):** desactiva el registro abierto en la
+  consola — Firebase Console → tu proyecto → Authentication → Settings → User actions →
+  desmarcar "Enable create (sign-up)". Esta regla cierra el hueco del lado de los datos, pero
+  si el registro abierto sigue activo, cualquiera puede seguir creando una cuenta de Auth (solo
+  que ya no le sirve de nada sin un `pending_` a su nombre).
+
+**Verificado:** `rules-test/test.mjs` contra el emulador — 4 casos nuevos (anónimo sin email no
+puede crear; cuenta con email real pero sin `pending_` no puede crear — el caso exacto del hueco
+cerrado; esa misma cuenta SÍ puede crear ya con un `pending_` a su nombre; el admin sigue pudiendo
+dar de alta directo sin `pending_`) — **112 OK / 0 FAIL** en total (suite completa, incluye
+sincronizar los ids `pending_` de las pruebas ya existentes al nuevo formato sin sanear). Prueba
+nueva de Playwright (`test_auditoria_bloque_b.mjs`, 9 casos: cuenta sin alta no crea nada y
+regresa al login con el mensaje correcto, `sesionInicializada` queda lista para un login legítimo
+después, el flujo normal de migración con `pending_` sigue funcionando, `saveNuevoGym()` ya no
+sanea el correo). Suite completa del proyecto (14 archivos) — **210/210**, sin regresiones.
+
+### 8. Documentado, NO implementado: riesgos conocidos del portal QR (?gym=...)
+
+Por pedido explícito, esto queda solo documentado — no se tocó código.
+
+**Riesgo 1 — lectura y escritura abiertas a cualquiera con el link:** el portal se autentica de
+forma anónima (`signInAnonymously`, sin contraseña ni PIN que lo acote), y las reglas de
+Firestore dejan que CUALQUIER sesión anónima lea `miembrosPublicos` (nombre, fecha de nacimiento,
+vencimiento) y `registrosProgreso`/`pesoCorporal` de TODOS los miembros del gimnasio (no solo el
+propio), y cree registros nuevos a nombre de cualquier `miembroId` que quiera escribir en el
+payload — no hay forma de que una regla de Firestore verifique "esta sesión anónima de verdad es
+este miembro", porque la sesión anónima no carga ningún dato de identidad.
+
+**Riesgo 2 — PIN de empleados adivinable:** `empleadosPublicos` expone `nombre` + `pinAcceso`
+(PIN de 4 dígitos, hasheado con SHA-256 **sin sal**) en lectura pública, para que el cliente
+anónimo pueda comparar el PIN que escribió contra el hash del lado del navegador. Un PIN de 4
+dígitos son 10,000 combinaciones — con el hash ya en la mano (basta con mirarlo en las
+herramientas de desarrollador del navegador, sin necesitar acceso a Firestore), probar las 10,000
+combinaciones de SHA-256 toma segundos en cualquier computadora.
+
+**Propuesta para cerrarlo (Cloud Function de identificación) — NO implementada:**
+
+1. Nueva Cloud Function `onCall` (ej. `identificarPortal`), con el Admin SDK — que SÍ puede
+   validar nombre+número (o empleado+PIN) contra Firestore sin exponer nada al cliente, y sin
+   que el cliente pueda saltársela llamando directo al SDK de Firestore (hoy sí puede, porque la
+   "validación" vive en el propio `portalIdentificar()` de `index.html`, nunca en una regla).
+2. Si la función valida la identidad (nombre+número coinciden con un `miembroId`, o
+   empleado+PIN coinciden — la comparación del PIN pasa a ser 100% del lado del servidor, el
+   hash ya no necesita exponerse en `empleadosPublicos` en absoluto), responde con un **Custom
+   Token** de Firebase Auth (`admin.auth().createCustomToken(uid, {gymId, miembroId})` o
+   `{gymId, empleadoId, rol:'staff'}`) — el cliente hace `signInWithCustomToken(token)` en vez de
+   `signInAnonymously()`.
+3. `firestore.rules` se reescribe para que `registrosProgreso`/`pesoCorporal`/la escritura
+   acotada de `miembros`/`miembrosPublicos` exijan
+   `request.auth.token.miembroId == resource.data.miembroId` (o, al crear,
+   `request.resource.data.miembroId == request.auth.token.miembroId`) — ya no "cualquier
+   anónimo", sino "solo la sesión que la Cloud Function confirmó que es ESTE miembro". El modo
+   staff (`empleadoId` en el claim) puede seguir viendo el progreso de todos (ese es su propósito
+   real), pero ya sin que el PIN haya quedado expuesto nunca del lado del cliente.
+4. Ventaja extra: la Cloud Function puede llevar un límite de intentos (ej. 5 por minuto por
+   `gymId`+IP) contra adivinar el número de miembro o el PIN por fuerza bruta — algo que una
+   regla de Firestore no puede hacer por sí sola.
+5. Costo real: una función nueva en `functions/index.js` (ya existe el archivo, ya hay Cloud
+   Functions desplegadas ahí — el patrón ya es conocido en este proyecto), cambiar
+   `portalIdentificar()`/el login de empleado en `index.html` para llamarla en vez de comparar
+   localmente, y reescribir las reglas de esas colecciones. Es un cambio de tamaño mediano, no
+   trivial, pero acotado — no requiere mover el resto de la arquitectura de archivo único.
+
 ## 2026-10-05 — Auditoría (Bloque A): bugs que se ven o rompen algo hoy
 
 **Qué se hizo:** auditoría externa de GymTrack encontró 6 bugs reales ya en producción. Se

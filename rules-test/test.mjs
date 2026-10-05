@@ -28,10 +28,10 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'usuarios', 'uidB'), { email: 'gymB@test.com', uid: 'uidB', plan: 'pro', funciones: ['dashboard'], pinFinanzas: 'hash-b' });
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembros', 'm1'), { nombre: 'Juan', telefono: '5551234567', direccion: 'Calle Falsa 123', notas: 'nota privada' });
   await setDoc(doc(db, 'usuarios', 'uidB', 'miembros', 'm2'), { nombre: 'Pedro' });
-  await setDoc(doc(db, 'usuarios', 'pending_gymC_test_com'), { email: 'gymC@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true });
+  await setDoc(doc(db, 'usuarios', 'pending_gymC@test.com'), { email: 'gymC@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true });
   // Suspensión de cuenta (2026-09-30, ver CHANGELOG.md)
   await setDoc(doc(db, 'usuarios', 'uidE'), { email: 'gymE@test.com', uid: 'uidE', plan: 'sencillo', funciones: ['dashboard'], suspendido: true, suspendidoCambiadoEn: Date.now() });
-  await setDoc(doc(db, 'usuarios', 'pending_gymF_test_com'), { email: 'gymF@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true, suspendido: true, suspendidoCambiadoEn: Date.now() });
+  await setDoc(doc(db, 'usuarios', 'pending_gymF@test.com'), { email: 'gymF@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true, suspendido: true, suspendidoCambiadoEn: Date.now() });
   // Datos del portal QR (Parte 1/2/3, ver CHANGELOG.md)
   await setDoc(doc(db, 'usuarios', 'uidA', 'inventario', 'maq1'), { nombre: 'Press de banca', cantidad: 1, estado: 'bueno' });
   await setDoc(doc(db, 'usuarios', 'uidA', 'miembrosPublicos', 'm1'), { numero: 1, nombre: 'Juan', vencimientoTs: Date.now() + 999999999, estatura: null, fechaNacimiento: null });
@@ -47,6 +47,7 @@ const gymB = testEnv.authenticatedContext('uidB', { email: 'gymB@test.com' }).fi
 const gymC = testEnv.authenticatedContext('uidC', { email: 'gymC@test.com' }).firestore(); // aún no migrado
 const gymE = testEnv.authenticatedContext('uidE', { email: 'gymE@test.com' }).firestore(); // suspendido
 const gymF = testEnv.authenticatedContext('uidF', { email: 'gymF@test.com' }).firestore(); // migrando desde un pending_ suspendido
+const gymG = testEnv.authenticatedContext('uidG', { email: 'gymG@test.com' }).firestore(); // cuenta de Auth real, sin pending_ (hueco de seguridad cerrado)
 const admin = testEnv.authenticatedContext('adminUid', { email: 'luismolinac06@gmail.com' }).firestore();
 const anon = testEnv.unauthenticatedContext().firestore();
 const cliente = testEnv.authenticatedContext('clienteAnonUid', {}).firestore(); // signInAnonymously: auth!=null, sin email
@@ -92,12 +93,23 @@ await check('Gym C (nuevo) puede encontrar su doc pending_ por email', (async()=
   if (snap.empty) throw new Error('no encontró su pending_');
 })(), true);
 await check('Gym C puede crear su doc real con su propio uid', setDoc(doc(gymC, 'usuarios', 'uidC'), { email: 'gymC@test.com', uid: 'uidC', plan: 'pro', funciones: ['dashboard'], pendiente: false }), true);
-await check('Gym C puede borrar su propio pending_ tras migrar', deleteDoc(doc(gymC, 'usuarios', 'pending_gymC_test_com')), true);
+await check('Gym C puede borrar su propio pending_ tras migrar', deleteDoc(doc(gymC, 'usuarios', 'pending_gymC@test.com')), true);
+
+console.log('\n--- Hueco de seguridad cerrado: ya no cualquiera con cuenta de Firebase Auth se autoregistra gratis (2026-10-05, ver CHANGELOG.md) ---');
+await check('Anónimo (auth sin email, como el del portal QR) NO puede crear su propio doc de gym', setDoc(doc(cliente, 'usuarios', 'clienteAnonUid'), { email: null, uid: 'clienteAnonUid', plan: 'premium', funciones: ['dashboard','estadocuenta'] }), false);
+await check('Una cuenta de Auth CON email real pero SIN pending_ a su nombre NO puede crear su propio doc (antes esto le daba un GymTrack completo gratis)', setDoc(doc(gymG, 'usuarios', 'uidG'), { email: 'gymG@test.com', uid: 'uidG', plan: 'premium', funciones: ['dashboard','estadocuenta','empleados'] }), false);
+await check('Esa misma cuenta, YA con un pending_ creado por el admin a su nombre, SÍ puede crear su doc real', (async()=>{
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'usuarios', 'pending_gymG@test.com'), { email: 'gymG@test.com', plan: 'pro', funciones: ['dashboard'], pendiente: true });
+  });
+  await setDoc(doc(gymG, 'usuarios', 'uidG'), { email: 'gymG@test.com', uid: 'uidG', plan: 'pro', funciones: ['dashboard'], pendiente: false });
+})(), true);
+await check('Admin SÍ puede crear el doc real de un gimnasio directamente, sin necesitar un pending_ (alta manual)', setDoc(doc(admin, 'usuarios', 'uidH'), { email: 'gymH@test.com', uid: 'uidH', plan: 'pro', funciones: ['dashboard'] }), true);
 await check('Gym A NO puede borrar el pending_ de otro (ya migrado, pero probamos con uno nuevo)', (async()=>{
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'usuarios', 'pending_gymD_test_com'), { email: 'gymD@test.com', plan:'sencillo' });
+    await setDoc(doc(ctx.firestore(), 'usuarios', 'pending_gymD@test.com'), { email: 'gymD@test.com', plan:'sencillo' });
   });
-  await deleteDoc(doc(gymA, 'usuarios', 'pending_gymD_test_com'));
+  await deleteDoc(doc(gymA, 'usuarios', 'pending_gymD@test.com'));
 })(), false);
 
 console.log('\n--- Suspensión de cuenta (2026-09-30, ver CHANGELOG.md) ---');
@@ -127,7 +139,7 @@ await check('Gym F puede encontrar su pending_ (que SÍ estaba suspendido) por e
 })(), true);
 await check('Gym F NO puede migrar quitándose la suspensión al crear su doc real (suspendido:false)', setDoc(doc(gymF, 'usuarios', 'uidF'), { email: 'gymF@test.com', uid: 'uidF', plan: 'pro', funciones: ['dashboard'], pendiente: false, suspendido: false }), false);
 await check('Gym F SÍ puede migrar conservando la suspensión tal cual traía el pending_ (suspendido:true, igual que hace loadPlan() con el spread de "...data")', setDoc(doc(gymF, 'usuarios', 'uidF'), { email: 'gymF@test.com', uid: 'uidF', plan: 'pro', funciones: ['dashboard'], pendiente: false, suspendido: true, suspendidoCambiadoEn: Date.now() }), true);
-await check('Gym F ya migrado (y todavía suspendido) puede borrar su pending_ normal', deleteDoc(doc(gymF, 'usuarios', 'pending_gymF_test_com')), true);
+await check('Gym F ya migrado (y todavía suspendido) puede borrar su pending_ normal', deleteDoc(doc(gymF, 'usuarios', 'pending_gymF@test.com')), true);
 await check('Gym F, ya con su doc real, sigue sin poder auto-reactivarse', updateDoc(doc(gymF, 'usuarios', 'uidF'), { suspendido: false }), false);
 
 console.log('\n--- Portal público del cliente (auth anónima, un solo QR por gimnasio -> menú de músculos/ejercicios) ---');

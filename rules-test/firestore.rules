@@ -255,8 +255,24 @@ service cloud.firestore {
       // borro mi doc, lo recreo sin el campo" — ver también la regla de
       // `delete` más abajo, que ya no deja borrar el doc real (uid), solo el
       // pending_.
+      //
+      // 2026-10-05 (ver CHANGELOG.md, auditoría — hueco de seguridad real):
+      // ANTES de esto, cualquier cuenta de Firebase Auth (incluso una que
+      // cualquiera se creara sola, si el registro abierto está activo en la
+      // consola) podía crear su propio usuarios/{uid} y loadPlan() en
+      // index.html le daba TODAS las funciones gratis — nadie validaba que
+      // el admin la hubiera dado de alta antes. Ahora, además de lo de
+      // arriba, se exige que exista un doc usuarios/pending_<correo> — el
+      // que crea "+ Nuevo Cliente" en el panel de Admin (saveNuevoGym) ANTES
+      // de que ese cliente haga su primer login. index.html ya no manda
+      // "correo saneado" (reemplazando caracteres) en ese id — se usa el
+      // correo tal cual, porque las reglas de seguridad no pueden aplicar
+      // una transformación tipo regex-replace como esa, solo concatenar
+      // texto para reconstruir la misma ruta aquí.
       allow create: if isAdmin() || (
         isOwnerDoc(gymId) &&
+        request.auth.token.email != null &&
+        exists(/databases/$(database)/documents/usuarios/$('pending_' + request.auth.token.email)) &&
         (!('suspendido' in request.resource.data) || request.resource.data.suspendido == true)
       );
 

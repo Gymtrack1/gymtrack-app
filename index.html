@@ -1257,6 +1257,10 @@ let checkinBloqueado=false;
 // CHANGELOG.md). El token {gym} en MSG_WA_DEFAULT se resuelve a "te habla <nombre> " si se
 // conoce, o a texto vacío si no (la frase completa desaparece, no queda un hueco raro).
 let nombreGym=null;
+// true si loadPlan() no encontró ni doc propio ni pending_<correo> a nombre de la cuenta que
+// acaba de autenticarse (2026-10-05, ver CHANGELOG.md) — firebaseReady lo revisa para mostrar el
+// error y cerrar la sesión en vez de seguir cargando un panel vacío.
+let cuentaNoRegistrada=false;
 const MSG_WA_DEFAULT='Hola {nombre}, {gym}💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
 const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym!{producto}';
@@ -1599,7 +1603,24 @@ window.addEventListener('firebaseReady',async()=>{
   // sin cancelar el anterior, duplicando para siempre las lecturas de polling del plan.
   if(sesionInicializada)return;
   sesionInicializada=true;
-  await loadPlan(); applyPlan(); await loadAll();
+  await loadPlan();
+  // Cuenta sin alta en GymTrack (2026-10-05, ver CHANGELOG.md): se detiene aquí, antes de
+  // applyPlan()/loadAll() — no hay plan ni datos que cargar para una cuenta que no existe en
+  // GymTrack. doLogout() limpia el listener/polling que startPlanListener() ya dejó corriendo
+  // arriba y cierra la sesión; vuelve a dejar sesionInicializada=false para que un login
+  // legítimo posterior en esta misma pestaña sí vuelva a inicializar todo.
+  if(cuentaNoRegistrada){
+    const errEl=document.getElementById('login-error');
+    errEl.textContent='Esta cuenta no está dada de alta en GymTrack. Contacta al administrador.';
+    errEl.style.display='block';
+    // No depende de que signOut() vuelva a disparar onAuthStateChanged para que se vean los
+    // cambios — se oculta app-screen y se muestra login-screen aquí mismo, directo.
+    document.getElementById('app-screen').style.display='none';
+    document.getElementById('login-screen').style.display='flex';
+    await doLogout();
+    return;
+  }
+  applyPlan(); await loadAll();
   // Auto-sincronizar cada 2 minutos como respaldo por si onSnapshot falla (antes cada 20s: con
   // una sesión de staff abierta todo el día, eso son ~1,440 lecturas/día de este único documento
   // SOLO como red de respaldo — el listener onSnapshot de arriba ya se reconecta solo con backoff
@@ -1621,6 +1642,7 @@ window.addEventListener('firebaseReady',async()=>{
 });
 
 async function loadPlan(){
+  cuentaNoRegistrada=false;
   try{
     const email = window._auth.currentUser.email;
     const snap = await getDoc(docFn(db,'usuarios',uid));
@@ -1686,12 +1708,13 @@ async function loadPlan(){
       try{ await deleteDoc(docFn(db,'usuarios',match.id)); }catch(e){}
       console.log('✅ Cuenta migrada de',match.id,'a uid',uid);
     } else {
-      // Primera vez, sin doc previo
-      userFunciones = defaultFunciones();
-      cuentaSuspendida = false;
-      await setDoc(docFn(db,'usuarios',uid),{
-        email, funciones:userFunciones, uid, creadoEn:Date.now()
-      });
+      // Sin doc propio NI pending_ a su nombre (2026-10-05, ver CHANGELOG.md): esto ANTES creaba
+      // una cuenta nueva con TODAS las funciones gratis a cualquiera que tuviera (o se creara)
+      // una cuenta de Firebase Auth — cualquiera podía registrarse y le daba un GymTrack
+      // completo. Ya no se crea nada aquí: firestore.rules tampoco deja crear el doc real sin un
+      // pending_<correo> existente (el admin lo crea desde "+ Nuevo Cliente"). cuentaNoRegistrada
+      // le avisa a quien llamó (firebaseReady) para que muestre el error y cierre la sesión.
+      cuentaNoRegistrada = true;
     }
   }catch(e){
     console.error('loadPlan error:',e);
@@ -1919,7 +1942,13 @@ async function saveNuevoGym(){
   const btn=document.querySelector('#modal-nuevo-gym .btn-primary');
   btn.textContent='Guardando...'; btn.disabled=true;
   try{
-    const tempId='pending_'+email.replace(/[^a-zA-Z0-9]/g,'_');
+    // 2026-10-05 (ver CHANGELOG.md): el id ya NO sanea el correo — se usa tal cual. Firestore
+    // permite casi cualquier caracter en un id de documento (solo prohíbe "/", "." y "..") así
+    // que no hacía falta, y firestore.rules necesita poder reconstruir esta MISMA ruta
+    // (usuarios/pending_<correo>) para su regla de `create` del doc real — las reglas de
+    // seguridad no pueden aplicar una transformación tipo regex-replace como esta, solo
+    // concatenar texto, así que la ruta tiene que poder armarse con el correo intacto.
+    const tempId='pending_'+email;
     await setDoc(docFn(db,'usuarios',tempId),{email,nombre:nombre||'',funciones:defaultFunciones(),pendiente:true,creadoEn:Date.now()});
     closeModal('modal-nuevo-gym');
     await loadAdminGyms();
@@ -1935,9 +1964,16 @@ async function saveNuevoGym(){
 async function doLogin(){
   const email=document.getElementById('login-email').value.trim();
   const pass=document.getElementById('login-pass').value;
-  document.getElementById('login-error').style.display='none';
+  const errEl=document.getElementById('login-error');
+  errEl.style.display='none';
   try{await window._signIn(window._auth,email,pass);}
-  catch(e){document.getElementById('login-error').style.display='block';}
+  catch(e){
+    // Texto explícito (2026-10-05, ver CHANGELOG.md): este mismo div también lo usa
+    // firebaseReady para "cuenta sin alta en GymTrack" con un texto distinto — sin fijarlo
+    // aquí también, ese mensaje se quedaría pegado en el próximo intento de login fallido.
+    errEl.textContent='Email o contraseña incorrectos';
+    errEl.style.display='block';
+  }
 }
 // BUG REAL ENCONTRADO Y CORREGIDO: doLogout() solo llamaba a signOut() — el listener del plan
 // (onSnapshot) y el polling de respaldo cada 20s (ver planPollInterval en 'firebaseReady') seguían
