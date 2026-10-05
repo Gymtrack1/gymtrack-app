@@ -4,6 +4,59 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-05 — Auditoría (Bloque A): bugs que se ven o rompen algo hoy
+
+**Qué se hizo:** auditoría externa de GymTrack encontró 6 bugs reales ya en producción. Se
+corrigen los 6.
+
+1. **El teclado de Check-in se veía en todas las pantallas.** `#checkin-screen{...display:flex;...}`
+   (CSS) tenía la misma especificidad que `#checkin-screen{display:none;}` pero declarada
+   después, así que le ganaba por orden de cascada — el teclado quedaba visible en login, panel,
+   admin y portal sin que `activarModoCheckin()` se hubiera llamado nunca. Se quitó `display:flex`
+   de esa regla; el estilo inline que ya ponía `activarModoCheckin()` sigue centrando igual cuando
+   de verdad se activa.
+2. **"Accesos sin asignar" nunca mostraba nada.** `loadAccesosNoIdentificados()` llamaba a
+   `query()`/`where()` (no existen en el script grande, que no es un módulo — las correctas son
+   `queryFn`/`whereFn`), el `try/catch` se tragaba el `ReferenceError` y la lista quedaba vacía
+   en silencio. Corregido. Además `adminReady` tampoco asignaba `queryFn`/`whereFn` — se agregó,
+   porque "Ver panel" corre el mismo `loadAll()`.
+3. **Fecha de pagos/gastos en UTC, y a veces ni siquiera la de hoy.** `new Date().toISOString()
+   .split('T')[0]` da la fecha en UTC — en Monterrey, después de las 6pm ya es "mañana" en UTC,
+   así que el pago se guardaba con fecha futura y Finanzas lo dejaba fuera de "Hoy". Se cambió a
+   `fmtDateInputVal(Date.now())` (fecha local) en los 3 lugares. También: `modal-pago` solo
+   ponía la fecha si el campo estaba vacío, así que conservaba la fecha del pago anterior o la
+   de ayer si la app llevaba abierta toda la noche — ahora se pone la fecha de hoy SIEMPRE que
+   se abre el modal.
+4. **WhatsApp no abría el chat con números de 10 dígitos** (el formato que usan la plantilla de
+   Excel y el alta manual). Nuevo helper `telefonoWhatsApp(tel)`: deja solo dígitos; si son 10,
+   antepone `52`; si son 13 y empiezan con `521`, quita ese `1` de más (wa.me lo rechaza).
+   Aplicado en los 4 lugares que arman un link `wa.me/`. Placeholder del teléfono de miembro
+   ahora es `8112345678` y la etiqueta "Teléfono (10 dígitos)" (antes pedía "con lada", que no
+   es lo que de verdad se captura).
+5. **El mensaje de cobro por defecto decía literalmente "Gym X"** si el gimnasio nunca lo editó.
+   `MSG_WA_DEFAULT` ahora usa un token `{gym}` (mismo mecanismo que `{nombre}`/`{fecha}`/`{dias}`)
+   que `_aplicarMsgWA()`/`_updateMsgWAPreview()` resuelven al nombre real del gimnasio (nuevo
+   global `nombreGym`, cargado en `loadPlan()` desde el campo `nombre` del doc) — y a texto
+   vacío si no se conoce el nombre, para que la frase completa desaparezca en vez de dejar
+   "Gym X" o un hueco raro.
+6. **El Worker de IA solo funcionaba desde GitHub Pages.** `ALLOWED_ORIGIN` (un solo string) pasó
+   a `ALLOWED_ORIGINS` (lista) con `https://gymtrack1.github.io` y
+   `https://mi-gimnasio-8d528.web.app`. **Pendiente de que Luis confirme:** revisé
+   `firebase.json` y nunca ha tenido una sección `hosting` en todo el historial de git de este
+   repo — no hay forma de saber desde el código si `mi-gimnasio-8d528.web.app` se sigue
+   desplegando (y desde dónde) o si solo quedó una versión vieja/huérfana ahí. No pude
+   verificarlo yo mismo (sin acceso de red a ese dominio desde este entorno) — hay que
+   revisarlo directo en Firebase Console → Hosting (si ni siquiera aparece esa sección, el
+   dominio no se está usando) antes de confiar en que ese origen deba seguir permitido.
+
+**Verificado:** `node --check` sobre el script principal (el `<script>` grande, no-módulo),
+sobre el bootstrap `<script type="module">`, y sobre `cloudflare-worker-ia/worker.js` — sin
+errores de sintaxis en ninguno. Prueba nueva de Playwright (`test_auditoria_bloque_a.mjs`, 18
+casos: check-in oculto en panel/admin/portal, accesos-no-identificados carga datos en sesión
+normal Y bajo "Ver panel", fecha local siempre-hoy en ambos modales, `telefonoWhatsApp()` con
+10/13/ya-con-lada dígitos, mensaje con nombre real y sin nombre conocido). Suite completa del
+proyecto (12 archivos) — **201/201**, sin regresiones.
+
 ## 2026-10-02 — Modo Check-in: salir pide el PIN de Finanzas, ya no la contraseña
 
 **Qué se hizo:** Luis reportó que al salir de Modo Check-in y escribir la contraseña, Chrome

@@ -37,14 +37,17 @@
 // JSON estructurada (responseMimeType + responseSchema) para minimizar el riesgo de que la IA
 // devuelva texto que no se pueda parsear.
 //
-// CORS: solo se permite llamar a este Worker desde el dominio de GitHub Pages de GymTrack (ver
-// ALLOWED_ORIGIN abajo) — así una página cualquiera no puede usar tu cuota gratuita de Gemini
+// CORS: solo se permite llamar a este Worker desde los dominios donde vive GymTrack (ver
+// ALLOWED_ORIGINS abajo) — así una página cualquiera no puede usar tu cuota gratuita de Gemini
 // escondida detrás del navegador de un visitante tuyo. Esto NO es autenticación real (cualquiera
 // que llame directo al Worker con curl/Postman sí puede usarlo) — para una app gratuita de un
 // gym esto es un balance razonable de esfuerzo vs. riesgo, pero es una limitación real: si algún
 // día ves consumo raro de tu cuota de Gemini, ese es el motivo más probable.
 
-const ALLOWED_ORIGIN = 'https://gymtrack1.github.io';
+// 2026-10-05 (ver CHANGELOG.md): lista, no un solo string — GymTrack también se sirve desde
+// mi-gimnasio-8d528.web.app (Firebase Hosting), y desde ahí el navegador bloqueaba la llamada
+// porque solo gymtrack1.github.io estaba permitido.
+const ALLOWED_ORIGINS = ['https://gymtrack1.github.io', 'https://mi-gimnasio-8d528.web.app'];
 
 const SYSTEM_PROMPT = `Eres un asistente de fitness para GymTrack, una app de gestión de gimnasios. Un cliente del gimnasio (o el propio staff en su nombre) te pide un plan hacia una meta personal, organizado en hitos por periodo con hábitos accionables que se pueden ir marcando como completados.
 
@@ -198,7 +201,7 @@ function corsHeaders(origin) {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
-  if (origin === ALLOWED_ORIGIN) headers['Access-Control-Allow-Origin'] = ALLOWED_ORIGIN;
+  if (ALLOWED_ORIGINS.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
   return headers;
 }
 

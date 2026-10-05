@@ -91,8 +91,14 @@
   .portal-hello{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;}
   /* MODO CHECK-IN (autoservicio, ver CHANGELOG.md) — pantalla completa, aparte de app-screen
      (misma familia que admin-screen/portal-screen), pensada para quedar fija en una tablet en
-     recepción. Botones grandes (min 64px) para dedos, no solo para mouse. */
-  #checkin-screen{min-height:100vh;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;position:relative;}
+     recepción. Botones grandes (min 64px) para dedos, no solo para mouse.
+     OJO (2026-10-05, ver CHANGELOG.md): display:flex NO va aquí — esta regla, con la misma
+     especificidad que "#checkin-screen{display:none;}" de arriba pero declarada después, le
+     ganaba por orden de cascada y dejaba el teclado visible en TODAS las pantallas (login,
+     panel, admin, portal) sin importar que activarModoCheckin() nunca se hubiera llamado. El
+     display:flex para centrar ya lo pone esa función como estilo inline cuando de verdad se
+     activa (gana sobre cualquier regla de la hoja de estilos). */
+  #checkin-screen{min-height:100vh;background:var(--bg);align-items:center;justify-content:center;padding:24px;position:relative;}
   .checkin-box{max-width:420px;width:100%;}
   .checkin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
   .checkin-keypad button{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;min-height:72px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text-surface);cursor:pointer;}
@@ -676,7 +682,7 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
     <div class="form-row">
       <div class="form-group"><label>Nombre</label><input type="text" id="m-nombre" placeholder="Nombre completo" oninput="_actualizarPreviewFotoSiEsIniciales()"></div>
-      <div class="form-group"><label>Teléfono (con lada)</label><input type="text" id="m-tel" placeholder="5212345678"></div>
+      <div class="form-group"><label>Teléfono (10 dígitos)</label><input type="text" id="m-tel" placeholder="8112345678"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Correo</label><input type="email" id="m-correo" placeholder="correo@gmail.com"></div>
@@ -1246,7 +1252,12 @@ let viendoComoAdmin=false;
 // sin esto, un segundo cliente escaneando/tecleando rápido podría mezclar su número con el
 // resultado que todavía está en pantalla del anterior.
 let checkinBloqueado=false;
-const MSG_WA_DEFAULT='Hola {nombre}, te habla Gym X 💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
+// Nombre real del gimnasio (campo `nombre` de usuarios/{uid}, lo carga loadPlan()) — se usa para
+// que el mensaje de WhatsApp por defecto diga el nombre real en vez de "Gym X" (2026-10-05, ver
+// CHANGELOG.md). El token {gym} en MSG_WA_DEFAULT se resuelve a "te habla <nombre> " si se
+// conoce, o a texto vacío si no (la frase completa desaparece, no queda un hueco raro).
+let nombreGym=null;
+const MSG_WA_DEFAULT='Hola {nombre}, {gym}💪 Tu membresía vence el {fecha}. ¡Renueva a tiempo!';
 let msgWA=MSG_WA_DEFAULT;
 const MSG_WA_RECORDATORIO_DEFAULT='Hola {nombre} 💪 Vimos que hoy no has venido a tu horario habitual ({dia} ~{hora}). ¡Todavía puedes cumplir tu meta semanal! Vas {meta}. ¡Te esperamos en el gym!{producto}';
 let msgWARecordatorio=MSG_WA_RECORDATORIO_DEFAULT;
@@ -1622,6 +1633,7 @@ async function loadPlan(){
       pinFinanzas = d.pinFinanzas||null;
       montoInscripcion = d.montoInscripcion||null;
       qrSincronizado = d.qrSincronizado||false;
+      nombreGym = d.nombre||null;
 
       // Cargar mensaje personalizado de WhatsApp si existe
       if(d.msgWhatsApp) msgWA=d.msgWhatsApp;
@@ -1661,6 +1673,7 @@ async function loadPlan(){
       const data = match.data();
       userFunciones = defaultFunciones();
       cuentaSuspendida = data.suspendido===true;
+      nombreGym = data.nombre||null;
       // Migrar al doc con uid real, conservando plan y funciones
       await setDoc(docFn(db,'usuarios',uid), {
         ...data,
@@ -1725,6 +1738,7 @@ window.addEventListener('adminReady',async()=>{
   db=window._db; col=window._col; addDoc=window._addDoc; getDocs=window._getDocs;
   docFn=window._doc; updateDoc=window._updateDoc; deleteDoc=window._deleteDoc;
   setDoc=window._setDoc; getDoc=window._getDoc; writeBatchFn=window._writeBatch;
+  queryFn=window._query; whereFn=window._where;
   resetGymPasswordFn=window._resetGymPassword;
   // Igual que firebaseReady: sin esto, subirFotoMiembro/onLogoFileChange/onFondoFileChange
   // truenan con "storageRef is not a function" en cuanto el admin entra a un gym con "Ver
@@ -2030,7 +2044,7 @@ async function loadSugerencias(){try{const s=await getDocs(userCol('sugerencias'
 // Solo los NO resueltos: la colección puede acumular históricos ya vinculados con el tiempo
 // (mismo criterio anti-fuga-de-lecturas que registrosProgreso en el Portal de Empleados, ver
 // CHANGELOG.md) — no hace falta releer los ya resueltos en cada carga.
-async function loadAccesosNoIdentificados(){try{const s=await getDocs(query(userCol('accesosNoIdentificados'),where('resuelto','==',false)));accesosNoIdentificados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){accesosNoIdentificados=[];}}
+async function loadAccesosNoIdentificados(){try{const s=await getDocs(queryFn(userCol('accesosNoIdentificados'),whereFn('resuelto','==',false)));accesosNoIdentificados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){accesosNoIdentificados=[];}}
 
 // Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
 // volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).
@@ -3071,7 +3085,8 @@ function _aplicarMsgWA(m){
   return msgWA
     .replace(/\{nombre\}/g,m.nombre)
     .replace(/\{fecha\}/g,fecha)
-    .replace(/\{dias\}/g,diasStr);
+    .replace(/\{dias\}/g,diasStr)
+    .replace(/\{gym\}/g,nombreGym?`te habla ${nombreGym} `:'');
 }
 
 function _updateMsgWAPreview(){
@@ -3082,7 +3097,8 @@ function _updateMsgWAPreview(){
   prev.textContent=val
     .replace(/\{nombre\}/g,'Juan Pérez')
     .replace(/\{fecha\}/g,'15/08/2025')
-    .replace(/\{dias\}/g,'5 días');
+    .replace(/\{dias\}/g,'5 días')
+    .replace(/\{gym\}/g,nombreGym?`te habla ${nombreGym} `:'');
 }
 
 function initMsgWAEditor(){
@@ -3120,10 +3136,23 @@ async function guardarMsgWA(){
 // mensajes distintos, así que se guardan por separado — mandar uno no marca el otro.
 let whatsappEnviadoAlerta=new Set(),whatsappEnviadoRecordatorio=new Set();
 
+// wa.me necesita el número CON lada de país — los teléfonos que guarda GymTrack (plantilla de
+// Excel, alta manual) son de 10 dígitos (ej. 8121234567), y con eso wa.me no encuentra el chat
+// (2026-10-05, ver CHANGELOG.md). México: 52 + los 10 dígitos, sin el "1" extra que algunas
+// guías viejas de WhatsApp pedían para celulares (ese "1" es justo lo que hacía fallar los
+// números reales que se probaron). Si el teléfono ya trae lada (13 dígitos, 521...), se la
+// respeta quitando solo ese "1" de más.
+function telefonoWhatsApp(tel){
+  let d=String(tel||'').replace(/\D/g,'');
+  if(d.length===10)d='52'+d;
+  else if(d.length===13&&d.startsWith('521'))d='52'+d.slice(3);
+  return d;
+}
+
 function enviarWhatsApp(mid){
   const m=miembros.find(x=>x.id===mid);if(!m||!m.telefono)return alert('Este miembro no tiene teléfono registrado');
   const msg=_aplicarMsgWA(m);
-  const tel=m.telefono.replace(/\D/g,'');
+  const tel=telefonoWhatsApp(m.telefono);
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
   whatsappEnviadoAlerta.add(mid);
   renderAlertas();
@@ -3314,7 +3343,7 @@ function enviarWhatsAppPromo(mid){
   const msg=_promoMensajeActual();
   if(!msg)return alert('Escribe el mensaje de la promoción primero');
   const m=miembros.find(x=>x.id===mid);if(!m||!m.telefono)return alert('Este miembro no tiene teléfono registrado');
-  const tel=m.telefono.replace(/\D/g,'');
+  const tel=telefonoWhatsApp(m.telefono);
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
   promoEnviados.add(mid);
   renderPromoLista();
@@ -3403,7 +3432,7 @@ function enviarWhatsAppRecordatorio(mid){
   const patron=calcularPatronAsistencia(mid);
   if(!patron)return alert('No se detectó un patrón de asistencia para este miembro');
   const msg=_aplicarMsgWARecordatorio(m,patron);
-  const tel=m.telefono.replace(/\D/g,'');
+  const tel=telefonoWhatsApp(m.telefono);
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
   whatsappEnviadoRecordatorio.add(mid);
   renderRecordatoriosPendientes();
@@ -4410,7 +4439,7 @@ function preRegPago(mid,contexto){
   const m=miembros.find(x=>x.id===mid);
   document.getElementById('p-miembro').value=mid;
   document.getElementById('p-miembro-search').value=m?`#${fmtNum(m.numero||0)} ${m.nombre}`:'';
-  document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('p-fecha').value=fmtDateInputVal(Date.now());
   actualizarMontoAutomatico();
   const btnCancelar=document.getElementById('pago-btn-cancelar');
   if(btnCancelar)btnCancelar.textContent=contexto==='nuevoMiembro'?'Omitir por ahora':'Cancelar';
@@ -4734,7 +4763,7 @@ function enviarLinkStaffWhatsApp(empleadoId){
     _guardarPinNuevoEmpleadoYAvisar(empleadoId,pinPlano);
   }
   const msg=`Hola ${e.nombre}, aquí tienes el link del Portal de Empleados (para registrar tu peso o ver el progreso de los clientes del gym):\n${_linkStaff()}\n\nTu PIN de acceso: ${pinPlano}`;
-  const tel=e.telefono.replace(/\D/g,'');
+  const tel=telefonoWhatsApp(e.telefono);
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 async function _guardarPinNuevoEmpleadoYAvisar(empleadoId,pinPlano){
@@ -5387,7 +5416,7 @@ function abrirModalPersonalizacion(){
 // MODALES
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura','m-acceso-credencial'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();_resetFotoMiembroEstado();renderFotoMiembroPreview();}
-  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();if(!document.getElementById('p-fecha').value)document.getElementById('p-fecha').value=new Date().toISOString().split('T')[0];document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
+  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();document.getElementById('p-fecha').value=fmtDateInputVal(Date.now());document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo','e-pin'].forEach(x=>document.getElementById(x).value='');document.getElementById('e-pin-ayuda').textContent='';}
   if(id==='modal-inventario'){
     const dl=document.getElementById('zonas-inventario');
@@ -5396,7 +5425,7 @@ function openModal(id){
   }
   if(id==='modal-producto'&&!document.getElementById('edit-prod-id').value){document.getElementById('modal-prod-title').textContent='Nuevo Producto';['edit-prod-id','prod-nombre','prod-precio','prod-stock','prod-min','prod-notas'].forEach(x=>document.getElementById(x).value='');}
   if(id==='modal-nuevo-gym'){['ng-email','ng-nombre'].forEach(x=>document.getElementById(x).value='');}
-  if(id==='modal-gasto'){['g-concepto','g-monto'].forEach(x=>document.getElementById(x).value='');document.getElementById('g-fecha').value=new Date().toISOString().split('T')[0];}
+  if(id==='modal-gasto'){['g-concepto','g-monto'].forEach(x=>document.getElementById(x).value='');document.getElementById('g-fecha').value=fmtDateInputVal(Date.now());}
   document.getElementById(id).classList.add('open');
 }
 function closeModal(id){
