@@ -72,7 +72,9 @@ rules_version = '2';
 //     el mismo nivel de confianza que ya tiene el resto de GymTrack: cierra
 //     la puerta a cualquier OTRA colección, pero dentro de esta colección
 //     puntual no hay aislamiento por miembro a prueba de manipulación técnica
-//     directa. No se permite editar ni borrar desde el portal.
+//     directa. No se permite editar desde el portal. Sí se permite BORRAR un
+//     registro de las últimas 24h (2026-10-05, ver CHANGELOG.md) — mismo nivel
+//     de confianza de arriba, acotado por tiempo en vez de por dueño.
 //
 //   usuarios/{gymId}/pesoCorporal      — igual que registrosProgreso arriba,
 //     mismo alcance y misma nota de confianza.
@@ -324,11 +326,18 @@ service cloud.firestore {
 
       // Series de progreso por ejercicio y peso corporal: cualquier
       // autenticado (incluye anónimos) puede leer y crear. No hay edición
-      // ni borrado desde el portal. Ver nota de confianza arriba sobre el
+      // desde el portal. Ver nota de confianza arriba sobre el
       // alcance real de "leer" aquí (no hay aislamiento por miembro a
       // prueba de manipulación técnica directa con auth anónima).
       match /registrosProgreso/{docId} {
         allow read, create: if isSignedIn();
+        // Borrar un registro "de hoy" (2026-10-05, ver CHANGELOG.md, auditoría punto 10): mismo
+        // nivel de confianza que read/create de arriba — no hay forma de que una regla de
+        // Firestore verifique que la sesión anónima que borra es DE VERDAD el miembro dueño del
+        // registro (ver nota extensa arriba), así que en los hechos esto es "cualquier anónimo
+        // puede borrar cualquier registro de las últimas 24h" — acotado por tiempo para que no
+        // se pueda borrar historial viejo (ni por error ni a propósito), no por dueño.
+        allow delete: if isSignedIn() && resource.data.fecha > request.time.toMillis() - 86400000;
       }
       match /pesoCorporal/{docId} {
         allow read, create: if isSignedIn();

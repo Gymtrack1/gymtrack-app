@@ -485,7 +485,7 @@ contenedor, igual que app-screen/admin-screen. -->
 
   <!-- PAGOS -->
   <div class="tab" id="tab-pagos">
-    <div class="header-row"><div class="page-title">Pagos</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="abrirModalInscripcion()">🎫 Inscripción</button><button class="btn btn-ghost" onclick="abrirModalPromociones()">🏷️ Promociones</button><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div></div>
+    <div class="header-row"><div class="page-title">Pagos</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="exportarPagos()">📤 Exportar Excel</button><button class="btn btn-ghost" onclick="abrirModalInscripcion()">🎫 Inscripción</button><button class="btn btn-ghost" onclick="abrirModalPromociones()">🏷️ Promociones</button><button class="btn btn-primary" onclick="openModal('modal-pago')">+ Registrar Pago</button></div></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>#</th><th>Miembro</th><th>Monto</th><th>Plan</th><th>Promoción</th><th>Forma de Pago</th><th>Fecha Pago</th><th>Válido Hasta</th><th>Acciones</th></tr></thead>
@@ -852,7 +852,7 @@ contenedor, igual que app-screen/admin-screen. -->
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Fecha de pago</label><input type="date" id="p-fecha"></div>
+      <div class="form-group"><label>Fecha de pago</label><input type="date" id="p-fecha" onchange="actualizarVigenciaPreview()"></div>
       <div class="form-group"><label>Forma de Pago</label>
         <select id="p-forma-pago">
           <option value="efectivo" selected>💵 Efectivo</option>
@@ -860,6 +860,10 @@ contenedor, igual que app-screen/admin-screen. -->
         </select>
       </div>
     </div>
+    <!-- Renovación anticipada (ver CHANGELOG.md, auditoría punto 12): si el miembro todavía
+         tiene membresía vigente, el nuevo periodo empieza desde SU vencimiento actual, no desde
+         hoy — este aviso lo muestra antes de guardar, para que quede claro qué va a pasar. -->
+    <div id="p-vigencia-preview" style="display:none;background:var(--surface2);border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:var(--text-surface)"></div>
     <div class="form-group">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
         <input type="checkbox" id="p-inscripcion-check" style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:none;border-radius:0" onchange="document.getElementById('p-inscripcion-monto-grupo').style.display=this.checked?'block':'none'">
@@ -879,14 +883,26 @@ contenedor, igual que app-screen/admin-screen. -->
 
 <!-- MODAL EDITAR VENCIMIENTO (ver CHANGELOG.md): extender/corregir la fecha de vencimiento de un
      pago YA registrado, sin tener que tocar monto/plan/forma de pago. -->
+<!-- Editar pago ya registrado (ver CHANGELOG.md, auditoría punto 9): originalmente solo editaba
+     la fecha de vencimiento — se le agregaron monto y forma de pago para corregir errores de
+     captura sin borrar y volver a registrar todo el pago. Se conserva el mismo id/funciones
+     (modal-editar-vencimiento, editarVencimientoPago, guardarVencimientoPago) para no romper el
+     botón que ya existe en la tabla de Pagos. -->
 <div class="modal-overlay" id="modal-editar-vencimiento">
   <div class="modal">
-    <h2>Editar vencimiento</h2>
+    <h2>Editar pago</h2>
     <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--text-surface)">
       <strong id="ev-miembro-display"></strong> · <span id="ev-plan-display"></span>
     </div>
     <input type="hidden" id="ev-pago-id">
-    <div class="form-group"><label>Nueva fecha de vencimiento</label><input type="date" id="ev-fecha-fin"></div>
+    <div class="form-group"><label>Monto</label><input type="number" id="ev-monto" min="0" step="0.01"></div>
+    <div class="form-group"><label>Forma de pago</label>
+      <select id="ev-forma-pago">
+        <option value="efectivo">💵 Efectivo</option>
+        <option value="tarjeta">💳 Tarjeta</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Fecha de vencimiento</label><input type="date" id="ev-fecha-fin"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-editar-vencimiento')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarVencimientoPago()">Guardar</button>
@@ -905,7 +921,7 @@ contenedor, igual que app-screen/admin-screen. -->
     </div>
     <div class="form-row">
       <div class="form-group"><label>Teléfono</label><input type="text" id="e-tel" placeholder="812 000 0000"></div>
-      <div class="form-group"><label>Sueldo ($)</label><input type="number" id="e-sueldo" placeholder="5000"></div>
+      <div class="form-group"><label>Sueldo mensual ($)</label><input type="number" id="e-sueldo" placeholder="5000"></div>
     </div>
     <div class="form-row">
       <div class="form-group" style="grid-column:span 2"><label>PIN de acceso a la Vista de Progreso (4-6 dígitos, opcional)</label><input type="text" inputmode="numeric" maxlength="6" id="e-pin" placeholder="Ej. 4821"><div id="e-pin-ayuda" style="font-size:11px;color:var(--muted);margin-top:4px"></div></div>
@@ -1059,6 +1075,20 @@ contenedor, igual que app-screen/admin-screen. -->
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-pin')">Cancelar</button>
       <button class="btn btn-primary" onclick="submitPin()">Continuar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CAMBIAR PIN (desde Finanzas, pide el PIN actual) -->
+<div class="modal-overlay" id="modal-cambiar-pin">
+  <div class="modal" style="max-width:360px">
+    <h2>Cambiar PIN</h2>
+    <div class="form-group"><label>PIN actual</label><input type="text" inputmode="numeric" autocomplete="off" id="cp-actual" placeholder="••••" maxlength="12" style="-webkit-text-security:disc;text-security:disc"></div>
+    <div class="form-group"><label>Nuevo PIN</label><input type="text" inputmode="numeric" autocomplete="off" id="cp-nuevo" placeholder="••••" maxlength="12" style="-webkit-text-security:disc;text-security:disc"></div>
+    <div class="form-group"><label>Confirma el nuevo PIN</label><input type="text" inputmode="numeric" autocomplete="off" id="cp-nuevo-confirm" placeholder="••••" maxlength="12" style="-webkit-text-security:disc;text-security:disc" onkeydown="if(event.key==='Enter')guardarCambioPin()"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-cambiar-pin')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCambioPin()">Guardar</button>
     </div>
   </div>
 </div>
@@ -1558,6 +1588,7 @@ function corteCajaCard(titulo,periodo,corte,gastosArr){
     ${corte.nomina>0?`<div class="ec-row"><span>Nómina (empleados)</span><span class="ec-val" style="color:var(--red)">-$${corte.nomina.toLocaleString()}</span></div>`:''}
     ${gastosOrdenados.length?gastosOrdenados.map(g=>`<div class="ec-row"><span>${escAttr(g.concepto)}</span><span style="display:flex;align-items:center;gap:8px"><span class="ec-val" style="color:var(--red)">-$${(g.monto||0).toLocaleString()}</span><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px" onclick="delGasto('${g.id}')">✕</button></span></div>`).join(''):'<div style="color:var(--muted);font-size:12px;margin-top:8px">Sin gastos manuales en este período</div>'}
     `:''}
+    ${periodo==='mes'?'<div style="color:var(--muted);font-size:11px;margin-top:8px">La nómina (sueldo mensual de empleados) solo se resta completa aquí, en "Este mes" — no se prorratea en Hoy/Semana/Quincena.</div>':''}
   </div>`;
 }
 
@@ -2209,6 +2240,28 @@ function formaPagoBadge(fp){if(fp==='efectivo')return'<span class="badge badge-g
 function fmtDate(ts){return ts?new Date(ts).toLocaleDateString('es-MX'):'—';}
 function fmtNum(n){return String(n).padStart(3,'0');}
 function diasRestantes(ts){if(!ts)return null;return Math.ceil((ts-Date.now())/86400000);}
+// TASA DE RENOVACIÓN: de los miembros cuya membresía venció (fechaFin) dentro del mes en
+// curso, qué % registró un pago nuevo dentro de los 15 días siguientes a ese vencimiento.
+function calcularTasaRenovacion(){
+  const hoy=new Date();
+  const inicioMes=new Date(hoy.getFullYear(),hoy.getMonth(),1).getTime();
+  const finMes=new Date(hoy.getFullYear(),hoy.getMonth()+1,0,23,59,59).getTime();
+  const porMiembro=new Map();
+  pagos.forEach(p=>{
+    if(p.fechaFin>=inicioMes&&p.fechaFin<=finMes){
+      const actual=porMiembro.get(p.miembroId);
+      if(!actual||p.fechaFin>actual)porMiembro.set(p.miembroId,p.fechaFin);
+    }
+  });
+  const total=porMiembro.size;
+  if(!total)return{porcentaje:null,renovaron:0,total:0};
+  let renovaron=0;
+  porMiembro.forEach((fechaFin,miembroId)=>{
+    const renovo=pagos.some(p=>p.miembroId===miembroId&&p.fechaPago>fechaFin&&p.fechaPago<=fechaFin+15*86400000);
+    if(renovo)renovaron++;
+  });
+  return{porcentaje:Math.round((renovaron/total)*100),renovaron,total};
+}
 
 // META SEMANAL DE ASISTENCIA (no confundir con "plan": esto es la meta de días/semana que
 // el miembro se compromete a venir, aplica a todos los miembros sin importar su plan de
@@ -2418,7 +2471,11 @@ function renderDashboard(){
 // MIEMBROS
 function renderMiembros(filter=''){
   const tbody=document.getElementById('tabla-miembros');
-  const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
+  // Búsqueda normalizada (sin acentos, insensible a mayúsculas) y también por número — mismo
+  // criterio que el buscador de miembro del modal de pago (ver CHANGELOG.md, auditoría punto
+  // 11). Protegido contra miembros sin `nombre` (antes esto tronaba con m.nombre undefined).
+  const qBusq=normalizarNombreComparacion(filter);
+  const lista=miembros.filter(m=>!qBusq||normalizarNombreComparacion(m.nombre||'').includes(qBusq)||String(m.numero||'').includes(qBusq));
   if(!lista.length){
     tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">👥</div><div>No hay miembros</div></div></td></tr>';
     renderMiembrosPaginacion(0,1);
@@ -2478,10 +2535,101 @@ function exportarMiembros(){
   // Ancho de columnas
   ws['!cols']=[{wch:8},{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:32},{wch:20},{wch:14},{wch:14},{wch:13},{wch:18},{wch:14},{wch:24}];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,'Miembros',ws);
+  XLSX.utils.book_append_sheet(wb,ws,'Miembros');
   const fecha=new Date().toISOString().slice(0,10);
   XLSX.writeFile(wb,`GymTrack_Miembros_${fecha}.xlsx`);
   toast('Exportado: '+miembros.length+' miembros ✓');
+}
+
+// EXPORTAR PAGOS A EXCEL
+function exportarPagos(){
+  if(!pagos.length){toast('No hay pagos para exportar','err');return;}
+  const ws=XLSX.utils.json_to_sheet(_filasPagos());
+  ws['!cols']=[{wch:28},{wch:13},{wch:18},{wch:14},{wch:14},{wch:14},{wch:14},{wch:20}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Pagos');
+  const fecha=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`GymTrack_Pagos_${fecha}.xlsx`);
+  toast('Exportado: '+pagos.length+' pagos ✓');
+}
+function _filasPagos(){
+  return pagos.map(p=>{
+    const m=miembrosPorId.get(p.miembroId);
+    return{
+      'Miembro': m?m.nombre:'(eliminado)',
+      'Monto': p.monto||0,
+      'Plan': p.planNombre||'',
+      'Fecha de pago': p.fechaPago?new Date(p.fechaPago).toLocaleDateString('es-MX'):'',
+      'Vigente hasta': p.fechaFin?new Date(p.fechaFin).toLocaleDateString('es-MX'):'',
+      'Forma de pago': p.formaPago||'',
+      'Inscripción': p.inscripcion?'Sí':'No',
+      'Promoción': p.promocionUsada||''
+    };
+  });
+}
+function _filasAsistencias(){
+  return asistencias.map(a=>{
+    const m=miembrosPorId.get(a.miembroId);
+    return{
+      'Miembro': m?m.nombre:(a.nombre||'(eliminado)'),
+      'Fecha': a.fecha?new Date(a.fecha).toLocaleString('es-MX'):'',
+      'Origen': a.origen||'manual'
+    };
+  });
+}
+function _filasVentas(){
+  return ventas.map(v=>{
+    const m=v.miembroId?miembrosPorId.get(v.miembroId):null;
+    return{
+      'Producto': v.productoNombre||'',
+      'Cantidad': v.cantidad||0,
+      'Precio unitario': v.precioUnitario||0,
+      'Total': v.total||0,
+      'Miembro': m?m.nombre:'',
+      'Forma de pago': v.formaPago||'',
+      'Fecha': v.fecha?new Date(v.fecha).toLocaleString('es-MX'):''
+    };
+  });
+}
+function _filasGastos(){
+  return gastos.map(g=>({
+    'Concepto': g.concepto||'',
+    'Monto': g.monto||0,
+    'Fecha': g.fecha?new Date(g.fecha).toLocaleDateString('es-MX'):''
+  }));
+}
+function _filasInventario(){
+  return productos.map(p=>({
+    'Nombre': p.nombre||'',
+    'Categoría': p.categoria||'',
+    'Precio': p.precio||0,
+    'Stock': p.stock||0,
+    'Stock mínimo': p.stockMinimo||0,
+    'Notas': p.notas||''
+  }));
+}
+// EXPORTAR TODO: un solo archivo con todas las hojas
+function exportarTodo(){
+  const wb=XLSX.utils.book_new();
+  const estadoLabel={activo:'Al corriente','por-vencer':'Por vencer',vencido:'Vencido','sin-pago':'Sin pago'};
+  const filasMiembros=miembros.map(m=>({
+    'Número': m.numero||'',
+    'Nombre': m.nombre||'',
+    'Teléfono': m.telefono||'',
+    'Correo': m.correo||'',
+    'Plan actual': getUltimoPlan(m.id),
+    'Fecha de vencimiento': getVencimiento(m.id)?new Date(getVencimiento(m.id)).toLocaleDateString('es-MX'):'Sin pago',
+    'Estado': estadoLabel[getEstado(m.id)]||getEstado(m.id)
+  }));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(filasMiembros),'Miembros');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_filasPagos()),'Pagos');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_filasAsistencias()),'Asistencias');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_filasVentas()),'Ventas');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_filasGastos()),'Gastos');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(_filasInventario()),'Inventario');
+  const fecha=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`GymTrack_Todo_${fecha}.xlsx`);
+  toast('Exportado todo ✓');
 }
 
 // DESCARGAR PLANTILLA VACÍA
@@ -2515,7 +2663,7 @@ function descargarPlantilla(){
   const ws=XLSX.utils.json_to_sheet(ejemplo);
   ws['!cols']=[{wch:28},{wch:16},{wch:28},{wch:7},{wch:16},{wch:36},{wch:20},{wch:18},{wch:16},{wch:13},{wch:22},{wch:22},{wch:20},{wch:30}];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,'Miembros',ws);
+  XLSX.utils.book_append_sheet(wb,ws,'Miembros');
   XLSX.writeFile(wb,'GymTrack_Plantilla_Importar.xlsx');
   toast('Plantilla descargada ✓');
 }
@@ -2818,7 +2966,7 @@ function descargarPlantillaVincular(){
   const ws=XLSX.utils.json_to_sheet(ejemplo);
   ws['!cols']=[{wch:28},{wch:10},{wch:20}];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,'Vincular',ws);
+  XLSX.utils.book_append_sheet(wb,ws,'Vincular');
   XLSX.writeFile(wb,'GymTrack_Plantilla_Vincular_Credenciales.xlsx');
   toast('Plantilla descargada ✓');
 }
@@ -2990,7 +3138,7 @@ function renderPagos(){
   if(pagosPage<1)pagosPage=1;
   const start=(pagosPage-1)*PAGOS_PAGE_SIZE;
   const pagina=sorted.slice(start,start+PAGOS_PAGE_SIZE);
-  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${p.monto}${p.inscripcion?`<div style="font-size:10px;color:var(--muted)">incl. $${p.inscripcion} inscripción</div>`:''}</td><td>${p.planNombre}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${p.promocionUsada}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td><td><button class="btn btn-ghost btn-sm" onclick="editarVencimientoPago('${p.id}')" title="Editar/extender la fecha de vencimiento de este pago">✏️</button></td></tr>`;}).join('');
+  tbody.innerHTML=pagina.map((p,i)=>{const m=miembrosPorId.get(p.miembroId);return`<tr><td>${sorted.length-start-i}</td><td>${m?`<span class="num-badge">#${fmtNum(m.numero||0)}</span> ${escAttr(m.nombre)}`:'—'}</td><td>$${(p.monto||0).toLocaleString()}${p.inscripcion?`<div style="font-size:10px;color:var(--muted)">incl. $${p.inscripcion.toLocaleString()} inscripción</div>`:''}</td><td>${escAttr(p.planNombre)}</td><td>${p.promocionUsada?`<span class="badge badge-blue">${escAttr(p.promocionUsada)}</span>`:'—'}</td><td>${formaPagoBadge(p.formaPago)}</td><td>${fmtDate(p.fechaPago)}</td><td>${fmtDate(p.fechaFin)}</td><td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editarVencimientoPago('${p.id}')" title="Editar monto, forma de pago o fecha de vencimiento de este pago">✏️</button><button class="btn btn-danger btn-sm" onclick="delPago('${p.id}')" title="Eliminar este pago">✕</button></td></tr>`;}).join('');
   renderPagosPaginacion(sorted.length,totalPaginas);
 }
 function renderPagosPaginacion(total,totalPaginas){
@@ -3012,7 +3160,9 @@ function renderAsistencia(filter=''){
   const tbody=document.getElementById('tabla-asistencia');
   const hoyStr=new Date().toDateString();
   const hoyIds=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).map(a=>a.miembroId);
-  const lista=miembros.filter(m=>m.nombre.toLowerCase().includes(filter.toLowerCase()));
+  // Misma búsqueda normalizada que Miembros (ver CHANGELOG.md, auditoría punto 11).
+  const qBusq=normalizarNombreComparacion(filter);
+  const lista=miembros.filter(m=>!qBusq||normalizarNombreComparacion(m.nombre||'').includes(qBusq)||String(m.numero||'').includes(qBusq));
   if(!lista.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty"><div class="empty-icon">📋</div><div>No hay miembros</div></div></td></tr>';renderAsistenciaPaginacion(0,1);}
   else{
     const totalPaginas=Math.max(1,Math.ceil(lista.length/ASISTENCIA_PAGE_SIZE));
@@ -3595,10 +3745,22 @@ function renderEstadoCuenta(){
       <div class="chart-wrap" style="height:170px"><canvas id="chart-periodo-${key}"></canvas></div>`;
 
   el.innerHTML=`
-  <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
-  <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+    <div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;margin-bottom:4px">Finanzas</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:24px">${hoy.toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="exportarTodo()">📤 Exportar todo</button>
+      <button class="btn btn-ghost" onclick="abrirModalCambiarPin()">🔑 Cambiar PIN</button>
+    </div>
+  </div>
   <div class="section-title" style="margin-top:0">Gráficas</div>
   <div class="ec-card" style="margin-bottom:24px"><h3>📈 Tendencia de Ingresos (6 meses)</h3><div class="chart-wrap"><canvas id="chart-tendencia"></canvas></div></div>
+  <div class="ec-card" style="margin-bottom:24px">
+    <h3>🔄 Tasa de Renovación (este mes)</h3>
+    ${(()=>{const r=calcularTasaRenovacion();if(r.total===0)return'<p class="muted">Ningún miembro venció este mes todavía.</p>';return `<p style="font-size:28px;font-weight:700;margin:4px 0">${r.porcentaje}%</p><p class="muted">${r.renovaron} de ${r.total} miembros que vencieron este mes renovaron dentro de los 15 días siguientes a su vencimiento.</p>`;})()}
+  </div>
   <div class="section-title">Resumen por Período</div>
   <div class="ec-grid" style="margin-bottom:24px">
     <div class="ec-card"><h3>📅 HOY</h3>
@@ -3795,7 +3957,7 @@ function renderInventario(seccion='equipo'){
         </td>
       </tr>`;}).join('')}</tbody></table></div>
     <div class="section-title" style="margin-top:24px">Últimas Ventas</div>
-    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembrosPorId.get(v.miembroId);return`<tr><td>${prod?escAttr(prod.nombre):(v.productoNombre?escAttr(v.productoNombre):'—')}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?escAttr(m.nombre):'—'}</td><td>${fmtDate(v.fecha)}</td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
+    ${ventas.length?`<div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Total</th><th>Forma de Pago</th><th>Miembro</th><th>Fecha</th><th>Acciones</th></tr></thead><tbody>${[...ventas].sort((a,b)=>b.fecha-a.fecha).slice(0,30).map(v=>{const prod=productos.find(x=>x.id===v.productoId);const m=miembrosPorId.get(v.miembroId);return`<tr><td>${prod?escAttr(prod.nombre):(v.productoNombre?escAttr(v.productoNombre):'—')}</td><td>${v.cantidad}</td><td style="color:var(--accent);font-weight:700">$${(v.total||0).toLocaleString()}</td><td>${formaPagoBadge(v.formaPago)}</td><td>${m?escAttr(m.nombre):'—'}</td><td>${fmtDate(v.fecha)}</td><td><button class="btn btn-danger btn-sm" onclick="cancelarVenta('${v.id}')" title="Cancelar venta y devolver el stock">✕</button></td></tr>`;}).join('')}</tbody></table></div>`:'<div class="empty"><div class="empty-icon">🛒</div><div>Sin ventas registradas</div></div>'}
     <div class="section-title" style="margin-top:24px">Horas Pico de Compras</div>
     <div class="ec-card" style="margin-bottom:24px"><h3>🕐 Horas de Mayor Compra</h3><div id="horas-pico-compras-content"></div></div>
     <div class="section-title">Top Compradores</div>
@@ -3951,6 +4113,23 @@ async function saveVenta(){
   closeModal('modal-venta');
   renderInventario('tienda');renderEstadoCuenta();
   toast(`Venta registrada — $${total.toLocaleString()} ✓`);
+}
+// Cancelar una venta (ver CHANGELOG.md, auditoría punto 9) — borra el registro y devuelve la
+// cantidad vendida al stock del producto. Si el producto ya no existe (se borró aparte), solo
+// se borra la venta — no hay a qué producto devolverle stock.
+async function cancelarVenta(ventaId){
+  const v=ventas.find(x=>x.id===ventaId);if(!v)return;
+  const prod=productos.find(x=>x.id===v.productoId);
+  if(!confirm(`¿Cancelar esta venta${prod?' de '+prod.nombre:''}? Se devuelve el stock.`))return;
+  await deleteDoc(userDoc('ventas',ventaId));
+  _eliminarLocal(ventas,ventaId);
+  if(prod){
+    const nuevoStock=(prod.stock||0)+v.cantidad;
+    await updateDoc(userDoc('productos',prod.id),{stock:nuevoStock});
+    _actualizarLocal(productos,prod.id,{stock:nuevoStock});
+  }
+  renderInventario('tienda');renderEstadoCuenta();
+  toast('Venta cancelada ✓');
 }
 
 // VER PERFIL
@@ -4420,7 +4599,14 @@ async function savePago(){
   const inscripcionMonto=document.getElementById('p-inscripcion-check').checked
     ?(parseFloat(document.getElementById('p-inscripcion-monto').value)||0):0;
   const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
-  const fechaFin=fechaPago+dias*86400000;
+  // Renovación anticipada (ver CHANGELOG.md, auditoría punto 12): si el miembro todavía tiene
+  // membresía vigente (su vencimiento actual es posterior a esta fecha de pago), el nuevo
+  // periodo empieza desde ESE vencimiento, no desde hoy — así no pierde los días que le
+  // quedaban. Si ya venció (o nunca pagó), se comporta igual que siempre: empieza desde la
+  // fecha de pago. Mismo cálculo que ya muestra actualizarVigenciaPreview() antes de guardar.
+  const vencimientoActual=getVencimiento(mid);
+  const inicioPeriodo=(vencimientoActual&&vencimientoActual>fechaPago)?vencimientoActual:fechaPago;
+  const fechaFin=inicioPeriodo+dias*86400000;
   const data={miembroId:mid,monto:parseFloat(monto)+inscripcionMonto,planNombre:PLAN_DIAS_NOMBRE[dias]||`${dias} días`,diasPlan:dias,fechaPago,fechaFin,formaPago,promocionUsada,inscripcion:inscripcionMonto>0?inscripcionMonto:null,creadoEn:Date.now()};
   const ref=await addDoc(userCol('pagos'),data);
   // Registrar un pago es la acción más frecuente de la app — antes releía TODA la
@@ -4434,32 +4620,53 @@ async function savePago(){
   toast('Pago registrado ✓');
 }
 
-// EDITAR VENCIMIENTO DE UN PAGO YA REGISTRADO (ver CHANGELOG.md): a diferencia de savePago, esto
-// NO reabre el modal completo (monto/plan/forma de pago no cambian) — solo deja extender o
-// corregir la fecha de vencimiento. Útil para cortesías puntuales o para corregir un error de
-// captura sin tener que borrar y volver a registrar todo el pago.
+// EDITAR UN PAGO YA REGISTRADO (ver CHANGELOG.md, auditoría punto 9): permite corregir monto,
+// forma de pago y fecha de vencimiento de un pago existente sin borrarlo y volver a registrarlo
+// (el plan y el miembro sí quedan fijos — para eso existe delPago + un pago nuevo).
+
 function editarVencimientoPago(pagoId){
   const p=pagos.find(x=>x.id===pagoId);if(!p)return;
   const m=miembrosPorId.get(p.miembroId);
   document.getElementById('ev-pago-id').value=pagoId;
   document.getElementById('ev-miembro-display').textContent=m?m.nombre:'—';
   document.getElementById('ev-plan-display').textContent=p.planNombre;
+  document.getElementById('ev-monto').value=p.monto;
+  document.getElementById('ev-forma-pago').value=p.formaPago||'efectivo';
   document.getElementById('ev-fecha-fin').value=fmtDateInputVal(p.fechaFin);
   openModal('modal-editar-vencimiento');
 }
 async function guardarVencimientoPago(){
   const pagoId=document.getElementById('ev-pago-id').value;
   const fechaStr=document.getElementById('ev-fecha-fin').value;
+  const monto=parseFloat(document.getElementById('ev-monto').value);
+  const formaPago=document.getElementById('ev-forma-pago').value;
   if(!fechaStr)return alert('Elige una fecha');
+  if(!monto||monto<=0)return alert('Escribe un monto válido');
   const p=pagos.find(x=>x.id===pagoId);if(!p)return;
   const fechaFin=new Date(fechaStr+'T12:00:00').getTime();
-  await updateDoc(userDoc('pagos',pagoId),{fechaFin});
-  _actualizarLocal(pagos,pagoId,{fechaFin});
+  const data={monto,formaPago,fechaFin};
+  await updateDoc(userDoc('pagos',pagoId),data);
+  _actualizarLocal(pagos,pagoId,data);
   recalcPagosPorMiembro();
-  sincronizarMiembroPublico(p.miembroId); // el vencimiento cambió — refleja el nuevo estado en el portal
+  sincronizarMiembroPublico(p.miembroId); // el vencimiento pudo cambiar — refleja el nuevo estado en el portal
   closeModal('modal-editar-vencimiento');
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
-  toast('Vencimiento actualizado ✓');
+  toast('Pago actualizado ✓');
+}
+// Eliminar un pago (ver CHANGELOG.md, auditoría punto 9) — antes no se podía borrar ni editar un
+// pago, solo su vencimiento. Borrar un pago puede cambiar el vencimiento vigente del miembro (si
+// era el más reciente), por eso recalcula los mapas y sincroniza el espejo público igual que al
+// registrar/editar uno.
+async function delPago(pagoId){
+  const p=pagos.find(x=>x.id===pagoId);if(!p)return;
+  const m=miembrosPorId.get(p.miembroId);
+  if(!confirm(`¿Eliminar este pago${m?' de '+m.nombre:''}? Esto puede cambiar su fecha de vencimiento vigente.`))return;
+  await deleteDoc(userDoc('pagos',pagoId));
+  _eliminarLocal(pagos,pagoId);
+  recalcPagosPorMiembro();
+  sincronizarMiembroPublico(p.miembroId);
+  renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
+  toast('Pago eliminado ✓');
 }
 
 // FIX: openModal('modal-pago') resetea el buscador de miembro (populateMiembrosSelect sin
@@ -4524,6 +4731,7 @@ function seleccionarMiembro(id,label){
 // el de la categoría — una promoción es un precio especial a propósito, no debe perderse solo
 // porque además exista un precio de categoría para esa misma duración.
 function actualizarMontoAutomatico(){
+  actualizarVigenciaPreview();
   const promoNombre=document.getElementById('p-promocion').value;
   const promo=promoNombre?promociones.find(p=>p.nombre===promoNombre):null;
   if(promo&&promo.monto>0){
@@ -4536,6 +4744,27 @@ function actualizarMontoAutomatico(){
   const cat=m&&m.categoriaMembresia?categoriasMembresia.find(c=>c.nombre===m.categoriaMembresia):null;
   const precio=cat&&cat.precios?cat.precios[dias]:null;
   document.getElementById('p-monto').value=precio>0?precio:'';
+}
+// Renovación anticipada (ver CHANGELOG.md, auditoría punto 12): si el miembro paga ANTES de
+// vencer, el nuevo periodo debe empezar desde su vencimiento actual (no desde hoy, que le
+// quitaría los días que le quedaban) — mismo cálculo que hace savePago() al guardar, mostrado
+// aquí de antemano para que el staff vea "Vigente hasta" antes de confirmar.
+function actualizarVigenciaPreview(){
+  const prev=document.getElementById('p-vigencia-preview');
+  if(!prev)return;
+  const mid=document.getElementById('p-miembro').value;
+  const dias=parseInt(document.getElementById('p-plan').value);
+  const fechaStr=document.getElementById('p-fecha').value;
+  if(!mid||!dias||!fechaStr){prev.style.display='none';return;}
+  const fechaPago=new Date(fechaStr+'T12:00:00').getTime();
+  const vencimientoActual=getVencimiento(mid);
+  const renovacionAnticipada=vencimientoActual&&vencimientoActual>fechaPago;
+  const inicioPeriodo=renovacionAnticipada?vencimientoActual:fechaPago;
+  const fechaFin=inicioPeriodo+dias*86400000;
+  prev.innerHTML=renovacionAnticipada
+    ?`🔄 Paga antes de vencer: se conservan sus días restantes. <strong>Vigente hasta: ${fmtDate(fechaFin)}</strong>`
+    :`<strong>Vigente hasta: ${fmtDate(fechaFin)}</strong>`;
+  prev.style.display='block';
 }
 // Al elegir una promoción (Parte 10): si trae una duración configurada, cambia "Plan" a esa
 // duración (recreando en el modal la selección que el staff habría hecho a mano) y siempre
@@ -4613,6 +4842,13 @@ async function checkinConfirmar(){
     checkinMostrarResultado('gris','','Número no encontrado');
     return;
   }
+  // Evita un check-in duplicado el mismo día (ver CHANGELOG.md, auditoría punto 13) — sin leer
+  // nada nuevo de Firestore, el array `asistencias` ya tiene todo lo del día cargado en memoria.
+  const hoyStr=new Date().toDateString();
+  if(asistencias.some(a=>a.miembroId===m.id&&new Date(a.fecha).toDateString()===hoyStr)){
+    checkinMostrarResultado('azul',m.nombre,'Ya registraste tu entrada hoy');
+    return;
+  }
   const venc=getVencimiento(m.id);
   // Sin ningún pago registrado: se trata igual que vencido (tampoco puede pasar) — decisión
   // explícita confirmada, ver CHANGELOG.md. -1 es solo un valor negativo cualquiera para caer en
@@ -4645,7 +4881,7 @@ async function checkinConfirmar(){
 function checkinMostrarResultado(tipo,nombre,msg){
   checkinBloqueado=true;
   const el=document.getElementById('checkin-resultado');
-  const colores={verde:{bg:'var(--green)',fg:'#fff'},amarillo:{bg:'var(--orange)',fg:'#fff'},rojo:{bg:'var(--red)',fg:'#fff'},gris:{bg:'var(--muted)',fg:'#fff'}};
+  const colores={verde:{bg:'var(--green)',fg:'#fff'},amarillo:{bg:'var(--orange)',fg:'#fff'},rojo:{bg:'var(--red)',fg:'#fff'},gris:{bg:'var(--muted)',fg:'#fff'},azul:{bg:'var(--blue)',fg:'#fff'}};
   const c=colores[tipo]||colores.gris;
   el.style.background=c.bg;el.style.color=c.fg;
   document.getElementById('checkin-resultado-nombre').textContent=nombre||'';
@@ -5452,7 +5688,7 @@ function abrirModalPersonalizacion(){
 // MODALES
 function openModal(id){
   if(id==='modal-miembro'&&!document.getElementById('edit-id').value){document.getElementById('modal-miembro-title').textContent='Nuevo Miembro';['edit-id','m-nombre','m-tel','m-correo','m-edad','m-direccion','m-meta-semanal','m-notas','m-fecha-nacimiento','m-estatura','m-acceso-credencial'].forEach(x=>document.getElementById(x).value='');document.getElementById('m-recibe-recordatorios').value='true';populateCategoriaMembresiaSelect();_resetFotoMiembroEstado();renderFotoMiembroPreview();}
-  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();document.getElementById('p-fecha').value=fmtDateInputVal(Date.now());document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';}
+  if(id==='modal-pago'){populateMiembrosSelect();populatePromocionSelect();document.getElementById('p-fecha').value=fmtDateInputVal(Date.now());document.getElementById('p-forma-pago').value='efectivo';document.getElementById('p-plan').value='30';document.getElementById('p-monto').value='';const btnCancelarPago=document.getElementById('pago-btn-cancelar');if(btnCancelarPago)btnCancelarPago.textContent='Cancelar';document.getElementById('p-inscripcion-check').checked=false;document.getElementById('p-inscripcion-monto').value='';document.getElementById('p-inscripcion-monto-grupo').style.display='none';document.getElementById('p-vigencia-preview').style.display='none';}
   if(id==='modal-empleado'&&!document.getElementById('edit-emp-id').value){document.getElementById('modal-emp-title').textContent='Nuevo Empleado';['edit-emp-id','e-nombre','e-puesto','e-tel','e-sueldo','e-pin'].forEach(x=>document.getElementById(x).value='');document.getElementById('e-pin-ayuda').textContent='';}
   if(id==='modal-inventario'){
     const dl=document.getElementById('zonas-inventario');
@@ -5583,6 +5819,32 @@ async function submitPin(){
   const n=pinTabPendiente,e=pinEventPendiente;
   pinTabPendiente=null;pinEventPendiente=null;
   if(n)activarTab(n,e);
+}
+
+// CAMBIAR PIN desde Finanzas (a diferencia de submitPin(), aquí siempre se pide el PIN
+// actual para confirmar identidad antes de permitir elegir uno nuevo).
+function abrirModalCambiarPin(){
+  document.getElementById('cp-actual').value='';
+  document.getElementById('cp-nuevo').value='';
+  document.getElementById('cp-nuevo-confirm').value='';
+  openModal('modal-cambiar-pin');
+}
+async function guardarCambioPin(){
+  const actual=document.getElementById('cp-actual').value.trim();
+  const nuevo=document.getElementById('cp-nuevo').value.trim();
+  const confirmNuevo=document.getElementById('cp-nuevo-confirm').value.trim();
+  if(!actual){toast('Escribe el PIN actual','err');return;}
+  if(!pinFinanzas){toast('No hay un PIN configurado todavía','err');return;}
+  const looksHashed=/^[0-9a-f]{64}$/.test(pinFinanzas);
+  const actualValido=looksHashed?(await sha256Hex(actual))===pinFinanzas:actual===pinFinanzas;
+  if(!actualValido){toast('El PIN actual no es correcto','err');return;}
+  if(nuevo.length<4){toast('El nuevo PIN debe tener al menos 4 dígitos','err');return;}
+  if(nuevo!==confirmNuevo){toast('Los PIN nuevos no coinciden','err');return;}
+  const hash=await sha256Hex(nuevo);
+  await updateDoc(docFn(db,'usuarios',uid),{pinFinanzas:hash});
+  pinFinanzas=hash;
+  closeModal('modal-cambiar-pin');
+  toast('PIN actualizado ✓');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5839,6 +6101,12 @@ let portalEjercicioSel='';  // navegación "Registrar serie": ejercicio elegido 
 let portalBuscarEjercicioTexto=''; // búsqueda de ejercicio en el menú "Registrar serie" (Parte 3)
 let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
 let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
+// Peso/repeticiones de la ÚLTIMA serie guardada de ESTE ejercicio (ver CHANGELOG.md, auditoría
+// punto 10) — se prellenan en el formulario para que capturar la siguiente serie sea solo tocar
+// "Guardar" de nuevo (series del mismo peso/reps son lo más común). Se limpian al cambiar de
+// ejercicio/músculo (portalElegirEjercicio y similares) para no arrastrar un peso que no tiene
+// nada que ver con el ejercicio nuevo.
+let portalUltimoPesoCapturado=null,portalUltimoReps=null;
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
 let portalFuerzaMusculoSel=''; // músculo elegido en "Fuerza por músculo" — mismo patrón que portalProgresoEjercicioSel
 let chartPortalProgreso=null,chartPortalPeso=null,chartPortalFuerza=null;
@@ -5857,6 +6125,19 @@ function coincideBusquedaEjercicio(nombre,busqueda){
   const nombreNorm=normalizarNombreComparacion(nombre);
   return palabras.every(p=>nombreNorm.includes(p));
 }
+// Identificación del portal menos estricta (ver CHANGELOG.md, auditoría punto 10): antes exigía
+// el nombre completo EXACTO ("Juan" o "Juan Pérez" fallaban si estaba registrado "Juan Pérez
+// García"). Mismo patrón que coincideBusquedaEjercicio (cada palabra escrita debe estar contenida
+// en el nombre registrado), con un candado extra: al menos una palabra escrita debe tener 3+
+// letras, para no aceptar un match trivial/ambiguo (ej. escribir solo "a"). El número de miembro
+// ya se usa para acotar la búsqueda antes de llegar aquí (queryFn por numero), así que esto no
+// abre la puerta a confundir miembros — dos personas con el mismo número no existen.
+function coincideNombreMiembro(escrito,registrado){
+  const palabras=normalizarNombreComparacion(escrito).split(' ').filter(Boolean);
+  if(!palabras.some(p=>p.length>=3))return false;
+  const nombreNorm=normalizarNombreComparacion(registrado);
+  return palabras.every(p=>nombreNorm.includes(p));
+}
 
 // UNIDAD kg/lb EN EL PESO CARGADO DE UNA SERIE (Parte 5, ver CHANGELOG.md): `registrosProgreso`
 // SIEMPRE guarda `peso` en kg (no rompe cálculos ni comparaciones históricas) más un campo
@@ -5866,7 +6147,10 @@ function coincideBusquedaEjercicio(nombre,busqueda){
 // cada lugar que lo lee), su comportamiento actual no cambia.
 function kgALb(kg){return Math.round(kg*2.20462*10)/10;}
 function lbAKg(lb){return Math.round((lb/2.20462)*10)/10;}
-function formatearPeso(pesoKg,unidad){return unidad==='lb'?`${kgALb(pesoKg)}lb`:`${pesoKg}kg`;}
+// peso 0 = ejercicio de peso corporal (dominadas, flexiones, fondos, plancha, burpees, etc. — ver
+// CHANGELOG.md, auditoría punto 10): se muestra "Peso corporal" en vez de "0kg/0lb", que no
+// significa nada para el cliente.
+function formatearPeso(pesoKg,unidad){return pesoKg===0?'Peso corporal':(unidad==='lb'?`${kgALb(pesoKg)}lb`:`${pesoKg}kg`);}
 
 // AGENTE DE IA: PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md). El Worker de Cloudflare que
 // consulta a Gemini vive APARTE de index.html (código en cloudflare-worker-ia/ de este mismo
@@ -6043,7 +6327,14 @@ window.addEventListener('portalReady',async()=>{
   // Vista de Progreso del staff (?staff=1): también completamente aparte, ver nota arriba.
   if(window._portalStaff)renderPortalStaffIdentify();
   else if(window._portalSugerencia)renderPortalSugerenciasForm();
-  else renderPortalIdentify();
+  else{
+    // "Recordarme en este celular" (ver CHANGELOG.md, auditoría punto 10): antes de mostrar el
+    // formulario, intenta entrar solo con lo que ya se guardó en una visita anterior — si no hay
+    // nada guardado o el intento falla, se queda en el formulario normal sin que el cliente note
+    // la diferencia.
+    renderPortalIdentify();
+    portalIntentarIdentidadGuardada();
+  }
 });
 
 // Espejo público de solo {suspendido} (ver firestore.rules, config/estado) — el portal se
@@ -6090,34 +6381,76 @@ function renderPortalIdentify(){
   </div>`;
 }
 
+// Clave de localStorage para "recordarme en este celular" (ver CHANGELOG.md, auditoría punto
+// 10) — por gimnasio (prefijo con el gymId), porque el mismo teléfono puede usarse para
+// escanear el QR de más de un gym (ej. alguien que entrena en dos lugares). Nunca guarda nada
+// sensible, solo numero+nombre — lo mismo que ya se escribe a mano cada vez.
+function _portalStorageKey(){return 'gymtrackPortalId_'+window._portalGym;}
+function _portalGuardarIdentidad(numero,nombre){
+  try{localStorage.setItem(_portalStorageKey(),JSON.stringify({numero,nombre}));}catch(e){/* localStorage no disponible (privado/bloqueado): sin romper nada, solo no se recuerda */}
+}
+function _portalIdentidadGuardada(){
+  try{
+    const raw=localStorage.getItem(_portalStorageKey());
+    if(!raw)return null;
+    const d=JSON.parse(raw);
+    return(d&&d.numero&&d.nombre)?d:null;
+  }catch(e){return null;}
+}
+function portalOlvidarIdentidad(){
+  try{localStorage.removeItem(_portalStorageKey());}catch(e){}
+  portalMiembro=null;
+  renderPortalIdentify();
+}
+// Núcleo compartido entre el formulario manual (portalIdentificar) y el "recordarme" automático
+// (portalReady) — ver CHANGELOG.md, auditoría punto 10. onError es opcional: el intento
+// automático falla en silencio (vuelve al formulario normal) en vez de mostrar un error que el
+// cliente nunca pidió ver.
+async function _portalIntentarIdentificar(numero,nombre,onError){
+  const gymId=window._portalGym;
+  try{
+    const snap=await getDocs(queryFn(gymCol(gymId,'miembrosPublicos'),whereFn('numero','==',numero)));
+    let match=null;
+    snap.docs.forEach(d=>{const data=d.data();if(coincideNombreMiembro(nombre,data.nombre))match={id:d.id,...data};});
+    if(!match){if(onError)onError('No encontramos tu registro. Verifica tu número y tu nombre.');return false;}
+    // Sin ningún pago registrado (vencimientoTs null/undefined) se trata igual que vencido — no
+    // "pasa de largo" como activo. Mismo criterio que Modo Check-in (ver CHANGELOG.md, auditoría
+    // punto 10): sin pago = no entra, mismo tipo de aviso de "pasa a recepción".
+    if(!match.vencimientoTs||match.vencimientoTs<Date.now()){
+      document.getElementById('portal-content').innerHTML='<div class="ec-card"><div class="empty"><div class="empty-icon">🔒</div><div>Tu membresía está vencida. Pasa a recepción para ponerte al corriente y volver a usar esta función.</div></div></div>';
+      return false;
+    }
+    portalMiembro=match;
+    _portalGuardarIdentidad(numero,nombre);
+    await portalCargarDatos();
+    renderPortalHome();
+    return true;
+  }catch(e){
+    console.error('_portalIntentarIdentificar error:',e);
+    // Se incluye el código/mensaje real del error (ej. "permission-denied") para poder
+    // diagnosticar sin necesitar acceso a la consola del navegador — en un teléfono no hay
+    // forma fácil de verla.
+    const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
+    if(onError)onError(`No pudimos conectar. Intenta de nuevo. (${detalle})`);
+    return false;
+  }
+}
 async function portalIdentificar(){
   const errEl=document.getElementById('portal-identify-error');
   errEl.style.display='none';
   const numero=parseInt(document.getElementById('portal-numero').value);
   const nombre=document.getElementById('portal-nombre').value.trim();
   if(!numero||!nombre){errEl.textContent='Escribe tu número de miembro y tu nombre.';errEl.style.display='block';return;}
-  const gymId=window._portalGym;
-  try{
-    const snap=await getDocs(queryFn(gymCol(gymId,'miembrosPublicos'),whereFn('numero','==',numero)));
-    const nObjetivo=normalizarNombreComparacion(nombre);
-    let match=null;
-    snap.forEach(d=>{const data=d.data();if(normalizarNombreComparacion(data.nombre)===nObjetivo)match={id:d.id,...data};});
-    if(!match){errEl.textContent='No encontramos tu registro. Verifica tu número y tu nombre.';errEl.style.display='block';return;}
-    if(match.vencimientoTs&&match.vencimientoTs<Date.now()){
-      document.getElementById('portal-content').innerHTML='<div class="ec-card"><div class="empty"><div class="empty-icon">🔒</div><div>Tu membresía está vencida. Pasa a recepción para ponerte al corriente y volver a usar esta función.</div></div></div>';
-      return;
-    }
-    portalMiembro=match;
-    await portalCargarDatos();
-    renderPortalHome();
-  }catch(e){
-    console.error('portalIdentificar error:',e);
-    // Se incluye el código/mensaje real del error (ej. "permission-denied") para poder
-    // diagnosticar sin necesitar acceso a la consola del navegador — en un teléfono no hay
-    // forma fácil de verla.
-    const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
-    errEl.textContent=`No pudimos conectar. Intenta de nuevo. (${detalle})`;errEl.style.display='block';
-  }
+  await _portalIntentarIdentificar(numero,nombre,(msg)=>{errEl.textContent=msg;errEl.style.display='block';});
+}
+// Intenta entrar solo con lo guardado en este celular (ver CHANGELOG.md, auditoría punto 10) —
+// se llama desde portalReady ANTES de mostrar el formulario. Si no hay nada guardado, o el
+// intento falla por cualquier motivo (se dio de baja, cambió de número, etc.), simplemente se
+// queda en el formulario normal — nunca bloquea al cliente.
+async function portalIntentarIdentidadGuardada(){
+  const guardado=_portalIdentidadGuardada();
+  if(!guardado)return false;
+  return await _portalIntentarIdentificar(guardado.numero,guardado.nombre,null);
 }
 
 async function portalCargarDatos(){
@@ -6145,7 +6478,7 @@ function portalCalcularTendenciaMeta(){
 // menos frecuencia.
 function renderPortalHome(){
   const el=document.getElementById('portal-content');
-  let html=`<div class="portal-hello">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
+  let html=`<div class="portal-hello" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)}) <button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 10px" onclick="portalOlvidarIdentidad()">No soy yo</button></div>`;
   html+=renderPortalNavegacionSeccion();
   html+=renderPortalProgresoSeccion();
   html+=renderPortalFuerzaSeccion();
@@ -6204,7 +6537,7 @@ function portalBuscarEjercicioNav(texto){
 }
 // Un resultado de búsqueda ya trae músculo Y ejercicio decididos de una vez -- salta directo al
 // formulario de registrar serie, sin pasar por la lista de ejercicios de ese músculo.
-function portalElegirEjercicioDirecto(musculo,id){portalMusculoSel=musculo;portalEjercicioSel=id;renderPortalHome();}
+function portalElegirEjercicioDirecto(musculo,id){portalMusculoSel=musculo;portalEjercicioSel=id;portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
 function renderPortalEjerciciosLista(musculo){
   const ejercicios=BIBLIOTECA_EJERCICIOS[musculo]||[];
   return`<div class="ec-card" style="margin-bottom:16px">
@@ -6215,10 +6548,10 @@ function renderPortalEjerciciosLista(musculo){
     <div>${ejercicios.map(ex=>`<div class="ec-row" style="cursor:pointer" onclick="portalElegirEjercicio('${ex.id}')"><span><strong>${escAttr(ex.nombre)}</strong><div style="font-size:11px;color:var(--muted)">${escAttr(ex.parte)}</div></span><span>›</span></div>`).join('')}</div>
   </div>`;
 }
-function portalElegirMusculo(musculo){portalMusculoSel=musculo;portalEjercicioSel='';renderPortalHome();}
-function portalElegirEjercicio(id){portalEjercicioSel=id;renderPortalHome();}
-function portalVolverMusculos(){portalMusculoSel='';portalEjercicioSel='';renderPortalHome();}
-function portalVolverEjercicios(){portalEjercicioSel='';renderPortalHome();}
+function portalElegirMusculo(musculo){portalMusculoSel=musculo;portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
+function portalElegirEjercicio(id){portalEjercicioSel=id;portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
+function portalVolverMusculos(){portalMusculoSel='';portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
+function portalVolverEjercicios(){portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
 
 // REGISTRAR SERIE (Parte 1d/3): mismo formulario de siempre, ahora encabezado por el ejercicio
 // elegido en la navegación de arriba en vez de por el nombre de una máquina escaneada.
@@ -6244,9 +6577,9 @@ function renderPortalRegistrarSerieSeccion(ejercicio){
     <div class="form-row">
       <div class="form-group">
         <label>Peso <span id="portal-unidad-peso-toggle" style="display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle"><button type="button" class="btn ${portalUnidadPeso==='kg'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('kg')">kg</button><button type="button" class="btn ${portalUnidadPeso==='lb'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('lb')">lb</button></span></label>
-        <input type="number" id="portal-serie-peso" placeholder="${portalUnidadPeso==='lb'?'132':'60'}">
+        <input type="number" id="portal-serie-peso" placeholder="${portalUnidadPeso==='lb'?'132':'60'}" value="${portalUltimoPesoCapturado!==null?portalUltimoPesoCapturado:''}">
       </div>
-      <div class="form-group"><label>Repeticiones</label><input type="number" id="portal-serie-reps" placeholder="10"></div>
+      <div class="form-group"><label>Repeticiones</label><input type="number" id="portal-serie-reps" placeholder="10" value="${portalUltimoReps!==null?portalUltimoReps:''}"></div>
     </div>
     <div class="form-group"><label>Series (opcional — déjalo vacío si es una sola)</label><input type="number" id="portal-serie-series" placeholder="1"></div>`;
   return`<div class="ec-card" style="margin-bottom:16px">
@@ -6303,7 +6636,10 @@ async function portalGuardarSerie(){
     if(!tipo)return alert('Escribe el tipo de serie');
     const pesoCapturado=parseFloat(document.getElementById('portal-serie-peso').value);
     const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
-    if(!pesoCapturado||!repeticiones)return alert('Escribe el peso y las repeticiones');
+    // peso 0 es válido (ejercicios de peso corporal: dominadas, flexiones, fondos, plancha,
+    // burpees, etc. — ver CHANGELOG.md, auditoría punto 10) — por eso isNaN()/<0, NUNCA
+    // "!pesoCapturado" (0 es falsy en JS y antes rechazaba cualquier ejercicio de peso corporal).
+    if(isNaN(pesoCapturado)||pesoCapturado<0||!repeticiones)return alert('Escribe el peso (puede ser 0 para ejercicios de peso corporal) y las repeticiones');
     // Series (Parte 15) es opcional — dejarlo vacío significa "una sola serie", igual que
     // siempre se pudo registrar antes de que existiera este campo (no se vuelve obligatorio
     // escribir "1" cada vez que el cliente solo hizo una serie).
@@ -6312,11 +6648,16 @@ async function portalGuardarSerie(){
     // guarda con qué unidad lo capturó el cliente, para poder mostrárselo tal cual después.
     const peso=portalUnidadPeso==='lb'?lbAKg(pesoCapturado):pesoCapturado;
     data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tipo,peso,unidadOriginal:portalUnidadPeso,repeticiones,series,fecha:Date.now()};
+    // Se recuerdan para prellenar la siguiente serie de ESTE ejercicio (ver CHANGELOG.md,
+    // auditoría punto 10) — capturar varias series seguidas con el mismo peso/reps es lo normal,
+    // así que después de guardar solo hace falta tocar "Guardar" de nuevo. portalTipoSel YA NO se
+    // resetea aquí (se queda igual, no como antes) — se limpia al cambiar de ejercicio/músculo.
+    portalUltimoPesoCapturado=pesoCapturado;
+    portalUltimoReps=repeticiones;
   }
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
     portalRegistros.push({id:ref.id,...data});
-    portalTipoSel='';
     toast(esCardio?'Registro guardado ✓':'Serie guardada ✓');
     renderPortalHome();
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
@@ -6352,7 +6693,7 @@ function _portalProgresoResultadosHtml(){
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
   const delEjercicio=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
   const listaHtml=delEjercicio.length
-    ?delEjercicio.map(r=>_tarjetaProgresoHtml(r,esCardio)).join('')
+    ?delEjercicio.map(r=>_tarjetaProgresoHtml(r,esCardio,_portalBotonBorrarRegistroHtml(r))).join('')
     :'<div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div>';
   return`
     <div class="form-row">
@@ -6361,6 +6702,23 @@ function _portalProgresoResultadosHtml(){
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
     <div style="margin-top:14px">${listaHtml}</div>`;
+}
+// Borrar un registro propio de hoy (ver CHANGELOG.md, auditoría punto 10 — "capturé 600kg por
+// error y se quedó para siempre"). Solo se ofrece el botón dentro de las 24h, acorde a
+// firestore.rules (registrosProgreso, allow delete) — pasadas las 24h el botón ya no aparece.
+function _portalBotonBorrarRegistroHtml(r){
+  if(Date.now()-r.fecha>=86400000)return'';
+  return`<div style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px" onclick="portalBorrarRegistro('${r.id}')">Borrar</button></div>`;
+}
+async function portalBorrarRegistro(id){
+  if(!confirm('¿Borrar este registro? No se puede deshacer.'))return;
+  try{
+    await deleteDoc(gymDoc(window._portalGym,'registrosProgreso',id));
+    const i=portalRegistros.findIndex(r=>r.id===id);
+    if(i>=0)portalRegistros.splice(i,1);
+    _refrescarPortalProgresoResultados();
+    toast('Registro borrado ✓');
+  }catch(e){alert('No se pudo borrar. Intenta de nuevo.');}
 }
 function _refrescarPortalProgresoResultados(){
   const cont=document.getElementById('portal-progreso-resultados');
@@ -6593,6 +6951,7 @@ async function portalGuardarMeta(){
       await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{metaFitness:null});
       await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{metaFitness:null});
       portalMiembro={...portalMiembro,metaFitness:null};
+      closeModal('modal-portal-meta');
       toast('Meta eliminada ✓');
       renderPortalHome();
       return;
@@ -6607,6 +6966,7 @@ async function portalGuardarMeta(){
     await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{metaFitness});
     await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{metaFitness});
     portalMiembro={...portalMiembro,metaFitness};
+    closeModal('modal-portal-meta');
     toast('Meta guardada ✓');
     renderPortalHome();
   }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}

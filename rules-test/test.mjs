@@ -181,6 +181,18 @@ await check('Cliente anónimo puede crear un registro de progreso (ejercicioId/m
 // sugerencias/miembrosPublicos), así que un registro con esta forma distinta debe pasar igual.
 await check('Cliente anónimo puede crear un registro de progreso de CARDIO (tiempoMinutos/distancia, sin peso)', setDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'rCardio1'), { miembroId: 'm1', ejercicioId: 'caminadora', musculo: 'Cardio', tiempoMinutos: 30, distancia: 5, fecha: Date.now() }), true);
 await check('Cliente anónimo puede leer los registros de progreso que acaba de crear', getDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1')), true);
+// Borrar un registro propio de las últimas 24h (2026-10-05, ver CHANGELOG.md, auditoría punto
+// 10a) — acotado por tiempo (resource.data.fecha), no por dueño: no hay forma de verificar que
+// la sesión anónima que borra es DE VERDAD la dueña del registro (ver nota de confianza en
+// firestore.rules), así que en los hechos esto es "cualquier anónimo puede borrar cualquier
+// registro de las últimas 24h" del mismo gym.
+await check('Cliente anónimo SÍ puede borrar un registro de progreso de hace unos minutos (dentro de las 24h)', deleteDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'r1')), true);
+await check('Cliente anónimo NO puede borrar un registro de progreso de hace más de 24h', (async()=>{
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'usuarios', 'uidA', 'registrosProgreso', 'rViejo'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10, series: 3, fecha: Date.now() - 2 * 86400000 });
+  });
+  await deleteDoc(doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', 'rViejo'));
+})(), false);
 await check('Cliente anónimo puede crear un registro de peso corporal', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'p1'), { miembroId: 'm1', peso: 70.5, fecha: Date.now() }), true);
 await check('Cliente anónimo NO puede escribir en pagos/ (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'pagos', 'pFalso'), { monto: 999999 }), false);
 await check('Cliente anónimo NO puede escribir en gastos/empleados (colección genérica, sigue cerrada)', setDoc(doc(cliente, 'usuarios', 'uidA', 'gastos', 'gFalso'), { concepto: 'hackeo' }), false);

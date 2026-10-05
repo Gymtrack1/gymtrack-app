@@ -4,6 +4,116 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-05 — Auditoría (Bloque C): cosas que un gimnasio va a necesitar
+
+**Qué se hizo:** auditoría externa pidió 9 features que ya hacían falta en el uso diario. Los 9
+quedaron implementados.
+
+9. **Corregir errores de captura en Pagos/Ventas.** Antes no existía forma de arreglar un pago o
+   una venta mal capturados sin tocar Firestore a mano.
+   - `editarVencimientoPago()`/`guardarVencimientoPago()` (modal "Editar pago") ahora también
+     dejan corregir **monto** y **forma de pago**, no solo la fecha de vencimiento — `ev-monto`
+     y `ev-forma-pago`, validados (`monto>0`) igual que al registrar un pago nuevo.
+   - Nuevo `delPago(pagoId)`: confirma, borra el pago, recalcula `pagosPorMiembroFin`/
+     `pagosPorMiembroPago`, sincroniza el espejo público del miembro (`sincronizarMiembroPublico`)
+     y vuelve a pintar Dashboard/Miembros/Pagos/Asistencia/Alertas/Estado de Cuenta — todo lo que
+     depende de `getVencimiento()`/`getEstado()`. Botón ✕ nuevo en la tabla de Pagos junto al ✏️
+     que ya existía.
+   - Nuevo `cancelarVenta(ventaId)`: confirma, borra la venta y **devuelve el stock** al producto
+     (`stock += cantidad`). Botón ✕ nuevo en "Últimas Ventas" (Inventario).
+   - De paso, `renderPagos()` quedó con el monto formateado (`.toLocaleString()`, antes sin
+     separador de miles) y `planNombre`/`promocionUsada` pasando por `escAttr` (ver punto 19 de
+     Bloque D — ya quedó resuelto aquí de una vez, mismo bloque de código).
+
+10. **Portal del cliente (QR), 7 ajustes:**
+    - **(a) Borrar su propio registro de hoy:** `firestore.rules` (`registrosProgreso`) gana
+      `allow delete: if isSignedIn() && resource.data.fecha > request.time.toMillis() - 86400000`
+      — acotado por tiempo (24h), no por dueño (ver la nota de confianza ya existente en el
+      archivo: una sesión anónima no se puede atar de forma verificable a un miembro concreto).
+      Botón "Borrar" nuevo en "Mi progreso", solo visible si el registro tiene menos de 24h.
+    - **(b) Ejercicios de peso corporal (peso=0):** `portalGuardarSerie()` ya no rechaza
+      `peso===0` (antes `!pesoCapturado` trataba 0 como vacío) — ahora valida `isNaN()/<0`.
+      `formatearPeso(0,...)` muestra "Peso corporal" en vez de "0kg".
+    - **(c) Prellenar la siguiente serie:** tras guardar, `portalUltimoPesoCapturado`/
+      `portalUltimoReps` quedan en memoria y prellenan los campos de peso/repeticiones — se
+      limpian al cambiar de ejercicio o de músculo, no al guardar (para encadenar varias series
+      del mismo ejercicio sin volver a escribir).
+    - **(d) Recordar el dispositivo:** `localStorage` (clave por gym,
+      `gymtrackPortalId_<gymId>`) guarda número+nombre tras identificarse con éxito;
+      `portalReady` intenta identificar solo con eso antes de mostrar el formulario (en silencio,
+      sin bloquear si falla). Botón "No soy yo" (`portalOlvidarIdentidad()`) borra lo guardado.
+    - **(e) Coincidencia de nombre menos estricta:** nuevo `coincideNombreMiembro(escrito,
+      registrado)` — acepta si cada palabra escrita de 3+ letras está contenida en el nombre
+      registrado (antes exigía coincidencia exacta completa).
+    - **(f) "Sin pago" = "vencido":** `_portalIntentarIdentificar` ahora revisa
+      `!match.vencimientoTs || match.vencimientoTs<Date.now()` (antes un miembro sin ningún pago
+      pasaba de largo como si estuviera activo) — mismo mensaje de "pasa a recepción" que
+      Check-in ya usaba para vencidos.
+    - **(g) Cerrar "Mi Meta" al guardar:** `portalGuardarMeta()` ahora llama `closeModal(...)`
+      tanto al guardar como al borrar la meta (antes se quedaba abierto).
+
+11. **Buscadores de Miembros/Asistencia normalizados.** `renderMiembros(filter)`/
+    `renderAsistencia(filter)` usan `normalizarNombreComparacion()` (sin acentos, minúsculas —
+    mismo criterio que ya usaba el buscador del modal de pago) y también comparan por número;
+    protegidos contra miembros sin `nombre` (`m.nombre||''`).
+
+12. **Renovación anticipada.** `savePago()`: si el miembro ya tiene una membresía vigente cuyo
+    vencimiento es posterior a la fecha de pago, el nuevo período empieza desde ESE vencimiento,
+    no desde hoy (antes perdía los días que le quedaban). Nuevo `actualizarVigenciaPreview()`
+    muestra "Vigente hasta: dd/mm/aaaa" en el modal antes de guardar (y avisa "Paga antes de
+    vencer: se conservan sus días restantes" cuando aplica).
+
+13. **Check-in duplicado.** `checkinConfirmar()` revisa si el miembro ya tiene una asistencia hoy
+    (`asistencias` ya está en memoria, sin leer Firestore de nuevo) — si ya entró, muestra "Ya
+    registraste tu entrada hoy" (nuevo color `azul`) y no crea una segunda asistencia.
+
+14. **Tasa de Renovación de vuelta en Finanzas.** Nuevo `calcularTasaRenovacion()`: de los
+    miembros cuyo último `fechaFin` cae dentro del mes en curso, qué % tiene un pago nuevo
+    registrado dentro de los 15 días siguientes a ese vencimiento. Nueva tarjeta "🔄 Tasa de
+    Renovación (este mes)" en Finanzas → Gráficas, mostrando el porcentaje y los dos números
+    (renovaron / total).
+
+15. **Exportar Excel ampliado.** Nuevo `exportarPagos()` (botón en la pantalla de Pagos) y nuevo
+    `exportarTodo()` (botón "📤 Exportar todo" en Finanzas) — un solo archivo con 6 hojas
+    (Miembros, Pagos, Asistencias, Ventas, Gastos, Inventario). De paso se corrigió un bug ya
+    existente y no reportado en la auditoría: `exportarMiembros()`, `descargarPlantilla()` y
+    `descargarPlantillaVincular()` llamaban a `XLSX.utils.book_append_sheet(wb, nombreHoja, ws)`
+    — el orden real de esa función es `(workbook, worksheet, nombreHoja)`; con el orden viejo,
+    la librería real de SheetJS (confirmado instalando el paquete `xlsx@0.18.5` por separado y
+    probando ambos órdenes) truena con `n.indexOf is not a function` en cuanto se intenta exportar
+    — es decir, "Exportar Excel" de Miembros y las dos plantillas llevaban rotas un tiempo sin que
+    nadie lo notara (el stub de pruebas no valida argumentos, así que ningún test lo había
+    atrapado). Se corrigió el orden en los 3 lugares existentes y se usó el orden correcto desde
+    el inicio en el código nuevo.
+
+16. **Cambiar PIN desde Finanzas.** Nuevo modal "Cambiar PIN" (botón en Finanzas) y
+    `guardarCambioPin()`: pide el PIN actual (lo valida contra el hash guardado, con la misma
+    migración de texto plano que ya tenía `submitPin()`), y si es correcto deja escribir y
+    confirmar uno nuevo. Antes solo el admin podía cambiarlo (resetearPinFinanzasGym, desde "Ver
+    panel").
+
+17. **Nómina en Corte de Caja.** El campo de empleados ahora dice "Sueldo mensual ($)" (antes
+    "Sueldo ($)", ambiguo). La tarjeta "📊 ESTE MES" (la única que incluye nómina completa en el
+    cálculo — Hoy/Semana/Quincena no la prorratean) ahora tiene una nota explicándolo, para que no
+    parezca un error al comparar los gastos entre períodos.
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores de sintaxis.
+- `firestore.rules`: copiado a `rules-test/firestore.rules` y corrida la suite completa de
+  pruebas del emulador — **114 OK / 0 FAIL** (112 ya existentes + 2 nuevas para el punto 10a:
+  un registro de hace unos minutos SÍ se puede borrar, uno de hace más de 24h NO). De paso se
+  encontró y corrigió un bug real en `_portalIntentarIdentificar()` (`snap.forEach` en vez de
+  `snap.docs.forEach` — con el SDK real de Firebase `forEach` sí existe directo en el
+  `QuerySnapshot`, pero rompía contra el stub de pruebas; se alineó con el patrón que ya usa el
+  resto del archivo, `snap.docs.forEach`/`.map`, sin cambiar el comportamiento real).
+- Prueba nueva de Playwright (`test_auditoria_bloque_c.mjs`, 45 casos): los 9 puntos completos,
+  incluyendo los 7 sub-puntos del portal por separado (borrar registro propio dentro/fuera de
+  24h, peso corporal, prellenado de la siguiente serie, recordar dispositivo + "No soy yo",
+  coincidencia de nombre parcial, sin-pago tratado como vencido, cierre del modal de meta),
+  verificación de hojas y nombres de archivo en `exportarPagos()`/`exportarTodo()`, y el flujo
+  completo de Cambiar PIN (PIN actual incorrecto, confirmación que no coincide, caso exitoso).
+  Suite completa del proyecto (15 archivos) — **255/255**, sin regresiones.
+
 ## 2026-10-05 — Auditoría (Bloque B): huecos de seguridad
 
 ### 7. Cerrado: cualquier cuenta de Firebase Auth obtenía un GymTrack completo gratis
