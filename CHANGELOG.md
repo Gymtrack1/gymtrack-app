@@ -4,6 +4,46 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-05 — Auditoría (Bloque D): detalles menores
+
+**Qué se hizo:** auditoría externa pidió 4 ajustes menores. Los 4 quedaron implementados (el
+punto 19 ya había quedado resuelto de paso en el Bloque C, en el mismo código que tocaba — se
+documenta aquí solo para no dejarlo fuera de la lista).
+
+18. **Dashboard: "Vencidos" ya no se mezcla con "Sin pago".** `renderDashboard()` sumaba ambos
+    estados en una sola tarjeta "Vencidos", inflando el número (un miembro que nunca ha pagado no
+    es lo mismo que uno al que se le venció la membresía). Se separaron en dos tarjetas:
+    "Vencidos" (solo `estado==='vencido'`) y "Sin Pago" (solo `estado==='sin-pago'`) nueva.
+
+19. **Tabla de Pagos: formato de miles y `escAttr`.** Ya quedó resuelto en el Bloque C (punto 9,
+    mismo bloque de código que tocó `renderPagos()` para agregar el botón de borrar) —
+    `$${p.monto.toLocaleString()}` y `planNombre`/`promocionUsada` pasando por `escAttr`.
+
+20. **Personalización: advertencia de poco contraste.** Nuevo `diferenciaBrillo(hex1,hex2)` (la
+    fórmula clásica de brillo percibido del W3C, `(R*299+G*587+B*114)/1000`, **no** la razón de
+    contraste de WCAG 2.0 — se probó primero con WCAG y daba falsos positivos: el acento de
+    fábrica, `#C6E600` sobre tarjetas blancas, da solo ~1.43:1 de razón de contraste, muy por
+    debajo del 4.5:1 que exige WCAG para texto, pero a simple vista se ve perfectamente bien. La
+    diferencia de brillo separa mejor los casos reales: con el umbral de 50 (sobre 0-255),
+    "negro sobre gris casi negro" cae por debajo y si dispara, pero los colores de fábrica sin
+    tocar NUNCA disparan la advertencia). `guardarPersonalizacion()` ahora pregunta con
+    `confirm()` antes de guardar si el acento y el color de tarjetas quedan demasiado parecidos
+    en brillo — se puede guardar igual si el usuario confirma.
+
+21. **`delGym`: el texto de confirmación ahora explica lo que de verdad pasa.** `delGym(id)`
+    solo borra el doc `usuarios/{id}` — sus subcolecciones (miembros, pagos, asistencias, ventas,
+    gastos, inventario, etc.) y la cuenta de Firebase Auth del cliente quedan huérfanas, no se
+    borran solas. El `confirm()` ahora lo dice explícitamente y sugiere borrar el resto a mano
+    desde la consola de Firebase si de verdad se quiere borrar todo. No se tocó el comportamiento
+    (sigue sin cascada) — es un cambio de texto, no de alcance, para no hacer un borrado en
+    cascada sin que Luis lo pida explícitamente.
+
+**Verificado:** `node --check` sobre el script principal — sin errores de sintaxis. No se tocó
+`firestore.rules` en este bloque. Prueba nueva de Playwright (`test_auditoria_bloque_d.mjs`, 9
+casos: Dashboard separa los dos conteos, `diferenciaBrillo()` detecta negro-sobre-casi-negro y
+NO dispara con los colores de fábrica, `delGym()` muestra el texto correcto). Suite completa del
+proyecto (16 archivos) — **264/264**, sin regresiones.
+
 ## 2026-10-05 — Auditoría (Bloque C): cosas que un gimnasio va a necesitar
 
 **Qué se hizo:** auditoría externa pidió 9 features que ya hacían falta en el uso diario. Los 9

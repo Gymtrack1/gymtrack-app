@@ -432,6 +432,7 @@ contenedor, igual que app-screen/admin-screen. -->
       <div class="stat-card"><div class="stat-label">Al Corriente</div><div class="stat-num green" id="stat-activos">—</div></div>
       <div class="stat-card"><div class="stat-label">Por Vencer (7d)</div><div class="stat-num orange" id="stat-proximos">—</div></div>
       <div class="stat-card"><div class="stat-label">Vencidos</div><div class="stat-num red" id="stat-vencidos">—</div></div>
+      <div class="stat-card"><div class="stat-label">Sin Pago</div><div class="stat-num red" id="stat-sin-pago">—</div></div>
     </div>
     <div class="section-title">Asistencia Hoy</div>
     <div id="dash-hoy"><div class="loading">Cargando...</div></div>
@@ -1886,7 +1887,10 @@ async function setSuspendido(gymId,suspender,displayName){
     await loadAdminGyms();
   }catch(e){alert('Error al cambiar el estado: '+e.message);}
 }
-async function delGym(id){if(!confirm('¿Eliminar este cliente?'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
+// El texto deja claro lo que de verdad hace (ver CHANGELOG.md, auditoría punto 21): esto SOLO
+// borra el doc usuarios/{id} — sus subcolecciones (miembros, pagos, asistencias, ventas, etc.) y
+// la cuenta de Firebase Auth del cliente quedan huérfanas, no se borran solas.
+async function delGym(id){if(!confirm('¿Eliminar este cliente?\n\nOJO: esto SOLO borra su registro de GymTrack. Sus datos (miembros, pagos, asistencias, ventas, etc.) y su cuenta de inicio de sesión de Firebase NO se borran — quedan huérfanos en la base de datos. Si de verdad quieres borrar todo, hazlo manualmente desde la consola de Firebase.'))return;await deleteDoc(docFn(db,'usuarios',id));await loadAdminGyms();}
 
 // VER PANEL DE OTRO GIMNASIO COMO ADMIN (ver CHANGELOG.md) — pedido explícito: el admin quiere
 // poder revisar cómo está usando GymTrack cada cliente (y corregir algo si hace falta) SIN tocar
@@ -2459,7 +2463,11 @@ function renderDashboard(){
   document.getElementById('stat-total').textContent=miembros.length;
   document.getElementById('stat-activos').textContent=miembros.filter(m=>getEstado(m.id)==='activo').length;
   document.getElementById('stat-proximos').textContent=miembros.filter(m=>getEstado(m.id)==='por-vencer').length;
-  document.getElementById('stat-vencidos').textContent=miembros.filter(m=>['vencido','sin-pago'].includes(getEstado(m.id))).length;
+  // FIX (ver CHANGELOG.md, auditoría punto 18): "Vencidos" ya NO suma a "Sin pago" — son
+  // estados distintos (uno tuvo membresía y se le pasó, el otro nunca ha pagado) y antes se
+  // mezclaban en una sola tarjeta, inflando el número de "Vencidos".
+  document.getElementById('stat-vencidos').textContent=miembros.filter(m=>getEstado(m.id)==='vencido').length;
+  document.getElementById('stat-sin-pago').textContent=miembros.filter(m=>getEstado(m.id)==='sin-pago').length;
   const hoyStr=new Date().toDateString();
   const hoyIds=asistencias.filter(a=>new Date(a.fecha).toDateString()===hoyStr).map(a=>a.miembroId);
   const hoyM=miembros.filter(m=>hoyIds.includes(m.id));
@@ -5588,10 +5596,35 @@ async function quitarFondo(tabId){
     if(urlPrevia){try{await deleteObjectFn(storageRef(storage,urlPrevia));}catch(e){}}
   }catch(e){toast('Error: '+mensajeError(e),'err');}
 }
+// Contraste de color (ver CHANGELOG.md, auditoría punto 20) — diferencia de brillo percibido
+// (fórmula clásica de W3C para contraste de color, brightness = (R*299+G*587+B*114)/1000, NO la
+// razón de contraste de WCAG 2.0 basada en luminancia). Se probó primero con la fórmula de WCAG
+// y daba falsos positivos: el acento por defecto de GymTrack (#C6E600, un verde lima) contra
+// tarjetas blancas da una razón de contraste de ~1.43:1 — MUY baja para WCAG (que exige 4.5:1
+// para texto), pero el color por default es perfectamente visible a simple vista, así que
+// hubiera disparado la advertencia con los colores de fábrica sin que nadie haya cambiado nada.
+// La diferencia de brillo sí separa bien los casos: colores oscuros muy parecidos entre sí (ej.
+// negro sobre gris casi negro) dan una diferencia chica aunque sean de tonos distintos, mientras
+// que lima-sobre-blanco da una diferencia grande a pesar de la baja razón de contraste de WCAG.
+function _brillo(hex){
+  const n=hex.replace('#','');
+  const [r,g,b]=[0,2,4].map(i=>parseInt(n.substr(i,2),16));
+  return(r*299+g*587+b*114)/1000;
+}
+function diferenciaBrillo(hex1,hex2){
+  return Math.abs(_brillo(hex1)-_brillo(hex2));
+}
 async function guardarPersonalizacion(){
   const colorAcento=document.getElementById('pz-color').value;
   const colorFondo=document.getElementById('pz-color-fondo').value;
   const colorTarjetas=document.getElementById('pz-color-tarjetas').value;
+  // Umbral de 50 (sobre una escala de 0 a 255): por debajo de eso el acento prácticamente se
+  // funde con la tarjeta a simple vista. Calibrado para NO disparar con los colores de fábrica
+  // (lima sobre blanco da ~61) pero SÍ con combinaciones realmente problemáticas (negro sobre
+  // gris muy oscuro da ~26-42).
+  if(diferenciaBrillo(colorAcento,colorTarjetas)<50){
+    if(!confirm('El color de acento se ve muy parecido al color de las tarjetas — el logo, los totales y el botón principal podrían verse invisibles. ¿Guardar de todas formas?'))return;
+  }
   try{
     await updateDoc(docFn(db,'usuarios',uid),{colorAcento,colorFondo,colorTarjetas});
     personalizacion.colorAcento=colorAcento;
