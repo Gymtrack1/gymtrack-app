@@ -4,6 +4,29 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Portal (QR): el campo de número también sugiere ahora
+
+**Reporte de Luis, probando en su celular después del `<form>` real del cambio anterior:** el
+campo de Nombre sí sugería lo que había escrito antes, pero el de Número de miembro no.
+
+**Causa:** `portal-numero` era `<input type="number" ...>`. Es una limitación conocida de los
+navegadores de celular (Chrome/Safari): los inputs `type="number"` no ofrecen de forma confiable
+el autocompletado de valores escritos antes, a diferencia de los `type="text"` — sin importar que
+ya tuviera `name`/`autocomplete` correctos y estuviera dentro de un `<form>` real (eso resolvió
+el campo de Nombre, que sí es `type="text"`, pero no alcanzaba para el de Número).
+
+**Qué se cambió:** `portal-numero` pasó de `type="number"` a `type="text" inputmode="numeric"
+pattern="[0-9]*"` — el celular sigue mostrando el mismo teclado numérico (por `inputmode`), pero
+ahora el navegador lo trata como un campo de texto normal para efectos de autocompletado. No se
+tocó cómo se lee el valor (`parseInt(...)` ya trabajaba igual con un `<input>` de texto).
+
+**Verificado:** `node --check` sobre el script principal — sin errores de sintaxis. Se agregó una
+aserción nueva en `test_portal_recordarme.mjs` (caso 8) confirmando `type="text"` +
+`inputmode="numeric"` (ya no `type="number"`) — 24 casos en ese archivo. Suite completa del
+proyecto (16 archivos) — **288/288**, sin regresiones. No se pudo probar la sugerencia real del
+teclado en sí (depende del navegador/sistema operativo del celular, fuera del alcance de las
+pruebas automatizadas) — queda pendiente de que Luis confirme en su celular tras publicar.
+
 ## 2026-10-07 — Portal (QR): el teclado del celular ahora puede sugerir número/nombre
 
 **Pedido de Luis:** no bastaba con que el portal entrara solo en silencio (ver la entrada de
