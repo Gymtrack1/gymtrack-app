@@ -4,6 +4,21 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Los `.command` se mudan a una carpeta `commands/`
+
+**Qué se hizo:** a petición de Luis, los 3 archivos de doble clic (`actualizar-gymtrack.command`,
+`desplegar-acceso-biometrico.command`, `publicar-sitio-web.command`) se movieron de la raíz del
+repo a `commands/`, para no tener la carpeta de GymTrack llena de archivos sueltos. Cada script
+usaba `cd "$(dirname "$0")"` para pararse en la raíz del proyecto (donde viven `index.html`,
+`firebase.json`, `functions/`, etc.) — al moverlos un nivel abajo, eso ahora los dejaba parados
+dentro de `commands/` en vez de la raíz, así que se cambió a `cd "$(dirname "$0")/.."` en los 3.
+`firebase.json` (`hosting.ignore`) se actualizó de `"*.command"` a `"commands/**"` para seguir
+excluyendo estos scripts de lo que se publica a Hosting.
+
+**Verificado:** `git mv` (conserva el historial de cada archivo), `bash -n` sobre los 3 scripts
+movidos — sin errores de sintaxis —, permisos de ejecución (`100755`) intactos tras el movimiento,
+y `firebase.json` sigue siendo JSON válido.
+
 ## 2026-10-07 — Nuevo `publicar-sitio-web.command` para desplegar Firebase Hosting con doble clic
 
 **Qué se hizo:** Luis preguntó desde dónde correr `firebase deploy --only hosting` — no tiene

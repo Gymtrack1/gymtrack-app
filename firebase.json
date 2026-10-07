@@ -12,7 +12,7 @@
       "firestore.rules",
       "storage.rules",
       "storage-cors.json",
-      "*.command"
+      "commands/**"
     ],
     "rewrites": [
       {

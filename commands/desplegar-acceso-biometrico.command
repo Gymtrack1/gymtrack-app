@@ -1,6 +1,8 @@
 #!/bin/bash
 # Doble clic para desplegar/actualizar la Cloud Function del control de acceso biométrico (ZKTeco).
-cd "$(dirname "$0")"
+# Este archivo vive en commands/ — nos movemos a la raíz del proyecto (un nivel arriba) porque
+# ahí es donde vive la carpeta functions/, firebase.json, etc.
+cd "$(dirname "$0")/.."
 
 echo "==========================================="
 echo "  Desplegando función de acceso biométrico"

@@ -1,6 +1,8 @@
 #!/bin/bash
 # Doble clic para traer la última versión de index.html desde GitHub.
-cd "$(dirname "$0")"
+# Este archivo vive en commands/ — nos movemos a la raíz del proyecto (un nivel arriba) porque
+# ahí es donde viven index.html, .git, etc.
+cd "$(dirname "$0")/.."
 
 echo "======================================"
 echo "  Actualizando GymTrack desde GitHub"

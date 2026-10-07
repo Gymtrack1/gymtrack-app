@@ -1,6 +1,8 @@
 #!/bin/bash
 # Doble clic para publicar la última versión de GymTrack en mi-gimnasio-8d528.web.app (Firebase Hosting).
-cd "$(dirname "$0")"
+# Este archivo vive en commands/ — nos movemos a la raíz del proyecto (un nivel arriba) porque
+# ahí es donde vive index.html, firebase.json, etc.
+cd "$(dirname "$0")/.."
 
 echo "======================================"
 echo "  Publicando GymTrack en Firebase"
