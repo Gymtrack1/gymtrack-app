@@ -4,6 +4,64 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Portal (QR): "recordarme en este celular" de verdad funciona
+
+**Reporte:** Luis reportó que a los clientes SIEMPRE les vuelve a pedir número+nombre en el
+portal, aunque el "recordarme" (ver auditoría punto 10d, 5 oct) ya estaba en el código.
+
+**Diagnóstico (antes de tocar nada):**
+1. **Causa principal, confirmada por Luis:** el código del 5 de octubre nunca se había
+   desplegado — ni a Firebase Hosting ni a GitHub Pages. Los clientes seguían usando la versión
+   vieja, sin ningún "recordarme". Esto por sí solo ya explica el "siempre".
+2. **Bug real encontrado en el código, de todas formas:** en `portalReady`, `renderPortalIdentify()`
+   (el formulario vacío) se pintaba de inmediato y `portalIntentarIdentidadGuardada()` corría de
+   fondo sin esperarse (`await`) — el cliente SIEMPRE veía el formulario un instante, incluso en
+   los casos donde el "recordarme" sí iba a funcionar un momento después. Muchos clientes
+   probablemente ni notaban el cambio automático si ya habían empezado a escribir.
+3. **No verificable desde este entorno (sin salida de red a los dominios de producción):** no se
+   pudo confirmar si el QR físico del gimnasio apunta siempre al mismo dominio. El QR se genera
+   dinámicamente con `location.origin+location.pathname` en el momento de descargarlo
+   (`descargarQRAcceso()`) — si alguna vez se generó desde un origen distinto al de hoy,
+   localStorage/cookies no se comparten entre dominios distintos. Quedó pendiente de que Luis lo
+   confirme si el problema persiste después de desplegar.
+
+**Qué se cambió:**
+- `portalReady`: ahora, si hay algo guardado, se muestra "Entrando..." (`renderPortalEntrando()`,
+  nueva) y se **espera** (`await`) el resultado del intento automático antes de decidir qué
+  pintar — ya no hay una ventana donde el formulario vacío aparece por error.
+- `_portalIntentarIdentificar()` ahora devuelve `'ok'|'no-encontrado'|'vencida'|'error'` (antes
+  `true`/`false`) para que `portalReady` sepa distinguir "no se encontró" (formulario vacío, el
+  cliente puede haber cambiado de datos) de "error de conexión" (formulario YA PRELLENADO con lo
+  guardado, para que el cliente solo pulse "Continuar" en vez de volver a escribir todo). En
+  ningún caso de error se borra lo guardado.
+- Si la membresía está vencida, la identidad guardada sigue sin borrarse (ya era así, se dejó
+  explícito con un comentario) — al pagar, vuelve a entrar solo.
+- La identidad ahora se guarda en **dos lugares**: `localStorage` (como antes) y una **cookie**
+  de 1 año (`max-age=31536000; path=/; SameSite=Lax`, más `Secure` solo si la página ya está en
+  HTTPS — en producción siempre lo está; un navegador ignora de todos modos una cookie `Secure`
+  servida por HTTP, así que esto no resta protección real y de paso permite probar el respaldo en
+  local). Útil contra navegadores (sobre todo vistas embebidas de apps como WhatsApp/Instagram)
+  que son más agresivos limpiando uno de los dos que el otro. Al leer, se usa localStorage
+  primero y la cookie como respaldo — si se recupera de cualquiera de los dos lados, se
+  reescriben ambos (repara el que faltaba, renueva la expiración de la cookie). Sigue guardando
+  solo `numero`+`nombre`, nada más. `portalOlvidarIdentidad()` ("No soy yo") borra los dos.
+- Los inputs `portal-numero`/`portal-nombre` ganan `name`/`autocomplete` (`"username"` y
+  `"name"` respectivamente) para que el teclado del celular también los sugiera.
+- El Portal de Empleados (PIN, `?staff=1`) no se tocó — nunca llama a estas funciones, el PIN del
+  staff sigue sin guardarse en ningún lado.
+
+**Verificado:** `node --check` sobre el script principal — sin errores de sintaxis. Prueba nueva
+de Playwright (`test_portal_recordarme.mjs`, 19 casos — servido por un pequeño servidor HTTP
+local en vez de `file://`, porque Chromium no permite cookies en absoluto sobre `file://` y no
+hay forma de probar el respaldo de cookie sin un origen http(s) real): guarda en los dos lados,
+recupera de la cookie si falta localStorage y repara el que faltaba, "No soy yo" borra los dos,
+error de conexión prellena sin borrar lo guardado, "Entrando..." se ve mientras se resuelve una
+consulta retrasada a propósito, miembro no encontrado deja el formulario vacío (no prellena con
+datos obsoletos), vencido no borra lo guardado, atributos `name`/`autocomplete` presentes, modo
+staff no escribe nada. Suite completa del proyecto (17 archivos) — **283/283**, sin regresiones
+(se ajustó una aserción en `test_auditoria_bloque_c.mjs` al nuevo contrato de retorno de
+`_portalIntentarIdentificar`, sin cambiar lo que prueba).
+
 ## 2026-10-05 — Auditoría (Bloque D): detalles menores
 
 **Qué se hizo:** auditoría externa pidió 4 ajustes menores. Los 4 quedaron implementados (el

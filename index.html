@@ -6361,12 +6361,26 @@ window.addEventListener('portalReady',async()=>{
   if(window._portalStaff)renderPortalStaffIdentify();
   else if(window._portalSugerencia)renderPortalSugerenciasForm();
   else{
-    // "Recordarme en este celular" (ver CHANGELOG.md, auditoría punto 10): antes de mostrar el
-    // formulario, intenta entrar solo con lo que ya se guardó en una visita anterior — si no hay
-    // nada guardado o el intento falla, se queda en el formulario normal sin que el cliente note
-    // la diferencia.
-    renderPortalIdentify();
-    portalIntentarIdentidadGuardada();
+    // "Recordarme en este celular" (ver CHANGELOG.md, auditoría punto 10 y el ajuste del
+    // 2026-10-07): antes había una condición de carrera — se pintaba el formulario vacío YA y
+    // el intento automático corría de fondo sin esperarlo, así que el cliente SIEMPRE veía
+    // "Identifícate" un instante (y muchos ni notaban que un segundo después sí los
+    // reconocía). Ahora, si hay algo guardado, se muestra "Entrando..." y se espera el
+    // resultado antes de decidir qué pintar.
+    const guardado=_portalIdentidadGuardada();
+    if(guardado){
+      renderPortalEntrando();
+      const resultado=await portalIntentarIdentidadGuardada();
+      // 'ok' y 'vencida' ya dejaron pintada su propia pantalla dentro de
+      // _portalIntentarIdentificar — aquí no hay que hacer nada más.
+      if(resultado==='ok'||resultado==='vencida')return;
+      // 'error' de conexión (no "no encontrado"): NO se borra lo guardado — se prellena el
+      // formulario con lo que ya se tenía para que el cliente solo pulse "Continuar", en vez
+      // de tener que volver a escribir todo.
+      renderPortalIdentify(resultado==='error'?guardado:null);
+    }else{
+      renderPortalIdentify();
+    }
   }
 });
 
@@ -6402,36 +6416,85 @@ async function cargarPersonalizacionPortal(){
   }catch(e){/* sin personalización o falló la lectura: el portal se ve default, no se rompe nada */}
 }
 
-function renderPortalIdentify(){
+// prellenado (opcional): {numero,nombre} para dejar los campos ya escritos — se usa cuando el
+// intento automático de "recordarme" falló por un error de conexión (ver CHANGELOG.md,
+// 2026-10-07) y no queremos que el cliente tenga que volver a escribir todo desde cero.
+function renderPortalIdentify(prellenado){
   const el=document.getElementById('portal-content');
   if(!el)return;
   el.innerHTML=`<div class="ec-card">
     <h3>Identifícate</h3>
-    <div class="form-group"><label>Número de miembro</label><input type="number" id="portal-numero" placeholder="Ej. 42"></div>
-    <div class="form-group"><label>Nombre</label><input type="text" id="portal-nombre" placeholder="Como está registrado" onkeydown="if(event.key==='Enter')portalIdentificar()"></div>
+    <div class="form-group"><label>Número de miembro</label><input type="number" id="portal-numero" name="username" autocomplete="username" placeholder="Ej. 42" value="${prellenado?escAttr(String(prellenado.numero)):''}"></div>
+    <div class="form-group"><label>Nombre</label><input type="text" id="portal-nombre" name="name" autocomplete="name" placeholder="Como está registrado" value="${prellenado?escAttr(prellenado.nombre):''}" onkeydown="if(event.key==='Enter')portalIdentificar()"></div>
     <div id="portal-identify-error" class="login-error"></div>
     <button class="btn btn-primary" style="width:100%" onclick="portalIdentificar()">Continuar</button>
   </div>`;
 }
+// Se muestra mientras se intenta la entrada automática con lo guardado (ver CHANGELOG.md,
+// 2026-10-07) — antes se pintaba el formulario vacío de una vez y el cliente nunca se daba
+// cuenta de que un instante después sí lo reconocía; ahora ve que algo está pasando.
+function renderPortalEntrando(){
+  const el=document.getElementById('portal-content');
+  if(!el)return;
+  el.innerHTML=`<div class="ec-card"><div class="empty"><div class="empty-icon">⏳</div><div>Entrando...</div></div></div>`;
+}
 
-// Clave de localStorage para "recordarme en este celular" (ver CHANGELOG.md, auditoría punto
-// 10) — por gimnasio (prefijo con el gymId), porque el mismo teléfono puede usarse para
+// Clave de localStorage/cookie para "recordarme en este celular" (ver CHANGELOG.md, auditoría
+// punto 10) — por gimnasio (prefijo con el gymId), porque el mismo teléfono puede usarse para
 // escanear el QR de más de un gym (ej. alguien que entrena en dos lugares). Nunca guarda nada
 // sensible, solo numero+nombre — lo mismo que ya se escribe a mano cada vez.
 function _portalStorageKey(){return 'gymtrackPortalId_'+window._portalGym;}
-function _portalGuardarIdentidad(numero,nombre){
-  try{localStorage.setItem(_portalStorageKey(),JSON.stringify({numero,nombre}));}catch(e){/* localStorage no disponible (privado/bloqueado): sin romper nada, solo no se recuerda */}
+// Respaldo en cookie (ver CHANGELOG.md, 2026-10-07) — algunos navegadores (sobre todo vistas
+// embebidas de apps como WhatsApp/Instagram) son más agresivos limpiando localStorage que
+// cookies, o viceversa; guardar en los dos lugares da una segunda oportunidad. `Secure` solo se
+// agrega si la página ya está en HTTPS (en producción siempre lo está) — un navegador ignora de
+// todos modos una cookie `Secure` servida por HTTP, así que esto no quita protección real y de
+// paso deja probar el respaldo en local con `file://`/HTTP sin que se rompa silenciosamente.
+function _portalEscribirCookie(valor){
+  try{
+    const secure=location.protocol==='https:'?'; Secure':'';
+    document.cookie=`${_portalStorageKey()}=${encodeURIComponent(valor)}; max-age=31536000; path=/; SameSite=Lax${secure}`;
+  }catch(e){/* cookies bloqueadas: sin romper nada, queda solo el intento de localStorage */}
 }
+function _portalLeerCookie(){
+  try{
+    const prefijo=_portalStorageKey()+'=';
+    for(let parte of document.cookie.split(';')){
+      parte=parte.trim();
+      if(parte.startsWith(prefijo))return decodeURIComponent(parte.slice(prefijo.length));
+    }
+  }catch(e){}
+  return null;
+}
+function _portalBorrarCookie(){
+  try{document.cookie=`${_portalStorageKey()}=; max-age=0; path=/; SameSite=Lax`;}catch(e){}
+}
+function _portalGuardarIdentidad(numero,nombre){
+  const valor=JSON.stringify({numero,nombre});
+  try{localStorage.setItem(_portalStorageKey(),valor);}catch(e){/* localStorage no disponible (privado/bloqueado): sin romper nada, queda la cookie */}
+  _portalEscribirCookie(valor);
+}
+// Lee localStorage primero; si no hay nada ahí, cae a la cookie como respaldo (ver CHANGELOG.md,
+// 2026-10-07). Si encuentra algo por cualquiera de los dos lados, vuelve a escribir ambos —
+// así se repara el que haya faltado y se renueva la expiración de la cookie en cada visita.
 function _portalIdentidadGuardada(){
+  let d=null;
   try{
     const raw=localStorage.getItem(_portalStorageKey());
-    if(!raw)return null;
-    const d=JSON.parse(raw);
-    return(d&&d.numero&&d.nombre)?d:null;
-  }catch(e){return null;}
+    if(raw){const parsed=JSON.parse(raw);if(parsed&&parsed.numero&&parsed.nombre)d=parsed;}
+  }catch(e){}
+  if(!d){
+    const rawCookie=_portalLeerCookie();
+    if(rawCookie){
+      try{const parsed=JSON.parse(rawCookie);if(parsed&&parsed.numero&&parsed.nombre)d=parsed;}catch(e){}
+    }
+  }
+  if(d)_portalGuardarIdentidad(d.numero,d.nombre);
+  return d;
 }
 function portalOlvidarIdentidad(){
   try{localStorage.removeItem(_portalStorageKey());}catch(e){}
+  _portalBorrarCookie();
   portalMiembro=null;
   renderPortalIdentify();
 }
@@ -6439,25 +6502,30 @@ function portalOlvidarIdentidad(){
 // (portalReady) — ver CHANGELOG.md, auditoría punto 10. onError es opcional: el intento
 // automático falla en silencio (vuelve al formulario normal) en vez de mostrar un error que el
 // cliente nunca pidió ver.
+// Devuelve 'ok'|'no-encontrado'|'vencida'|'error' (antes devolvía solo true/false) — ver
+// CHANGELOG.md, 2026-10-07: portalReady necesita distinguir "no se encontró" de "error de
+// conexión" para decidir si prellena el formulario o lo deja vacío.
 async function _portalIntentarIdentificar(numero,nombre,onError){
   const gymId=window._portalGym;
   try{
     const snap=await getDocs(queryFn(gymCol(gymId,'miembrosPublicos'),whereFn('numero','==',numero)));
     let match=null;
     snap.docs.forEach(d=>{const data=d.data();if(coincideNombreMiembro(nombre,data.nombre))match={id:d.id,...data};});
-    if(!match){if(onError)onError('No encontramos tu registro. Verifica tu número y tu nombre.');return false;}
+    if(!match){if(onError)onError('No encontramos tu registro. Verifica tu número y tu nombre.');return'no-encontrado';}
     // Sin ningún pago registrado (vencimientoTs null/undefined) se trata igual que vencido — no
     // "pasa de largo" como activo. Mismo criterio que Modo Check-in (ver CHANGELOG.md, auditoría
-    // punto 10): sin pago = no entra, mismo tipo de aviso de "pasa a recepción".
+    // punto 10): sin pago = no entra, mismo tipo de aviso de "pasa a recepción". La identidad
+    // guardada NO se borra aquí (ver CHANGELOG.md, 2026-10-07) — en cuanto el miembro pague,
+    // debe volver a entrar solo, sin tener que volver a escribir sus datos.
     if(!match.vencimientoTs||match.vencimientoTs<Date.now()){
       document.getElementById('portal-content').innerHTML='<div class="ec-card"><div class="empty"><div class="empty-icon">🔒</div><div>Tu membresía está vencida. Pasa a recepción para ponerte al corriente y volver a usar esta función.</div></div></div>';
-      return false;
+      return'vencida';
     }
     portalMiembro=match;
     _portalGuardarIdentidad(numero,nombre);
     await portalCargarDatos();
     renderPortalHome();
-    return true;
+    return'ok';
   }catch(e){
     console.error('_portalIntentarIdentificar error:',e);
     // Se incluye el código/mensaje real del error (ej. "permission-denied") para poder
@@ -6465,7 +6533,7 @@ async function _portalIntentarIdentificar(numero,nombre,onError){
     // forma fácil de verla.
     const detalle=(e&&e.code)?e.code:(e&&e.message)?e.message:'error desconocido';
     if(onError)onError(`No pudimos conectar. Intenta de nuevo. (${detalle})`);
-    return false;
+    return'error';
   }
 }
 async function portalIdentificar(){
@@ -6477,12 +6545,12 @@ async function portalIdentificar(){
   await _portalIntentarIdentificar(numero,nombre,(msg)=>{errEl.textContent=msg;errEl.style.display='block';});
 }
 // Intenta entrar solo con lo guardado en este celular (ver CHANGELOG.md, auditoría punto 10) —
-// se llama desde portalReady ANTES de mostrar el formulario. Si no hay nada guardado, o el
-// intento falla por cualquier motivo (se dio de baja, cambió de número, etc.), simplemente se
-// queda en el formulario normal — nunca bloquea al cliente.
+// se llama desde portalReady. Si no hay nada guardado, o el intento falla por cualquier motivo
+// (se dio de baja, cambió de número, etc.), nunca bloquea al cliente — portalReady decide qué
+// pintar según el resultado ('ok'|'no-encontrado'|'vencida'|'error'|null si no había nada guardado).
 async function portalIntentarIdentidadGuardada(){
   const guardado=_portalIdentidadGuardada();
-  if(!guardado)return false;
+  if(!guardado)return null;
   return await _portalIntentarIdentificar(guardado.numero,guardado.nombre,null);
 }
 
