@@ -1,4 +1,26 @@
 {
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "**/.*",
+      "**/node_modules/**",
+      "firebase.json",
+      "rules-test/**",
+      "functions/**",
+      "cloudflare-worker-ia/**",
+      "CHANGELOG.md",
+      "firestore.rules",
+      "storage.rules",
+      "storage-cors.json",
+      "*.command"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "firestore": {
     "rules": "firestore.rules"
   },

@@ -4,6 +4,27 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — `firebase.json`: agrega la configuración de Hosting (faltaba)
+
+**Qué se hizo:** `firebase.json` nunca había tenido una sección `hosting` en todo el historial
+de este repo (ver auditoría punto 6, 5 oct) — por eso `firebase deploy --only hosting` no
+funcionaba, y no estaba claro desde dónde se publicaba (o si se publicaba) `mi-gimnasio-8d528.web.app`.
+Se agregó:
+- `"public": "."` — `index.html` ya vive en la raíz del repo (arquitectura de archivo único), así
+  que no hace falta una carpeta `public/` aparte ni duplicar el archivo.
+- `"ignore"`: excluye todo lo que NO debe subirse a Hosting (`rules-test/`, `functions/`,
+  `cloudflare-worker-ia/`, `CHANGELOG.md`, `firestore.rules`, `storage.rules`,
+  `storage-cors.json`, los `.command`, archivos ocultos y `node_modules`) — lo único que de
+  verdad se publica es `index.html`.
+- `"rewrites"`: cualquier ruta cae a `/index.html` (igual que ya se comporta la app, que solo
+  usa `?query=params` en una sola página, nunca rutas distintas).
+
+**Verificado:** `firebase.json` es JSON válido y el `"public": "."` apunta a donde de verdad
+vive `index.html`. **No** se corrió `firebase deploy` — este entorno no tiene la CLI de Firebase
+instalada, ni sesión iniciada con las credenciales del proyecto, ni salida de red hacia los
+dominios de Firebase, así que el deploy real lo tiene que correr Luis (o pedírmelo explícitamente
+desde un entorno que sí tenga acceso).
+
 ## 2026-10-07 — Portal (QR): "recordarme en este celular" de verdad funciona
 
 **Reporte:** Luis reportó que a los clientes SIEMPRE les vuelve a pedir número+nombre en el
