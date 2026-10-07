@@ -288,6 +288,22 @@ await check('Cliente anónimo NO puede EDITAR una nota existente (sin edición p
 await check('Cliente anónimo NO puede BORRAR una nota (sin borrado por ahora)', deleteDoc(doc(cliente, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1')), false);
 await check('El staff (dueño del gym) SÍ puede editar/borrar una nota (moderación) aunque la subcolección esté 2 niveles abajo', deleteDoc(doc(gymA, 'usuarios', 'uidA', 'recomendacionesIA', 'm1', 'notas', 'n1')), true);
 
+console.log('\n--- Forma de los registros del portal (2026-10-07, revisión de seguridad) ---');
+const rp = (id) => doc(cliente, 'usuarios', 'uidA', 'registrosProgreso', id);
+await check('Registro de progreso con HTML en ejercicioId se rechaza', setDoc(rp('x1'), { miembroId: 'm1', ejercicioId: '"><img src=x onerror=alert(1)>', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10, series: 1, fecha: Date.now() }), false);
+await check('Registro de progreso con repeticiones como texto se rechaza', setDoc(rp('x2'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: '<b>10</b>', series: 1, fecha: Date.now() }), false);
+await check('Registro de progreso con campo extra se rechaza', setDoc(rp('x3'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10, fecha: Date.now(), html: '<script>' }), false);
+await check('Registro de progreso sin fecha se rechaza', setDoc(rp('x4'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, repeticiones: 10 }), false);
+await check('Registro de progreso con unidadOriginal inventada se rechaza', setDoc(rp('x5'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 60, unidadOriginal: 'toneladas', repeticiones: 10, series: 1, fecha: Date.now() }), false);
+await check('Registro normal del portal del cliente (con unidadOriginal y series) sigue pasando', setDoc(rp('ok1'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', musculo: 'Pecho', tipo: 'Normal', peso: 27.2, unidadOriginal: 'lb', repeticiones: 10, series: 3, fecha: Date.now() }), true);
+await check('Registro de peso corporal (peso 0) sigue pasando', setDoc(rp('ok2'), { miembroId: 'm1', ejercicioId: 'dominadas', musculo: 'Espalda', tipo: 'Al fallo', peso: 0, unidadOriginal: 'kg', repeticiones: 8, series: 1, fecha: Date.now() }), true);
+await check('Registro de un empleado desde el portal de staff (personaTipo/personaNombre/registradoPor) sigue pasando', setDoc(rp('ok3'), { miembroId: 'emp1', personaTipo: 'empleado', personaNombre: 'Carlos Staff', ejercicioId: 'sentadilla', musculo: 'Pierna', tipo: 'PR', peso: 100, unidadOriginal: 'kg', repeticiones: 3, series: 1, fecha: Date.now(), registradoPor: 'Carlos Staff' }), true);
+await check('Registro de cardio del staff sigue pasando', setDoc(rp('ok4'), { miembroId: 'emp1', personaTipo: 'empleado', personaNombre: 'Carlos Staff', ejercicioId: 'caminadora', musculo: 'Cardio', tiempoMinutos: 20.5, distancia: 3.2, fecha: Date.now(), registradoPor: 'Carlos Staff' }), true);
+await check('Peso corporal con peso como texto se rechaza', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'px1'), { miembroId: 'm1', peso: '<img src=x>', fecha: Date.now() }), false);
+await check('Peso corporal con campo extra se rechaza', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'px2'), { miembroId: 'm1', peso: 70, fecha: Date.now(), nota: 'x' }), false);
+await check('Peso corporal normal sigue pasando', setDoc(doc(cliente, 'usuarios', 'uidA', 'pesoCorporal', 'pok'), { miembroId: 'm1', peso: 70.5, fecha: Date.now() }), true);
+await check('El dueño del gym sigue pudiendo escribir registrosProgreso con cualquier forma (regla genérica)', setDoc(doc(gymA, 'usuarios', 'uidA', 'registrosProgreso', 'duenio1'), { miembroId: 'm1', ejercicioId: 'press-banca-plano', nota: 'corrección manual', fecha: Date.now() }), true);
+
 console.log('\n--- Límite conocido: auto-elevación de plan ---');
 await check('(esperado que PASE hoy) Gym A puede reescribir su propio plan/funciones', updateDoc(doc(gymA, 'usuarios', 'uidA'), { plan: 'premium', funciones: ['dashboard','finanzas','empleados'] }), true);
 

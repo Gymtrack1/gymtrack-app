@@ -329,8 +329,36 @@ service cloud.firestore {
       // desde el portal. Ver nota de confianza arriba sobre el
       // alcance real de "leer" aquí (no hay aislamiento por miembro a
       // prueba de manipulación técnica directa con auth anónima).
+      // 2026-10-07 (ver CHANGELOG.md, revisión de seguridad): la creación ya NO es "cualquier
+      // documento con cualquier campo". Antes una sesión anónima podía guardar aquí texto
+      // arbitrario (ej. HTML en ejercicioId o en repeticiones) que luego el panel del dueño
+      // pintaba en pantalla — se valida la forma exacta de lo que index.html realmente guarda
+      // (portalGuardarSerie y portalStaffGuardarSerie): solo esos campos, con su tipo, y
+      // ejercicioId con forma de id de BIBLIOTECA_EJERCICIOS (letras/números/guiones).
+      function textoOpcional(d, k, max) {
+        return !(k in d) || d[k] == null || (d[k] is string && d[k].size() <= max);
+      }
+      function numeroOpcional(d, k) {
+        return !(k in d) || d[k] is number;
+      }
+      function registroProgresoValido(d) {
+        return d.keys().hasOnly(['miembroId', 'ejercicioId', 'musculo', 'tipo', 'peso',
+            'unidadOriginal', 'repeticiones', 'series', 'tiempoMinutos', 'distancia', 'fecha',
+            'personaTipo', 'personaNombre', 'registradoPor']) &&
+          d.miembroId is string && d.miembroId.size() > 0 && d.miembroId.size() <= 128 &&
+          d.ejercicioId is string && d.ejercicioId.matches('^[A-Za-z0-9_-]{1,64}$') &&
+          d.fecha is number &&
+          textoOpcional(d, 'musculo', 60) && textoOpcional(d, 'tipo', 100) &&
+          textoOpcional(d, 'personaNombre', 120) && textoOpcional(d, 'registradoPor', 120) &&
+          (!('unidadOriginal' in d) || d.unidadOriginal in ['kg', 'lb']) &&
+          (!('personaTipo' in d) || d.personaTipo in ['miembro', 'empleado']) &&
+          numeroOpcional(d, 'peso') && numeroOpcional(d, 'repeticiones') &&
+          numeroOpcional(d, 'series') && numeroOpcional(d, 'tiempoMinutos') &&
+          numeroOpcional(d, 'distancia');
+      }
       match /registrosProgreso/{docId} {
-        allow read, create: if isSignedIn();
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && registroProgresoValido(request.resource.data);
         // Borrar un registro "de hoy" (2026-10-05, ver CHANGELOG.md, auditoría punto 10): mismo
         // nivel de confianza que read/create de arriba — no hay forma de que una regla de
         // Firestore verifique que la sesión anónima que borra es DE VERDAD el miembro dueño del
@@ -340,7 +368,15 @@ service cloud.firestore {
         allow delete: if isSignedIn() && resource.data.fecha > request.time.toMillis() - 86400000;
       }
       match /pesoCorporal/{docId} {
-        allow read, create: if isSignedIn();
+        allow read: if isSignedIn();
+        // 2026-10-07: misma idea que registrosProgreso arriba — solo {miembroId, peso, fecha}.
+        allow create: if isSignedIn() &&
+          request.resource.data.keys().hasOnly(['miembroId', 'peso', 'fecha']) &&
+          request.resource.data.miembroId is string &&
+          request.resource.data.miembroId.size() > 0 &&
+          request.resource.data.miembroId.size() <= 128 &&
+          request.resource.data.peso is number &&
+          request.resource.data.fecha is number;
       }
 
       // usuarios/{gymId}/config/{docId} — dos documentos distintos, mismo patrón de "espejo

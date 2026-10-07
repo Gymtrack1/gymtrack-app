@@ -4,6 +4,52 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Seguridad: el sitio publicaba archivos privados, y el portal QR podía inyectar código en el panel del dueño
+
+Dos hallazgos de una revisión de seguridad (solo lectura de código) hecha el mismo día.
+
+**1. Firebase Hosting subía toda la carpeta.** `firebase.json` usa `"public": "."` y la lista de
+`ignore` no cubría `contratos/`, `gimnasios_zona_metropolitana_monterrey.xlsx`,
+`PROMPT-auditoria-2026-10-05.md`, `instagram/`, los PDF/DOCX ni el contenido de `.git/` (el patrón
+`**/.*` solo ignora archivos cuyo NOMBRE empieza con punto, no lo que hay dentro de una carpeta
+con punto). `.firebase/hosting..cache` confirma que todo eso se subió en el último despliegue.
+
+**Qué se cambió:** se agregaron a `ignore`: `.git/**`, `.claude/**`, `.firebase/**`,
+`contratos/**`, `instagram/**`, `**/*.md`, `**/*.pdf`, `**/*.docx`, `**/*.xlsx`, `**/*.mp4`,
+`**/*.command`, `**/*.log`, `.firebaserc`, `.gitignore`.
+
+**Verificado:** con la misma función que usa la CLI (`firebase-tools/lib/listFiles`) y la lista
+nueva, lo único que se publicaría es `index.html`, `preview.png` y `gymtrack-perfil-negro.png`.
+**Pendiente de Luis:** volver a desplegar Hosting — hasta entonces los archivos siguen públicos.
+
+**2. Datos escritos desde el portal QR se pintaban sin escapar.** Una sesión anónima (cualquiera
+con el link del QR) podía escribir directo en Firestore, sin pasar por `index.html`:
+`planFitnessIA` (en `miembros/` y `miembrosPublicos/`) y documentos de `registrosProgreso` /
+`pesoCorporal` con cualquier campo y cualquier contenido. El panel del dueño pintaba varios de
+esos valores tal cual con `innerHTML`: los `id` de hitos/hábitos dentro de `onchange="..."`
+(`renderPlanFitnessIA` — `_idSeguro` solo se aplicaba a la respuesta de la IA, no a lo ya
+guardado), `ejercicioId` en `<option value="...">`, y `repeticiones`/`series`/`tiempoMinutos`/
+`distancia`/`peso` en las tarjetas de progreso. Resultado posible: código ajeno corriendo con la
+sesión del dueño al abrir el perfil de un miembro.
+
+**Qué se cambió en `index.html`:** helper nuevo `_idParaAtributo(id)` (solo deja pasar ids de
+letras/números/guiones; si no, cadena vacía), usado en todos los `h.id`/`hab.id` de
+`renderPlanFitnessIA` y en el botón "Borrar" de un registro del portal; `escAttr(...)` en
+`ejercicioId` de los dos selectores de ejercicio (perfil y portal), en `_detalleRegistroTexto`,
+`formatearPeso`, el historial de peso corporal (perfil y portal) y los campos de valor objetivo /
+estatura del portal.
+
+**Qué se cambió en `firestore.rules` (copiado a `rules-test/`):** `create` de `registrosProgreso`
+ahora exige la forma exacta que guarda la app (lista cerrada de campos, tipos, `ejercicioId` con
+forma de id, `unidadOriginal` kg/lb); `create` de `pesoCorporal` exige exactamente
+`{miembroId, peso, fecha}`. El dueño y el admin siguen escribiendo sin esa restricción por la
+regla genérica. **No se validó** la forma interna de `planFitnessIA`/`metaFitness` en reglas (las
+reglas no pueden recorrer listas) — ahí la protección es el escapado al pintar.
+
+**Verificado:** `node --check` sobre el script principal — sin errores. Los 94 ids de
+`BIBLIOTECA_EJERCICIOS` cumplen el patrón nuevo. Se agregaron 13 casos a `rules-test/test.mjs`.
+Luis las corrió en su Mac (emulador de Firestore, tras instalar Java 21): **127 OK / 0 FAIL**. Tampoco se probó en navegador.
+
 ## 2026-10-07 — Portal (QR): el campo de número también sugiere ahora
 
 **Reporte de Luis, probando en su celular después del `<form>` real del cambio anterior:** el

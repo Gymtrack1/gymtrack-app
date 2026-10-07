@@ -12,7 +12,21 @@
       "firestore.rules",
       "storage.rules",
       "storage-cors.json",
-      "commands/**"
+      "commands/**",
+      ".git/**",
+      ".claude/**",
+      ".firebase/**",
+      "contratos/**",
+      "instagram/**",
+      "**/*.md",
+      "**/*.pdf",
+      "**/*.docx",
+      "**/*.xlsx",
+      "**/*.mp4",
+      "**/*.command",
+      "**/*.log",
+      ".firebaserc",
+      ".gitignore"
     ],
     "rewrites": [
       {

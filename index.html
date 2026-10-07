@@ -4268,7 +4268,7 @@ function renderPesoCorporalPerfil(m){
     return;
   }
   el.innerHTML=`<div class="chart-wrap" style="height:180px"><canvas id="chart-peso-perfil"></canvas></div>
-    <div style="margin-top:10px">${historial.map(p=>`<div class="ec-row"><span>${fmtDate(p.fecha)}</span><span>${p.peso}kg</span></div>`).join('')}</div>`;
+    <div style="margin-top:10px">${historial.map(p=>`<div class="ec-row"><span>${fmtDate(p.fecha)}</span><span>${escAttr(p.peso)}kg</span></div>`).join('')}</div>`;
   if(typeof Chart==='undefined')return;
   if(chartPesoPerfil){chartPesoPerfil.destroy();chartPesoPerfil=null;}
   const asc=[...historial].sort((a,b)=>a.fecha-b.fecha);
@@ -4343,7 +4343,7 @@ function _perfilProgresoResultadosHtml(miembroId){
     :`<button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px" onclick="perfilToggleVerTodoProgreso(true)">Ver historial completo ›</button>`;
   return`
     <div class="form-row">
-      <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select onchange="perfilCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
+      <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select onchange="perfilCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${escAttr(id)}" ${id===perfilProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select onchange="perfilCambiarProgresoFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===perfilProgresoFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:180px"><canvas id="chart-progreso-perfil"></canvas></div>
@@ -6063,9 +6063,9 @@ function _esCardioEjercicio(ejercicioId){
 // entre la Vista de Progreso del staff (_portalStaffTarjetaMiembro) y las tarjetas de bitácora
 // de abajo (_tarjetaProgresoHtml), para que "cuánto hizo" se lea igual en cualquier vista.
 function _detalleRegistroTexto(r,esCardio){
-  if(esCardio)return`${r.tiempoMinutos} min · ${r.distancia} km`;
+  if(esCardio)return`${escAttr(r.tiempoMinutos)} min · ${escAttr(r.distancia)} km`;
   const series=r.series||1;
-  return`${formatearPeso(r.peso,r.unidadOriginal||'kg')} × ${r.repeticiones} reps × ${series} serie${series===1?'':'s'}`;
+  return`${formatearPeso(r.peso,r.unidadOriginal||'kg')} × ${escAttr(r.repeticiones)} reps × ${escAttr(series)} serie${series===1?'':'s'}`;
 }
 // Color del badge de "Tipo de serie" (Parte 16, ver CHANGELOG.md) — reusa las clases .badge-*
 // que ya existen en el archivo (mismas que Estado de membresía, etc.), no se inventó paleta
@@ -6183,7 +6183,7 @@ function lbAKg(lb){return Math.round((lb/2.20462)*10)/10;}
 // peso 0 = ejercicio de peso corporal (dominadas, flexiones, fondos, plancha, burpees, etc. — ver
 // CHANGELOG.md, auditoría punto 10): se muestra "Peso corporal" en vez de "0kg/0lb", que no
 // significa nada para el cliente.
-function formatearPeso(pesoKg,unidad){return pesoKg===0?'Peso corporal':(unidad==='lb'?`${kgALb(pesoKg)}lb`:`${pesoKg}kg`);}
+function formatearPeso(pesoKg,unidad){return pesoKg===0?'Peso corporal':(unidad==='lb'?`${escAttr(kgALb(pesoKg))}lb`:`${escAttr(pesoKg)}kg`);}
 
 // AGENTE DE IA: PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md). El Worker de Cloudflare que
 // consulta a Gemini vive APARTE de index.html (código en cloudflare-worker-ia/ de este mismo
@@ -6205,6 +6205,12 @@ const IA_WORKER_URL='https://gymtrack-ia.luismolinac06.workers.dev';
 // atributo), así que solo se aceptan si calzan con este patrón simple; si no, se genera uno
 // propio. Esto es más simple y más seguro que intentar escapar cualquier string arbitrario que
 // devuelva un modelo de IA para usarlo dentro de JS embebido en HTML.
+// SEGURIDAD (2026-10-07, ver CHANGELOG.md): un id que se va a meter dentro de un atributo HTML o
+// de un onclick/onchange solo se usa si tiene la forma de un id normal (letras, números, guion,
+// guion bajo). planFitnessIA y registrosProgreso los puede escribir una sesión anónima del portal
+// QR directo en Firestore (sin pasar por index.html), así que lo que viene de ahí NO es de
+// confianza al pintarlo — un id con comillas podía inyectar código en la sesión del dueño.
+function _idParaAtributo(id){return typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)?id:'';}
 function _idAleatorio(prefijo){return `${prefijo}_${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}`;}
 function _idSeguro(id,prefijo){return typeof id==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(id)?id:_idAleatorio(prefijo);}
 
@@ -6322,16 +6328,16 @@ function renderPlanFitnessIA(elId,plan,toggleFn,editOpts){
           <div style="font-weight:700;font-size:13px;margin:2px 0 8px">${escAttr(h.metaIntermedia)}</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             ${(h.habitos||[]).map(hab=>editOpts?`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
-                <input type="checkbox" ${hab.completado?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:none;border-radius:0" onchange="${toggleFn}('${h.id}','${hab.id}',this.checked)">
-                <input type="text" value="${escAttr(hab.texto)}" style="flex:1;min-width:0;font-size:12.5px;padding:4px 6px;${hab.completado?'text-decoration:line-through;color:var(--muted)':''}" onchange="${editOpts.editarFn}('${h.id}','${hab.id}',this.value)">
+                <input type="checkbox" ${hab.completado?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:0;padding:0;background:none;border:none;border-radius:0" onchange="${toggleFn}('${_idParaAtributo(h.id)}','${_idParaAtributo(hab.id)}',this.checked)">
+                <input type="text" value="${escAttr(hab.texto)}" style="flex:1;min-width:0;font-size:12.5px;padding:4px 6px;${hab.completado?'text-decoration:line-through;color:var(--muted)':''}" onchange="${editOpts.editarFn}('${_idParaAtributo(h.id)}','${_idParaAtributo(hab.id)}',this.value)">
               </div>`:`<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer">
-                <input type="checkbox" ${hab.completado?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:2px 0 0;padding:0;background:none;border:none;border-radius:0" onchange="${toggleFn}('${h.id}','${hab.id}',this.checked)">
+                <input type="checkbox" ${hab.completado?'checked':''} style="flex:0 0 auto;width:auto;min-width:0;height:auto;margin:2px 0 0;padding:0;background:none;border:none;border-radius:0" onchange="${toggleFn}('${_idParaAtributo(h.id)}','${_idParaAtributo(hab.id)}',this.checked)">
                 <span style="flex:1;min-width:0;${hab.completado?'text-decoration:line-through;color:var(--muted)':''}">${escAttr(hab.texto)}</span>
               </label>`).join('')}
           </div>
           ${editOpts?`<div style="display:flex;gap:6px;margin-top:8px">
-              <input type="text" id="nuevo-habito-${h.id}" placeholder="Agregar hábito..." style="flex:1;min-width:0;font-size:12.5px;padding:4px 6px" onkeydown="if(event.key==='Enter'){${editOpts.agregarFn}('${h.id}',this.value);}">
-              <button type="button" class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="${editOpts.agregarFn}('${h.id}',document.getElementById('nuevo-habito-${h.id}').value)">+ Agregar</button>
+              <input type="text" id="nuevo-habito-${_idParaAtributo(h.id)}" placeholder="Agregar hábito..." style="flex:1;min-width:0;font-size:12.5px;padding:4px 6px" onkeydown="if(event.key==='Enter'){${editOpts.agregarFn}('${_idParaAtributo(h.id)}',this.value);}">
+              <button type="button" class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="${editOpts.agregarFn}('${_idParaAtributo(h.id)}',document.getElementById('nuevo-habito-${_idParaAtributo(h.id)}').value)">+ Agregar</button>
             </div>`:''}
         </div>`).join('')}
     </div>`;
@@ -6811,7 +6817,7 @@ function _portalProgresoResultadosHtml(){
     :'<div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div>';
   return`
     <div class="form-row">
-      <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${id}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
+      <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${escAttr(id)}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
       ${esCardio?'':`<div class="form-group"><label>Tipo de serie</label><select id="portal-progreso-tipo" onchange="portalCambiarFiltroTipo(this.value)"><option value="">Todos</option>${tipos.map(t=>`<option value="${escAttr(t)}" ${t===portalFiltroTipo?'selected':''}>${escAttr(t)}</option>`).join('')}</select></div>`}
     </div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-progreso"></canvas></div>
@@ -6822,7 +6828,7 @@ function _portalProgresoResultadosHtml(){
 // firestore.rules (registrosProgreso, allow delete) — pasadas las 24h el botón ya no aparece.
 function _portalBotonBorrarRegistroHtml(r){
   if(Date.now()-r.fecha>=86400000)return'';
-  return`<div style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px" onclick="portalBorrarRegistro('${r.id}')">Borrar</button></div>`;
+  return`<div style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px" onclick="portalBorrarRegistro('${_idParaAtributo(r.id)}')">Borrar</button></div>`;
 }
 async function portalBorrarRegistro(id){
   if(!confirm('¿Borrar este registro? No se puede deshacer.'))return;
@@ -7007,7 +7013,7 @@ function _portalMetaModalHtml(){
         <option value="pesoCorporal" ${meta&&meta.tipo==='pesoCorporal'?'selected':''}>Peso corporal</option>
         <option value="ejercicio" ${meta&&meta.tipo==='ejercicio'?'selected':''}>Ejercicio específico</option>
       </select></div>
-      <div class="form-group"><label>Valor objetivo (kg)</label><input type="number" id="portal-meta-valor" placeholder="70" value="${meta?meta.valorObjetivo:''}"></div>
+      <div class="form-group"><label>Valor objetivo (kg)</label><input type="number" id="portal-meta-valor" placeholder="70" value="${meta?escAttr(meta.valorObjetivo):''}"></div>
     </div>
     <div class="form-group" id="portal-meta-ejercicio-grupo" style="display:${meta&&meta.tipo==='ejercicio'?'block':'none'}">
       <label>Ejercicio</label>
@@ -7147,7 +7153,7 @@ function renderPortalPerfilFisicoSeccion(){
     <h3>🧍 Mi Perfil Físico</h3>
     <div class="form-row">
       <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
-      <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${portalMiembro.estatura||''}"></div>
+      <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${escAttr(portalMiembro.estatura||'')}"></div>
     </div>
     ${(edad||imc!==null)?`<div style="margin-bottom:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC: ${imc}`:''}</div>`:''}
 
@@ -7159,7 +7165,7 @@ function renderPortalPerfilFisicoSeccion(){
 
     ${historial.length?`
     <div class="chart-wrap" style="height:180px;margin-top:16px"><canvas id="chart-portal-peso"></canvas></div>
-    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${p.peso}kg</td></tr>`).join('')}</tbody></table></div>`
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${escAttr(p.peso)}kg</td></tr>`).join('')}</tbody></table></div>`
     :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
   </div>`;
 }
