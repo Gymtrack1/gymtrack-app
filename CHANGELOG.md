@@ -4,6 +4,40 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Portal (QR): el teclado del celular ahora puede sugerir número/nombre
+
+**Pedido de Luis:** no bastaba con que el portal entrara solo en silencio (ver la entrada de
+"recordarme" más abajo) — quería que, si el cliente de todas formas EMPIEZA A ESCRIBIR su
+número/nombre, el teclado del celular le sugiera lo que ya escribió ahí antes (igual que
+cualquier campo de un formulario que recuerdas haber llenado antes en ese sitio).
+
+**Qué se encontró:** en TODO `index.html` no existe un solo `<form>` — toda la app es
+divs/botones con `onclick`, sin un `submit` de verdad en ningún lado. Los navegadores de celular
+(Chrome/Safari) solo ofrecen "recordar y sugerir" los valores de un campo cuando detectan un
+**envío de formulario real** (evento `submit`) — un botón con `onclick` que nunca dispara ese
+evento no activa ese mecanismo, por más que el campo tenga `name`/`autocomplete` correctos (eso
+ya se había agregado el mismo día, pero sin el `<form>` alrededor no bastaba).
+
+**Qué se cambió:** el formulario "Identifícate" del portal (`renderPortalIdentify()`) ahora SÍ
+es un `<form id="portal-identify-form">` real, con `onsubmit="portalIdentificar();return false;"`
+(evita que la página navegue/recargue, como siempre se evitó con los demás formularios de la app,
+pero ahora disparando el evento `submit` de verdad). El botón "Continuar" pasó a `type="submit"`
+dentro del `<form>` (ya no necesita su propio `onclick`) y Enter en cualquiera de los dos campos
+ahora también envía el formulario de forma nativa (se quitó el `onkeydown` manual que antes solo
+estaba en el campo de nombre). Esta es la ÚNICA pantalla de toda la app con un `<form>` real —
+el resto sigue sin ninguno, a propósito, ya que ningún otro formulario de GymTrack necesita esta
+clase de autocompletado del navegador.
+
+**Verificado:** `node --check` sobre el script principal — sin errores de sintaxis. Prueba nueva
+en `test_portal_recordarme.mjs` (4 casos agregados, 23 en total en ese archivo): el `<form>`
+existe con ese id, los dos campos están genuinamente DENTRO de él (no sueltos como hermanos),
+enviarlo dispara el evento `submit` exactamente una vez (sin duplicarse por tener a la vez
+`onclick` y `submit`), y el envío sí identifica al miembro correctamente. No se pudo probar la
+sugerencia real del teclado del celular en sí (es una decisión del navegador/sistema operativo,
+fuera del alcance de las pruebas automatizadas) — lo que sí se verificó es que ahora se cumple la
+condición técnica (un `submit` de formulario real) que los navegadores necesitan para ofrecerla.
+Suite completa del proyecto (16 archivos) — **287/287**, sin regresiones.
+
 ## 2026-10-07 — Los `.command` se mudan a una carpeta `commands/`
 
 **Qué se hizo:** a petición de Luis, los 3 archivos de doble clic (`actualizar-gymtrack.command`,

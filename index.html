@@ -6419,15 +6419,23 @@ async function cargarPersonalizacionPortal(){
 // prellenado (opcional): {numero,nombre} para dejar los campos ya escritos — se usa cuando el
 // intento automático de "recordarme" falló por un error de conexión (ver CHANGELOG.md,
 // 2026-10-07) y no queremos que el cliente tenga que volver a escribir todo desde cero.
+// Ojo: a diferencia del resto de la app (puro divs/botones con onclick, sin un solo <form> en
+// todo el archivo), este formulario SÍ es un <form> real (ver CHANGELOG.md, 2026-10-07) — es el
+// mecanismo que los navegadores de celular usan para decidir "¿guardo esto para sugerirlo la
+// próxima vez que el cliente empiece a escribir en este campo?" (lo que Luis pidió: que el
+// teclado le sugiera su número/nombre si ya los escribió antes en ese celular). Un botón con
+// onclick nada más, sin un submit de verdad, no dispara ese mecanismo de forma confiable.
 function renderPortalIdentify(prellenado){
   const el=document.getElementById('portal-content');
   if(!el)return;
   el.innerHTML=`<div class="ec-card">
     <h3>Identifícate</h3>
-    <div class="form-group"><label>Número de miembro</label><input type="number" id="portal-numero" name="username" autocomplete="username" placeholder="Ej. 42" value="${prellenado?escAttr(String(prellenado.numero)):''}"></div>
-    <div class="form-group"><label>Nombre</label><input type="text" id="portal-nombre" name="name" autocomplete="name" placeholder="Como está registrado" value="${prellenado?escAttr(prellenado.nombre):''}" onkeydown="if(event.key==='Enter')portalIdentificar()"></div>
-    <div id="portal-identify-error" class="login-error"></div>
-    <button class="btn btn-primary" style="width:100%" onclick="portalIdentificar()">Continuar</button>
+    <form id="portal-identify-form" onsubmit="portalIdentificar();return false;" style="margin:0">
+      <div class="form-group"><label>Número de miembro</label><input type="number" id="portal-numero" name="username" autocomplete="username" placeholder="Ej. 42" value="${prellenado?escAttr(String(prellenado.numero)):''}"></div>
+      <div class="form-group"><label>Nombre</label><input type="text" id="portal-nombre" name="name" autocomplete="name" placeholder="Como está registrado" value="${prellenado?escAttr(prellenado.nombre):''}"></div>
+      <div id="portal-identify-error" class="login-error"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%">Continuar</button>
+    </form>
   </div>`;
 }
 // Se muestra mientras se intenta la entrada automática con lo guardado (ver CHANGELOG.md,
