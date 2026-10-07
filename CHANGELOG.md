@@ -4,6 +4,22 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Nuevo `publicar-sitio-web.command` para desplegar Firebase Hosting con doble clic
+
+**Qué se hizo:** Luis preguntó desde dónde correr `firebase deploy --only hosting` — no tiene
+por qué saber manejar una terminal. Se agregó `publicar-sitio-web.command` (mismo patrón que
+`actualizar-gymtrack.command`/`desplegar-acceso-biometrico.command`, ya existentes): doble clic
+en el Finder y hace, en orden, (1) revisa que no haya cambios locales sin guardar, (2)
+`git pull origin main` para traer la versión más reciente (incluye el `firebase.json` de la
+entrada de abajo), (3) `npx firebase-tools deploy --only hosting` — usa `npx` a propósito, igual
+que el script de acceso biométrico, para no depender de tener la CLI de Firebase instalada
+globalmente, solo Node.js. Imprime un mensaje claro de éxito/error en español en cada paso.
+
+**Verificado:** `bash -n publicar-sitio-web.command` (chequeo de sintaxis del script) sin
+errores, y permisos de ejecución (`chmod +x`) aplicados. **No** se corrió el script de verdad —
+mismo motivo que la entrada de abajo: este entorno no tiene Firebase CLI, sesión iniciada, ni
+salida de red hacia Firebase. Luis lo prueba desde su Mac.
+
 ## 2026-10-07 — `firebase.json`: agrega la configuración de Hosting (faltaba)
 
 **Qué se hizo:** `firebase.json` nunca había tenido una sección `hosting` en todo el historial
