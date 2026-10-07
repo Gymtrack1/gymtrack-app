@@ -47,7 +47,9 @@
 // 2026-10-05 (ver CHANGELOG.md): lista, no un solo string — GymTrack también se sirve desde
 // mi-gimnasio-8d528.web.app (Firebase Hosting), y desde ahí el navegador bloqueaba la llamada
 // porque solo gymtrack1.github.io estaba permitido.
-const ALLOWED_ORIGINS = ['https://gymtrack1.github.io', 'https://mi-gimnasio-8d528.web.app'];
+// 2026-10-07: Firebase Hosting (mi-gimnasio-8d528.web.app) se apagó — GymTrack vive solo en
+// GitHub Pages, así que ese origen se quitó de la lista.
+const ALLOWED_ORIGINS = ['https://gymtrack1.github.io'];
 
 const SYSTEM_PROMPT = `Eres un asistente de fitness para GymTrack, una app de gestión de gimnasios. Un cliente del gimnasio (o el propio staff en su nombre) te pide un plan hacia una meta personal, organizado en hitos por periodo con hábitos accionables que se pueden ir marcando como completados.
 

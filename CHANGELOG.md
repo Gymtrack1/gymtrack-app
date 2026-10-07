@@ -4,6 +4,24 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-07 — Se apaga Firebase Hosting: GymTrack vive solo en GitHub Pages
+
+**Decisión de Luis:** ya no se usa `mi-gimnasio-8d528.web.app`; todos los gimnasios entran y
+generaron sus QR desde `gymtrack1.github.io/gymtrack-app`. Luis apagó el sitio él mismo
+(`firebase hosting:disable`). El PROYECTO de Firebase `mi-gimnasio-8d528` sigue igual — ahí
+viven Firestore, Authentication, Storage y las Cloud Functions; solo se apagó el sitio web.
+
+**Qué se cambió:** se quitó la sección `hosting` de `firebase.json` (un `firebase deploy` ya no
+puede volver a publicar el sitio por accidente), se eliminó
+`commands/publicar-sitio-web.command`, y se quitó `https://mi-gimnasio-8d528.web.app` de
+`ALLOWED_ORIGINS` en `cloudflare-worker-ia/worker.js`.
+
+**Verificado:** `firebase.json` sigue siendo JSON válido con `firestore`, `storage` y
+`functions`; `node --check` sobre `worker.js`. **Pendiente de Luis:** volver a publicar el
+Worker en Cloudflare para que el cambio de orígenes aplique (mientras tanto no rompe nada: solo
+sigue aceptando un origen que ya no existe). No se verificó en navegador que `web.app` ya no
+responda.
+
 ## 2026-10-07 — Seguridad: el sitio publicaba archivos privados, y el portal QR podía inyectar código en el panel del dueño
 
 Dos hallazgos de una revisión de seguridad (solo lectura de código) hecha el mismo día.

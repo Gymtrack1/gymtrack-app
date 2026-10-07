@@ -1,40 +1,4 @@
 {
-  "hosting": {
-    "public": ".",
-    "ignore": [
-      "**/.*",
-      "**/node_modules/**",
-      "firebase.json",
-      "rules-test/**",
-      "functions/**",
-      "cloudflare-worker-ia/**",
-      "CHANGELOG.md",
-      "firestore.rules",
-      "storage.rules",
-      "storage-cors.json",
-      "commands/**",
-      ".git/**",
-      ".claude/**",
-      ".firebase/**",
-      "contratos/**",
-      "instagram/**",
-      "**/*.md",
-      "**/*.pdf",
-      "**/*.docx",
-      "**/*.xlsx",
-      "**/*.mp4",
-      "**/*.command",
-      "**/*.log",
-      ".firebaserc",
-      ".gitignore"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  },
   "firestore": {
     "rules": "firestore.rules"
   },
@@ -45,7 +9,11 @@
     {
       "source": "functions",
       "codebase": "default",
-      "ignore": ["node_modules", ".git", "*.log"]
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log"
+      ]
     }
   ]
 }
