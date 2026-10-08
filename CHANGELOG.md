@@ -4,6 +4,67 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-08 — Auditoría de lecturas (Bloque A): resumen de pagos en cada miembro
+
+**Objetivo general (ver también los bloques B y C, mismo día):** reducir las lecturas de
+Firestore de `loadAll()`, que hoy descarga 14 colecciones completas con todo su historial cada
+vez que el dueño inicia sesión, presiona "↻ Actualizar" o el admin entra a "Ver panel".
+`asistencias`, `registrosProgreso`, `pagos`, `ventas`, `gastos` y `pesoCorporal` crecen sin
+límite — un gimnasio de 200 miembros con un año de uso lee ~60,000 documentos por inicio de
+sesión. El inventario completo de qué función necesita qué (ventana reciente vs. historial
+completo) y los límites conocidos quedan documentados en la entrada del Bloque B.
+
+**Este bloque (A) es el prerrequisito de seguridad del Bloque B**: antes de poder recortar
+`loadPagos()` a una ventana reciente, había que garantizar que el vencimiento de un miembro NUNCA
+dependiera de tener su pago más reciente cargado en memoria — si no, un miembro que dejó de pagar
+hace 4 meses aparecería como "sin pago" en vez de "vencido" (y, al revés, un miembro que pagó un
+plan largo —ej. anual— hace más de la ventana seguiría venciendo en el futuro, pero "desaparecería"
+si solo se mira lo cargado).
+
+**Qué se hizo:**
+- Nuevo campo resumen en cada doc `miembros/{id}`: `ultimoPago: {fechaFin, planNombre, monto,
+  fecha, pagoId}` (el `pagoId` es un agregado útil internamente, no pedido explícitamente pero
+  compatible con lo pedido) — los datos del pago con `fechaFin` más reciente de ese miembro.
+- Nuevo `_ultimoPagoEfectivo(mid)`: compara el pago más reciente YA CARGADO en memoria
+  (`pagosPorMiembroFin`) contra `m.ultimoPago` y usa el que tenga el `fechaFin` más grande de
+  los dos — nunca "prefiere" uno a ciegas, así nunca se pierde ni un vencimiento viejo (miembro
+  vencido hace tiempo) ni uno futuro de un plan largo pagado hace tiempo. `getVencimiento`,
+  `getEstado`, `getUltimoPlan` y `getUltimoMonto` (antes leían directo de `pagosPorMiembroFin`)
+  ahora pasan por esta función.
+- `m.ultimoPago` se mantiene al día en los 4 lugares que crean/editan/borran pagos:
+  - `savePago` (registrar un pago — la acción más frecuente): comparación 100% en memoria, CERO
+    lecturas nuevas — el pago recién creado ya se sabe si es o no el más reciente.
+  - `guardarVencimientoPago` y `delPago` (editar/borrar — acciones poco frecuentes): nuevo
+    `actualizarUltimoPagoMiembro(mid)`, que SÍ vuelve a consultar Firestore (`where('miembroId',
+    '==', mid)`, igualdad simple, sin índice compuesto — mismo patrón que
+    `portalStaffToggleVerTodoMiembro`) porque editar/borrar el pago que estaba registrado como
+    el más reciente puede requerir encontrar cuál es el siguiente, y ese siguiente podría no
+    estar cargado en memoria.
+  - `_guardarImportados` (importar Excel): el `ultimoPago` del pago importado se escribe en la
+    MISMA operación de batch que crea al miembro — sin una segunda escritura aparte.
+- Migración automática de una sola vez por cuenta: `migrarResumenPagos()`, bandera
+  `resumenPagosMigrado` en `usuarios/{uid}` (mismo patrón que `qrSincronizado`). Lee TODOS los
+  pagos de la cuenta UNA vez (la única lectura completa de esa colección que queda en todo el
+  sistema), calcula `ultimoPago` por miembro y lo guarda con `writeBatch`. Corre en segundo
+  plano desde `loadAll()`, sin bloquear la carga. Seguro si se interrumpe a la mitad: el flag
+  solo se marca `true` hasta que TODOS los lotes ya se confirmaron, así que si el navegador se
+  cierra a medio camino, la próxima carga la vuelve a correr completa desde cero (recalcular es
+  idempotente).
+- `sincronizarMiembroPublico` no se tocó — ya usaba `getVencimiento()`, así que hereda el
+  arreglo automáticamente.
+
+**Verificado:** `node --check` sobre el script principal — sin errores. Prueba nueva de
+Playwright (`test_resumen_pagos.mjs`, 13 casos): miembro con último pago hace 120 días →
+"vencido" (no "sin pago"); miembro con un plan largo pagado hace 95 días (fuera de cualquier
+ventana razonable) sigue "activo" con vencimiento futuro; miembro con pago vigente cargado en
+memoria → "activo"; miembro sin pagos → "sin-pago"; borrar el pago más reciente de un miembro
+hace que `ultimoPago` caiga al anterior (consultando Firestore directo, no memoria);
+`migrarResumenPagos()` produce exactamente el mismo `ultimoPago` que calcular a mano con TODOS
+los pagos de cada miembro (incluyendo el caso del plan anual con vencimiento futuro pagado hace
+mucho) y no se repite si el flag ya está en `true`. Suite completa del proyecto (17 archivos) —
+**301/301**, sin regresiones. No se tocó `firestore.rules` (el dueño ya tiene permiso de
+lectura/escritura total sobre `miembros/` vía la regla genérica existente).
+
 ## 2026-10-07 — Se apaga Firebase Hosting: GymTrack vive solo en GitHub Pages
 
 **Decisión de Luis:** ya no se usa `mi-gimnasio-8d528.web.app`; todos los gimnasios entran y

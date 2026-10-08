@@ -1325,6 +1325,10 @@ let montoInscripcion=null;
 // que sincronizarTodosLosMiembrosPublicosAuto() ya corrió para esta cuenta, para no repetirla
 // sola en cada carga (reescribe TODOS los miembros, costoso para gyms grandes).
 let qrSincronizado=false;
+// Bandera de migración de m.ultimoPago (ver CHANGELOG.md, 2026-10-08, auditoría de lecturas) —
+// mismo patrón que qrSincronizado: cierto una vez que migrarResumenPagos() ya calculó y guardó
+// el resumen ultimoPago de TODOS los miembros de esta cuenta, para no repetirlo en cada carga.
+let resumenPagosMigrado=false;
 const PIN_PROTEGIDO=['estadocuenta','empleados'];
 let pinTabPendiente=null,pinEventPendiente=null;
 // Modo Check-in (ver CHANGELOG.md): modal-pin/submitPin se reutiliza tal cual para salir de
@@ -1617,6 +1621,7 @@ window.addEventListener('firebaseReady',async()=>{
         pinFinanzas=data.pinFinanzas||null;
         montoInscripcion=data.montoInscripcion||null;
         qrSincronizado=data.qrSincronizado||false;
+        resumenPagosMigrado=data.resumenPagosMigrado||false;
         applyPlan();
       },
       (err)=>{
@@ -1687,6 +1692,7 @@ async function loadPlan(){
       pinFinanzas = d.pinFinanzas||null;
       montoInscripcion = d.montoInscripcion||null;
       qrSincronizado = d.qrSincronizado||false;
+      resumenPagosMigrado = d.resumenPagosMigrado||false;
       nombreGym = d.nombre||null;
 
       // Cargar mensaje personalizado de WhatsApp si existe
@@ -2058,6 +2064,9 @@ async function loadAll(){
   // qrSincronizado) porque a diferencia de la de arriba, esta reescribe TODOS los miembros sin
   // filtrar — costoso repetirla en cada carga para gyms grandes.
   sincronizarTodosLosMiembrosPublicosAuto();
+  // Igual, pero para el resumen de pagos (ver CHANGELOG.md, 2026-10-08) — también UNA vez por
+  // cuenta (resumenPagosMigrado), también sin bloquear la carga.
+  migrarResumenPagos();
 }
 function isTabActive(name){const el=document.getElementById('tab-'+name);return!!el&&el.classList.contains('active');}
 // RECOMENDACIÓN (no implementada — ver auditoría de lecturas): loadMiembros() sigue trayendo
@@ -2125,10 +2134,54 @@ function _agregarLocal(arr,id,data){arr.push({id,...data});}
 function _actualizarLocal(arr,id,data){const i=arr.findIndex(x=>x.id===id);if(i>=0)arr[i]={...arr[i],...data};}
 function _eliminarLocal(arr,id){const i=arr.findIndex(x=>x.id===id);if(i>=0)arr.splice(i,1);}
 
-function getVencimiento(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?Number(ps[0].fechaFin):null;}
+// Vencimiento/plan/monto de un miembro SIN depender de tener TODO su historial de pagos
+// cargado en memoria (ver CHANGELOG.md, auditoría de lecturas, 2026-10-08): desde que loadPagos
+// solo trae los últimos VENTANA_DIAS, pagosPorMiembroFin puede no traer nada de un miembro que
+// dejó de pagar hace tiempo (debe seguir viéndose "vencido", no "sin pago") NI, al revés, el pago
+// más reciente de un miembro que pagó un plan largo (ej. anual) hace más de VENTANA_DIAS días
+// (su vencimiento sigue siendo futuro, no debe "desaparecer"). m.ultimoPago es un resumen
+// {fechaFin,planNombre,monto,fecha,pagoId} que se mantiene al día en savePago/
+// guardarVencimientoPago/delPago/_guardarImportados (y de una sola vez para cuentas viejas via
+// migrarResumenPagos/resumenPagosMigrado) — se compara contra lo que SÍ está cargado y se usa
+// el que tenga el fechaFin más reciente de los dos (nunca "prefiere" uno u otro a ciegas).
+function _ultimoPagoEfectivo(mid){
+  const ps=pagosPorMiembroFin.get(mid);
+  const cargado=ps&&ps.length?ps[0]:null;
+  const m=miembrosPorId.get(mid);
+  const resumen=m&&m.ultimoPago?m.ultimoPago:null;
+  if(cargado&&resumen)return Number(cargado.fechaFin)>=Number(resumen.fechaFin)?cargado:resumen;
+  return cargado||resumen;
+}
+function getVencimiento(mid){const p=_ultimoPagoEfectivo(mid);return p?Number(p.fechaFin):null;}
 function getEstado(mid){const v=getVencimiento(mid);if(!v)return'sin-pago';const d=v-Date.now();if(d<0)return'vencido';if(d<7*86400000)return'por-vencer';return'activo';}
-function getUltimoPlan(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].planNombre:'—';}
-function getUltimoMonto(mid){const ps=pagosPorMiembroFin.get(mid);return ps&&ps.length?ps[0].monto||0:0;}
+function getUltimoPlan(mid){const p=_ultimoPagoEfectivo(mid);return p?p.planNombre:'—';}
+function getUltimoMonto(mid){const p=_ultimoPagoEfectivo(mid);return p?p.monto||0:0;}
+// Arma el objeto resumen a partir de un doc de pagos (o de los datos con los que se acaba de
+// crear/editar uno) — misma forma en todos los lugares que lo escriben.
+function _resumenDePago(pagoId,p){return{pagoId,fechaFin:p.fechaFin,planNombre:p.planNombre,monto:p.monto,fecha:p.fechaPago};}
+// Recalcula m.ultimoPago desde CERO, leyendo directo de Firestore TODOS los pagos de este
+// miembro (no solo los cargados en memoria) — ver CHANGELOG.md, 2026-10-08. Es el único camino
+// 100% correcto tras EDITAR o BORRAR un pago (el que cambió pudo ser el más reciente, y "cuál es
+// el siguiente más reciente" no se puede saber con certeza solo con lo que ya está en memoria,
+// si ese pago vivía fuera de la ventana de carga). Consulta solo por miembroId (igualdad simple,
+// sin índice compuesto — mismo patrón que portalStaffToggleVerTodoMiembro), acotada al número de
+// pagos de ESTE miembro, nunca a toda la colección. Se usa en guardarVencimientoPago/delPago
+// (acciones poco frecuentes); savePago (la más frecuente, registrar un pago nuevo) NO la
+// necesita — un pago recién creado siempre se puede comparar en memoria contra m.ultimoPago.
+async function actualizarUltimoPagoMiembro(mid){
+  try{
+    const s=await getDocs(queryFn(userCol('pagos'),whereFn('miembroId','==',mid)));
+    let masReciente=null,masRecienteId=null;
+    s.docs.forEach(d=>{
+      const data=d.data();
+      if(!masReciente||Number(data.fechaFin)>Number(masReciente.fechaFin)){masReciente=data;masRecienteId=d.id;}
+    });
+    const ultimoPago=masReciente?_resumenDePago(masRecienteId,masReciente):null;
+    await updateDoc(userDoc('miembros',mid),{ultimoPago});
+    _actualizarLocal(miembros,mid,{ultimoPago});
+    recalcMiembrosPorId();
+  }catch(e){console.error('actualizarUltimoPagoMiembro:',e);/* Miembros/Dashboard siguen mostrando lo que ya tenían; no bloquea el flujo principal */}
+}
 
 // PESO CORPORAL / ESTATURA / IMC / FECHA DE NACIMIENTO
 // `edad` (campo viejo, fijo) NUNCA se borra ni se sobreescribe — sigue siendo el respaldo si
@@ -2218,6 +2271,44 @@ async function sincronizarTodosLosMiembrosPublicosAuto(){
   qrSincronizado=true;
   try{await updateDoc(docFn(db,'usuarios',uid),{qrSincronizado:true});}catch(e){/* si falla el flag, se reintenta solo en el próximo login */}
   toast(`Portal QR sincronizado automáticamente por primera vez ✓ (${vigentes.length} miembros al corriente)`);
+}
+// MIGRACIÓN ÚNICA de m.ultimoPago para cuentas que ya tenían miembros/pagos ANTES de este
+// cambio (ver CHANGELOG.md, 2026-10-08, auditoría de lecturas) — mismo patrón que
+// sincronizarTodosLosMiembrosPublicosAuto/qrSincronizado: corre en segundo plano, sin bloquear
+// la carga, UNA sola vez por cuenta (bandera resumenPagosMigrado en el doc del gym). Lee TODOS
+// los pagos directo de Firestore (sin pasar por el array global `pagos`, que ya viene recortado
+// a VENTANA_DIAS) — es la ÚNICA lectura completa de esta colección que vuelve a pasar después
+// del recorte, y solo pasa una vez en la vida de la cuenta.
+// Segura si se interrumpe a la mitad: el flag solo se marca true hasta el final, después de
+// que TODOS los lotes ya se confirmaron — si el navegador se cierra a medio camino, la próxima
+// carga la vuelve a correr completa desde cero (recalcular es idempotente: sobreescribe con el
+// mismo resultado, no hay estado parcial que limpiar).
+async function migrarResumenPagos(){
+  if(resumenPagosMigrado||!miembros.length)return;
+  try{
+    const s=await getDocs(userCol('pagos'));
+    const masRecientePorMiembro=new Map(); // miembroId -> {id,data}
+    s.docs.forEach(d=>{
+      const data=d.data();
+      const actual=masRecientePorMiembro.get(data.miembroId);
+      if(!actual||Number(data.fechaFin)>Number(actual.data.fechaFin))masRecientePorMiembro.set(data.miembroId,{id:d.id,data});
+    });
+    const entradas=[...masRecientePorMiembro.entries()];
+    for(let start=0;start<entradas.length;start+=IMPORT_BATCH_SIZE){
+      const chunk=entradas.slice(start,start+IMPORT_BATCH_SIZE);
+      const batch=writeBatchFn(db);
+      chunk.forEach(([miembroId,{id,data}])=>{batch.update(userDoc('miembros',miembroId),{ultimoPago:_resumenDePago(id,data)});});
+      await batch.commit();
+    }
+    // Parcheo local: ya tenemos en memoria exactamente lo que se acaba de calcular — sin
+    // volver a leer miembros/ (mismo criterio que el resto de la app).
+    masRecientePorMiembro.forEach(({id,data},miembroId)=>{_actualizarLocal(miembros,miembroId,{ultimoPago:_resumenDePago(id,data)});});
+    recalcMiembrosPorId();
+    resumenPagosMigrado=true;
+    await updateDoc(docFn(db,'usuarios',uid),{resumenPagosMigrado:true});
+    renderDashboard();renderMiembros();renderAlertas();renderEstadoCuenta();
+    toast('Resumen de pagos actualizado ✓');
+  }catch(e){console.error('migrarResumenPagos error:',e);/* se reintenta sola en la próxima carga, no bloquea el flujo principal */}
 }
 // Espejo público de la personalización visual (usuarios/{uid}/config/personalizacion): SOLO
 // colorAcento/colorFondo/colorTarjetas/logoUrl — el doc real usuarios/{uid} sigue cerrado a
@@ -2845,6 +2936,31 @@ async function _guardarImportados(rows){
         const i=start+idx;
         const miembroRef=docFn(userCol('miembros'));
         const fechaNacimiento=_parseFechaES(r.fechaNacimiento);
+        // Si hay fecha de vencimiento válida, crear registro de pago — calculado ANTES de armar
+        // miembroData (ver CHANGELOG.md, 2026-10-08) para poder incluir el resumen ultimoPago en
+        // la MISMA escritura del miembro, en vez de una segunda escritura aparte por cada uno.
+        // Un miembro recién importado nunca tiene un ultimoPago previo con el que comparar —
+        // este pago (si existe) siempre es el resumen completo, sin ambigüedad.
+        const fechaFin=_parseFechaES(r.fechaVencimiento);
+        let pagoRef=null,pagoData=null;
+        if(fechaFin){
+          const planNombre=r.planActual&&r.planActual!=='—'?r.planActual:'Importado';
+          // La fecha real de pago no viene en el Excel, pero se puede inferir:
+          // fechaPago = fechaFin - duración del plan (en vez de usar el momento de la importación)
+          const diasPlan=diasPorNombrePlan(r.planActual)||30;
+          const fechaPago=fechaFin-diasPlan*86400000;
+          pagoRef=docFn(userCol('pagos'));
+          pagoData={
+            miembroId:  miembroRef.id,
+            monto:      _parseMontoImportado(r.montoPagado),
+            planNombre,
+            diasPlan,
+            fechaPago,
+            fechaFin,
+            creadoEn:   Date.now(),
+            importado:  true
+          };
+        }
         const miembroData={
           nombre:    r.nombre,
           telefono:  r.telefono||'',
@@ -2858,7 +2974,8 @@ async function _guardarImportados(rows){
           numero:    maxNum+i+1,
           fechaNacimiento,
           estatura:  null,
-          creadoEn:  Date.now()
+          creadoEn:  Date.now(),
+          ultimoPago: pagoData?_resumenDePago(pagoRef.id,pagoData):null
         };
         batch.set(miembroRef,miembroData);
         nuevosMiembros.push({id:miembroRef.id,...miembroData});
@@ -2872,30 +2989,12 @@ async function _guardarImportados(rows){
           if(archivo)pendientesFoto.push({miembroId:miembroRef.id,file:archivo});
         }
 
-        // Si hay fecha de vencimiento válida, crear registro de pago
-        const fechaFin=_parseFechaES(r.fechaVencimiento);
         // Espejo público mínimo para el portal QR (ver sincronizarMiembroPublico) — se crea
         // aquí también, no solo en saveMiembro/savePago, para que un miembro recién importado
         // por Excel pueda usar el QR de inmediato sin que el staff tenga que volver a
         // guardarlo/cobrarle un pago manualmente primero.
         batch.set(userDoc('miembrosPublicos',miembroRef.id),{numero:miembroData.numero,nombre:miembroData.nombre,vencimientoTs:fechaFin||null,estatura:null,fechaNacimiento,categoriaMembresia:miembroData.categoriaMembresia,metaSemanal:miembroData.metaSemanal});
-        if(fechaFin){
-          const planNombre=r.planActual&&r.planActual!=='—'?r.planActual:'Importado';
-          // La fecha real de pago no viene en el Excel, pero se puede inferir:
-          // fechaPago = fechaFin - duración del plan (en vez de usar el momento de la importación)
-          const diasPlan=diasPorNombrePlan(r.planActual)||30;
-          const fechaPago=fechaFin-diasPlan*86400000;
-          const pagoRef=docFn(userCol('pagos'));
-          const pagoData={
-            miembroId:  miembroRef.id,
-            monto:      _parseMontoImportado(r.montoPagado),
-            planNombre,
-            diasPlan,
-            fechaPago,
-            fechaFin,
-            creadoEn:   Date.now(),
-            importado:  true
-          };
+        if(pagoData){
           batch.set(pagoRef,pagoData);
           nuevosPagos.push({id:pagoRef.id,...pagoData});
           chunkP++;
@@ -4622,6 +4721,18 @@ async function savePago(){
   // basta con parchear el array local y recalcular los mapas derivados.
   _agregarLocal(pagos,ref.id,data);
   recalcPagosPorMiembro();
+  // Mantiene m.ultimoPago al día (ver CHANGELOG.md, 2026-10-08, auditoría de lecturas) — sin
+  // leer nada de más: el pago recién creado siempre es el más nuevo de este miembro por
+  // fechaPago; solo falta ver si también lo es por fechaFin (lo normal, salvo que un plan
+  // viejo más largo —ej. anual— siga venciendo después). Ningún query nuevo, solo comparar
+  // contra lo que ya está en memoria.
+  const miembroPagado=miembrosPorId.get(mid);
+  if(!miembroPagado||!miembroPagado.ultimoPago||Number(data.fechaFin)>=Number(miembroPagado.ultimoPago.fechaFin)){
+    const ultimoPago=_resumenDePago(ref.id,data);
+    await updateDoc(userDoc('miembros',mid),{ultimoPago});
+    _actualizarLocal(miembros,mid,{ultimoPago});
+    recalcMiembrosPorId();
+  }
   sincronizarMiembroPublico(mid); // el vencimiento cambió — refleja el nuevo estado en el portal
   closeModal('modal-pago');
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
@@ -4656,6 +4767,11 @@ async function guardarVencimientoPago(){
   await updateDoc(userDoc('pagos',pagoId),data);
   _actualizarLocal(pagos,pagoId,data);
   recalcPagosPorMiembro();
+  // Editar pudo cambiar cuál es el pago más reciente de este miembro (su fechaFin subió o
+  // bajó) — a diferencia de savePago, aquí SÍ hace falta recalcular de verdad (ver
+  // CHANGELOG.md, 2026-10-08): no alcanza con comparar contra lo que ya está en memoria,
+  // porque el pago editado pudo no ser el más reciente, o dejar de serlo.
+  await actualizarUltimoPagoMiembro(p.miembroId);
   sincronizarMiembroPublico(p.miembroId); // el vencimiento pudo cambiar — refleja el nuevo estado en el portal
   closeModal('modal-editar-vencimiento');
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
@@ -4672,6 +4788,10 @@ async function delPago(pagoId){
   await deleteDoc(userDoc('pagos',pagoId));
   _eliminarLocal(pagos,pagoId);
   recalcPagosPorMiembro();
+  // Borrar pudo quitar justo el pago más reciente de este miembro — recalcula de verdad en
+  // vez de asumir cuál es el siguiente (ver CHANGELOG.md, 2026-10-08: el siguiente más
+  // reciente por fechaFin puede no estar cargado en memoria si vive fuera de la ventana).
+  await actualizarUltimoPagoMiembro(p.miembroId);
   sincronizarMiembroPublico(p.miembroId);
   renderDashboard();renderMiembros();renderPagos();renderAsistencia();renderAlertas();renderEstadoCuenta();
   toast('Pago eliminado ✓');
