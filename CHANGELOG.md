@@ -4,6 +4,131 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-08 — Auditoría de lecturas (Bloque B): ventana de carga de 90 días
+
+**Qué se hizo:** `loadPagos`, `loadAsistencias`, `loadVentas`, `loadGastos`,
+`loadRegistrosProgreso` y `loadPesoCorporal` ahora solo traen los documentos con fecha dentro de
+los últimos `VENTANA_DIAS` (90) días, vía `whereFn(campoFecha,'>=',Date.now()-90*86400000)` —
+una sola consulta de rango por colección, sin índice compuesto (Firestore ya indexa
+automáticamente un filtro de rango sobre un solo campo). `miembros`, `empleados`, `inventario`,
+`productos`, `categoriasMembresia`, `promociones`, `sugerencias` y `accesosNoIdentificados` no
+se tocaron (no crecen sin límite, o ya tenían su propio filtro).
+
+### Inventario del Paso 0 (qué pantalla necesita qué)
+
+Campo de fecha de cada colección: todas usan un **número en milisegundos** (`Date.now()` /
+`.getTime()`), nunca texto — `pagos` tiene DOS campos de fecha (`fechaPago`: cuándo se pagó;
+`fechaFin`: hasta cuándo queda vigente); las demás (`asistencias`, `registrosProgreso`,
+`pesoCorporal`, `ventas`, `gastos`) usan un solo campo `fecha`. El recorte de `loadPagos` es por
+`fechaPago` (cuándo se registró el pago), nunca por `fechaFin` — por eso hacía falta el Bloque A:
+un pago de hace 95 días con un plan anual tiene `fechaFin` en el futuro, pero `fechaPago` fuera
+de la ventana.
+
+- **`asistencias`** — meta semanal/`diasAsistidosEstaSemana` (solo esta semana), "Asistencia Hoy"
+  del Dashboard, "ya asistió hoy" de Check-in, historial reciente de Asistencia (últimos 60),
+  Corte de Caja (Hoy/Semana/Quincena/Mes): todas dentro de la ventana, sin cambio de
+  comportamiento. `calcularPatronAsistencia` (recordatorios): su propio decaimiento exponencial
+  (`RECORDATORIO_DECAY_SEMANAL=0.75`) ya pesaba una visita de hace 90 días en ~2%, así que no hay
+  cambio visible. **"Horas Pico"** (agregado histórico que antes se declaraba explícitamente
+  "completo, sin filtrar por período") pasa a ser solo de los últimos 90 días — ver límites
+  conocidos. `_filasAsistencias`/`exportarTodo`: se trae completo aparte. `delMiembro`: corregido
+  para borrar también lo que esté fuera de la ventana (ver abajo).
+- **`registrosProgreso`** — "Mi progreso"/meta de un miembro en su perfil: se trae completo bajo
+  demanda al abrir ese perfil (`asegurarHistorialCompletoMiembro`, ver abajo). El Portal de
+  Empleados y el portal del cliente ya tenían su propio recorte/bajo-demanda desde el
+  2026-09-18 (`portalStaffCargarDatos`/`DIAS_HISTORIAL_STAFF_DEFAULT`) — sin cambios ahí.
+- **`pagos`** — `getVencimiento`/`getEstado`/`getUltimoPlan`/`getUltimoMonto`: resueltos en el
+  Bloque A (`m.ultimoPago`). `calcularTasaRenovacion` ("este mes" + 15 días): dentro de la
+  ventana. Resumen por Período y Corte de Caja de Finanzas (Hoy/Semana/Quincena/Mes): dentro de
+  la ventana. **Tendencia de Ingresos (6 meses)**: excede la ventana — se completa bajo demanda
+  (`asegurarHistorialFinanzas`, ver abajo). **La tabla principal de "Pagos"** ahora solo muestra
+  los últimos 90 días — ver límites conocidos. `corregirFechasImportadasAuto` (corrección
+  automática de fechas mal importadas): solo revisa lo que esté dentro de la ventana — ver
+  límites conocidos. `exportarPagos`/`exportarTodo`: se traen completos aparte
+  (`_traerColeccionCompleta`). Historial de pagos de un miembro en su perfil: bajo demanda.
+  `delMiembro`: corregido.
+- **`ventas`** — Resumen por Período/Corte de Caja de Finanzas: dentro de la ventana. Tendencia
+  de Ingresos: bajo demanda, igual que pagos (mismo `asegurarHistorialFinanzas`, trae pagos y
+  ventas juntos). **"Últimas Ventas" (Inventario), "Horas Pico de Compras" y "Top Compradores"**:
+  ahora solo ven los últimos 90 días — ver límites conocidos (Top Compradores es el más notorio:
+  el ranking puede ya no reflejar compradores frecuentes que dejaron de comprar hace más de 90
+  días). Historial de compras de un miembro en su perfil: bajo demanda. `exportarTodo`: completo
+  aparte. `delMiembro` nunca borraba ventas del miembro (ya era así desde antes; no se tocó, está
+  fuera del alcance de este cambio).
+- **`gastos`** — Corte de Caja (Hoy/Semana/Quincena/Mes): nunca necesita más que la ventana,
+  ningún cambio de comportamiento. `exportarTodo`: completo aparte.
+- **`pesoCorporal`** — IMC y el historial de peso de un miembro viven 100% en su perfil: se traen
+  completos bajo demanda (`asegurarHistorialCompletoMiembro`). `delMiembro`: corregido. El
+  portal del cliente ya traía solo lo del propio miembro (sin cambios).
+
+### Carga bajo demanda (dónde SÍ se trae el historial completo)
+
+- **Perfil de un miembro** (`verPerfil`): se abre de inmediato con lo que ya esté cargado (la
+  ventana reciente — Vencimiento/Plan ya quedan correctos gracias al Bloque A), y en paralelo
+  `asegurarHistorialCompletoMiembro(mid)` trae completos (consulta de igualdad simple por
+  `miembroId`, sin índice compuesto — mismo patrón que `portalStaffToggleVerTodoMiembro` del
+  Portal de Empleados) sus pagos/asistencias/registrosProgreso/pesoCorporal/ventas, los mezcla
+  sin duplicar, y vuelve a pintar solo las secciones que de verdad dependían de verlo completo
+  (Compras, Peso Corporal/IMC, Progreso, Meta). Se cachea por `miembroId`
+  (`historialCompletoMiembroCache`) para no repetir la consulta si se reabre el mismo perfil en
+  la misma sesión.
+- **Finanzas** (`renderEstadoCuenta`): la primera vez que se pinta en la sesión, dispara
+  `asegurarHistorialFinanzas()` en segundo plano — trae el TRAMO que falta entre hace 6 meses y
+  el borde de la ventana (dos filtros de rango sobre el mismo campo, sin índice compuesto) para
+  que la gráfica de Tendencia quede completa, y vuelve a pintar Finanzas sola si el staff sigue
+  en esa pestaña. Se marca con `finanzasHistorialExtendido` para no repetirlo.
+- **`exportarPagos`/`exportarTodo`**: ahora son `async` — antes de armar el Excel, traen
+  pagos/asistencias/ventas/gastos completos directo de Firestore (`_traerColeccionCompleta`,
+  sin pasar por los arrays globales recortados) y arman las hojas con eso, sin tocar los arrays
+  globales (la pantalla sigue viendo la ventana reciente normal después de exportar).
+- **`delMiembro`**: antes borraba solo lo que encontraba en los arrays en memoria — con el
+  recorte, eso dejaba huérfanos los pagos/asistencias/registrosProgreso/pesoCorporal más viejos
+  que la ventana. Ahora consulta Firestore directo (`where('miembroId','==',id)`, igualdad
+  simple) antes de borrar, así que borra TODO lo del miembro sin importar qué tan viejo sea.
+- Ambas cachés (`historialCompletoMiembroCache`, `finanzasHistorialExtendido`) se reinician en
+  cada `loadAll()` nuevo (login, "↻ Actualizar"), porque ahí los arrays globales vuelven a
+  reemplazarse desde cero con solo la ventana reciente.
+
+### Límites conocidos (lo que queda fuera de la ventana SIN carga bajo demanda)
+
+- **"Horas Pico"** (Asistencia) y **"Horas Pico de Compras"** (Inventario/Tienda): antes eran un
+  agregado de TODO el historial; ahora solo de los últimos 90 días. Para un gym con uso normal
+  el patrón por hora del día no debería cambiar mucho, pero técnicamente ya no es "desde
+  siempre".
+- **"Top Compradores"** (ranking de gasto en tienda, perfil/sección de Inventario): mismo caso,
+  ahora es un ranking de los últimos 90 días, no de siempre — un comprador frecuente que dejó de
+  comprar hace más de 90 días puede desaparecer del ranking.
+- **Tabla principal de "Pagos"** y **"Últimas Ventas"** (Inventario): muestran solo los últimos
+  90 días por default. Para ver pagos/ventas más viejos: perfil del miembro (pagos/compras
+  completos) o "Exportar Excel"/"Exportar todo" (siempre completo).
+- **`corregirFechasImportadasAuto`**: solo revisa pagos importados (`importado===true`) dentro
+  de la ventana de 90 días. Un pago importado hace más de 90 días cuya fecha haya quedado mal
+  calculada ya no se corrige solo — seguiría corrigiéndose a mano desde "Editar pago".
+- Nada de esto se implementó como carga bajo demanda porque ninguno estaba en el mínimo pedido
+  (perfil, Finanzas, exportar) — si alguno resulta molesto en el uso real, es un cambio acotado
+  agregar su propio "ver más" bajo demanda más adelante, mismo patrón que ya existe para perfil/
+  Finanzas/Portal de Empleados.
+
+**Verificado:** `node --check` sobre el script principal — sin errores. Ninguna consulta nueva
+necesitó un índice compuesto (todas son un solo filtro de rango o un solo filtro de igualdad
+sobre un campo). Dos pruebas nuevas de Playwright:
+- `test_ventana_carga.mjs` (20 casos): `loadAll()` recorta las 6 colecciones y deja `miembros`
+  completo; `verPerfil()` trae compras/peso/progreso completos de un miembro con TODO su
+  historial fuera de la ventana, los mezcla, repinta las secciones correctas, y no repite la
+  consulta si se reabre el mismo perfil; `asegurarHistorialFinanzas()` completa el pago de hace
+  4 meses que le faltaba a Tendencia y no se repite una vez cacheado; `delMiembro()` borra en
+  Firestore pagos/asistencias/registrosProgreso/pesoCorporal de un miembro aunque NADA de eso
+  estuviera cargado en memoria (el caso exacto que antes dejaba huérfanos).
+- Se actualizó `test_auditoria_bloque_c.mjs` (el caso de exportar) para seguir funcionando con
+  `exportarPagos`/`exportarTodo` ahora `async`.
+- Se agregó soporte para el operador `<` en el stub de pruebas de Firestore
+  (`stubs/firebase-firestore.js`, scratchpad) — hacía falta para probar
+  `asegurarHistorialFinanzas` de verdad; no afecta ninguna consulta existente (nadie más lo usaba).
+
+Suite completa del proyecto (18 archivos) — **321/321**, sin regresiones. No se tocó
+`firestore.rules` (el dueño ya tiene permiso de lectura/escritura total sobre estas colecciones
+vía la regla genérica existente).
+
 ## 2026-10-08 — Auditoría de lecturas (Bloque A): resumen de pagos en cada miembro
 
 **Objetivo general (ver también los bloques B y C, mismo día):** reducir las lecturas de
