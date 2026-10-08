@@ -1329,6 +1329,10 @@ let qrSincronizado=false;
 // mismo patrón que qrSincronizado: cierto una vez que migrarResumenPagos() ya calculó y guardó
 // el resumen ultimoPago de TODOS los miembros de esta cuenta, para no repetirlo en cada carga.
 let resumenPagosMigrado=false;
+// Medición de lecturas (ver CHANGELOG.md, 2026-10-08, auditoría de lecturas, Bloque C) — total
+// de documentos leídos en el loadAll() más reciente, para poder comparar antes/después del
+// recorte a VENTANA_DIAS. Se reinicia al principio de cada loadAll().
+let medicionLecturas=0;
 // Carga bajo demanda del historial completo (ver CHANGELOG.md, 2026-10-08, auditoría de
 // lecturas, Bloque B) — mismo patrón que portalStaffRegistrosCompletoCache del Portal de
 // Empleados (ya existía desde el 2026-09-18 para ese caso, aquí se reutiliza la misma idea
@@ -2077,7 +2081,14 @@ async function doLogout(){
 const VENTANA_DIAS=90;
 function _cortePorVentana(){return Date.now()-VENTANA_DIAS*86400000;}
 async function loadAll(){
+  medicionLecturas=0;
   await Promise.all([loadMiembros(),loadPagos(),loadAsistencias(),loadEmpleados(),loadInventario(),loadProductos(),loadVentas(),loadGastos(),loadCategoriasMembresia(),loadPromociones(),loadRegistrosProgreso(),loadPesoCorporal(),loadSugerencias(),loadAccesosNoIdentificados()]);
+  // Medición de lecturas (ver CHANGELOG.md, 2026-10-08, auditoría de lecturas, Bloque C) — para
+  // poder comparar antes/después del recorte a VENTANA_DIAS: suma los documentos que de verdad
+  // trajo CADA loadX() de arriba (cada uno incrementa medicionLecturas con su propio s.docs.length
+  // justo después de su getDocs). No cuenta lo que se traiga después bajo demanda (perfil de un
+  // miembro, Finanzas, exportar) — eso no pasa en cada inicio de sesión, solo cuando hace falta.
+  console.info(`[GymTrack] loadAll: ${medicionLecturas} documentos leídos`);
   // Cualquier historial extendido que se haya traído en la sesión anterior (perfil de un
   // miembro, los 6 meses de Finanzas) ya no es válido — loadAll() acaba de reemplazar los
   // arrays con la ventana reciente desde cero (ver asegurarHistorialCompletoMiembro/
@@ -2119,13 +2130,13 @@ function isTabActive(name){const el=document.getElementById('tab-'+name);return!
 //      para contarlos en el cliente.
 // Cualquiera de las tres es un cambio de forma de consulta (no de arquitectura de archivo) y
 // puede convivir con que index.html siga siendo un solo archivo.
-async function loadMiembros(){const s=await getDocs(userCol('miembros'));miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));recalcMiembrosPorId();}
+async function loadMiembros(){const s=await getDocs(userCol('miembros'));medicionLecturas+=s.docs.length;miembros=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.numero||999)-(b.numero||999));recalcMiembrosPorId();}
 // Recortado a los últimos VENTANA_DIAS días por fechaPago (ver CHANGELOG.md, 2026-10-08,
 // auditoría de lecturas) — el vencimiento de un miembro sigue siendo correcto aunque su pago
 // más reciente quede fuera de esta ventana, gracias a m.ultimoPago (ver Bloque A, getVencimiento
 // y relacionadas). El historial completo de un miembro puntual se trae aparte bajo demanda
 // (verPerfil/asegurarHistorialCompletoMiembro); exportarPagos/exportarTodo también traen todo.
-async function loadPagos(){const s=await getDocs(queryFn(userCol('pagos'),whereFn('fechaPago','>=',_cortePorVentana())));pagos=s.docs.map(d=>({id:d.id,...d.data()}));recalcPagosPorMiembro();}
+async function loadPagos(){const s=await getDocs(queryFn(userCol('pagos'),whereFn('fechaPago','>=',_cortePorVentana())));medicionLecturas+=s.docs.length;pagos=s.docs.map(d=>({id:d.id,...d.data()}));recalcPagosPorMiembro();}
 
 // Reconstruye el Map miembroId->miembro. Se llama una sola vez por recarga de miembros, no por cada render.
 function recalcMiembrosPorId(){
@@ -2153,33 +2164,33 @@ function recalcPagosPorMiembro(){
 // propio decay exponencial ya las pesaba casi en cero de todos modos, ver
 // calcularPatronAsistencia). El historial completo de UN miembro se trae aparte bajo demanda
 // en su perfil.
-async function loadAsistencias(){const s=await getDocs(queryFn(userCol('asistencias'),whereFn('fecha','>=',_cortePorVentana())));asistencias=s.docs.map(d=>({id:d.id,...d.data()}));}
-async function loadEmpleados(){try{const s=await getDocs(userCol('empleados'));empleados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){empleados=[];}}
-async function loadInventario(){try{const s=await getDocs(userCol('inventario'));inventario=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){inventario=[];}}
-async function loadProductos(){try{const s=await getDocs(userCol('productos'));productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
+async function loadAsistencias(){const s=await getDocs(queryFn(userCol('asistencias'),whereFn('fecha','>=',_cortePorVentana())));medicionLecturas+=s.docs.length;asistencias=s.docs.map(d=>({id:d.id,...d.data()}));}
+async function loadEmpleados(){try{const s=await getDocs(userCol('empleados'));medicionLecturas+=s.docs.length;empleados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){empleados=[];}}
+async function loadInventario(){try{const s=await getDocs(userCol('inventario'));medicionLecturas+=s.docs.length;inventario=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){inventario=[];}}
+async function loadProductos(){try{const s=await getDocs(userCol('productos'));medicionLecturas+=s.docs.length;productos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){productos=[];}}
 // Recortado a los últimos VENTANA_DIAS días (ver CHANGELOG.md, 2026-10-08) — límite conocido:
 // "Horas Pico de Compras" y "Top Compradores" dejan de ver ventas más viejas que eso. Finanzas
 // trae aparte los 6 meses que necesita su gráfica de Tendencia (asegurarHistorialFinanzas); el
 // historial completo de compras de UN miembro se trae aparte en su perfil; exportarTodo trae todo.
-async function loadVentas(){try{const s=await getDocs(queryFn(userCol('ventas'),whereFn('fecha','>=',_cortePorVentana())));ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
+async function loadVentas(){try{const s=await getDocs(queryFn(userCol('ventas'),whereFn('fecha','>=',_cortePorVentana())));medicionLecturas+=s.docs.length;ventas=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){ventas=[];}}
 // Recortado a los últimos VENTANA_DIAS días (ver CHANGELOG.md, 2026-10-08) — Corte de Caja solo
 // necesita Hoy/Semana/Quincena/Mes, siempre dentro de la ventana. exportarTodo trae todo aparte.
-async function loadGastos(){try{const s=await getDocs(queryFn(userCol('gastos'),whereFn('fecha','>=',_cortePorVentana())));gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
-async function loadCategoriasMembresia(){try{const s=await getDocs(userCol('categoriasMembresia'));categoriasMembresia=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){categoriasMembresia=[];}}
-async function loadPromociones(){try{const s=await getDocs(userCol('promociones'));promociones=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){promociones=[];}}
+async function loadGastos(){try{const s=await getDocs(queryFn(userCol('gastos'),whereFn('fecha','>=',_cortePorVentana())));medicionLecturas+=s.docs.length;gastos=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){gastos=[];}}
+async function loadCategoriasMembresia(){try{const s=await getDocs(userCol('categoriasMembresia'));medicionLecturas+=s.docs.length;categoriasMembresia=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){categoriasMembresia=[];}}
+async function loadPromociones(){try{const s=await getDocs(userCol('promociones'));medicionLecturas+=s.docs.length;promociones=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){promociones=[];}}
 // Recortado a los últimos VENTANA_DIAS días (ver CHANGELOG.md, 2026-10-08) — mismo criterio que
 // ya usaba portalStaffCargarDatos() desde el 2026-09-18 para esta misma colección en el Portal
 // de Empleados (ver DIAS_HISTORIAL_STAFF_DEFAULT), ahora también aplicado al panel del dueño.
 // El historial completo de UN miembro (su progreso por ejercicio) se trae aparte en su perfil.
-async function loadRegistrosProgreso(){try{const s=await getDocs(queryFn(userCol('registrosProgreso'),whereFn('fecha','>=',_cortePorVentana())));registrosProgreso=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){registrosProgreso=[];}}
+async function loadRegistrosProgreso(){try{const s=await getDocs(queryFn(userCol('registrosProgreso'),whereFn('fecha','>=',_cortePorVentana())));medicionLecturas+=s.docs.length;registrosProgreso=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){registrosProgreso=[];}}
 // Recortado a los últimos VENTANA_DIAS días (ver CHANGELOG.md, 2026-10-08) — el IMC/historial de
 // peso de UN miembro se trae completo aparte en su perfil si hace falta ver más atrás.
-async function loadPesoCorporal(){try{const s=await getDocs(queryFn(userCol('pesoCorporal'),whereFn('fecha','>=',_cortePorVentana())));pesoCorporal=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){pesoCorporal=[];}}
-async function loadSugerencias(){try{const s=await getDocs(userCol('sugerencias'));sugerencias=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){sugerencias=[];}}
+async function loadPesoCorporal(){try{const s=await getDocs(queryFn(userCol('pesoCorporal'),whereFn('fecha','>=',_cortePorVentana())));medicionLecturas+=s.docs.length;pesoCorporal=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){pesoCorporal=[];}}
+async function loadSugerencias(){try{const s=await getDocs(userCol('sugerencias'));medicionLecturas+=s.docs.length;sugerencias=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){sugerencias=[];}}
 // Solo los NO resueltos: la colección puede acumular históricos ya vinculados con el tiempo
 // (mismo criterio anti-fuga-de-lecturas que registrosProgreso en el Portal de Empleados, ver
 // CHANGELOG.md) — no hace falta releer los ya resueltos en cada carga.
-async function loadAccesosNoIdentificados(){try{const s=await getDocs(queryFn(userCol('accesosNoIdentificados'),whereFn('resuelto','==',false)));accesosNoIdentificados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){accesosNoIdentificados=[];}}
+async function loadAccesosNoIdentificados(){try{const s=await getDocs(queryFn(userCol('accesosNoIdentificados'),whereFn('resuelto','==',false)));medicionLecturas+=s.docs.length;accesosNoIdentificados=s.docs.map(d=>({id:d.id,...d.data()}));}catch(e){accesosNoIdentificados=[];}}
 
 // Parcheo local de arrays en memoria tras un solo addDoc/updateDoc/deleteDoc, para NO tener que
 // volver a leer la colección completa de Firestore (ver auditoría de lecturas junto a loadAll()).

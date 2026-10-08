@@ -4,6 +4,27 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-08 — Auditoría de lecturas (Bloque C): medición y confirmación del botón Actualizar
+
+**Qué se hizo:** cada una de las 14 funciones `loadX()` que llama `loadAll()` ahora suma
+`s.docs.length` (documentos que de verdad trajo su `getDocs`) a un contador nuevo
+`medicionLecturas` — se reinicia al principio de cada `loadAll()` y, al terminar, se imprime
+`console.info('[GymTrack] loadAll: N documentos leídos')` con el total real, para poder comparar
+el antes/después del recorte del Bloque B abriendo la consola del navegador. No cuenta lo que se
+traiga después bajo demanda (perfil de un miembro, Finanzas, exportar) — eso no pasa en cada
+inicio de sesión, solo cuando de verdad hace falta.
+
+El botón "↻ Actualizar" del Dashboard (`onclick="loadAll()"`, línea ~429) no se tocó — sigue
+llamando a `loadAll()` directo, que ya viene recortado por el Bloque B, así que el botón se
+benefició del recorte automáticamente sin ningún cambio de código.
+
+**Verificado:** `node --check` sobre el script principal — sin errores. Prueba nueva de
+Playwright (`test_medicion_lecturas.mjs`, 4 casos): `loadAll()` imprime la línea de consola con
+el total correcto (sembrado a propósito: 2 miembros + 1 pago + 2 asistencias + 1 empleado = 6);
+el contador no se acumula entre llamadas sucesivas a `loadAll()`; el botón "↻ Actualizar" sigue
+con `onclick="loadAll()"`. Suite completa del proyecto (19 archivos) — **325/325**, sin
+regresiones. No se tocó `firestore.rules`.
+
 ## 2026-10-08 — Auditoría de lecturas (Bloque B): ventana de carga de 90 días
 
 **Qué se hizo:** `loadPagos`, `loadAsistencias`, `loadVentas`, `loadGastos`,
