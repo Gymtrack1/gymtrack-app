@@ -4,6 +4,36 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-14 — El coach también puede editar el periodo y la meta de cada hito del plan
+
+**Pedido:** en "Ver recomendaciones IA" (Portal de Empleados), el coach ya podía marcar/editar
+hábitos sueltos de cada hito del plan (ej. "SEMANA 1-2" → "Establecer una rutina constante..."),
+pero el periodo y la meta intermedia del hito en sí seguían siendo texto fijo, sin forma de
+corregirlos.
+
+**Qué se cambió:**
+- `renderPlanFitnessIA()`: el periodo y la meta intermedia de cada hito ahora se pintan como
+  `<input type="text">` editables (en vez de `<div>` de solo texto) cuando se pasa
+  `editOpts.editarHitoFn` — mismo criterio que ya usaban los hábitos (`editOpts.editarFn`). Sin
+  ese parámetro (perfil normal del staff, portal del cliente) siguen siendo texto fijo, sin
+  cambios — nadie más que el coach desde esa pantalla puede reescribir el plan.
+- Nuevo `_editarMetaHitoEnPlan(plan,hitoId,campo,nuevoValor)` — mismo patrón que
+  `_editarTextoHabitoEnPlan`: `campo` es `'periodo'` o `'metaIntermedia'`, un valor vacío no
+  hace nada (evita dejarlo en blanco por error de dedo).
+- Nuevo `portalStaffEditarHito(miembroId,hitoId,campo,nuevoValor)`, agregado a
+  `_portalStaffPlanEditOpts` como `editarHitoFn` — guarda con el mismo
+  `_portalStaffGuardarPlanCliente` que ya usan los hábitos (dos escrituras: `miembros/` +
+  espejo `miembrosPublicos/`).
+
+**Verificado:** `node --check` sobre el script principal — sin errores. Prueba nueva de
+Playwright (`test_editar_hito_plan.mjs`, 11 casos): el periodo y la meta aparecen como `<input>`
+en "Ver recomendaciones IA"; editarlos guarda en Firestore (`miembros/` y `miembrosPublicos/`,
+fake) y repinta la tarjeta con el valor nuevo; un valor vacío no borra el original; el perfil
+normal del staff (sin `editOpts`) sigue mostrando periodo/meta como texto fijo, sin ningún
+`<input>`. Suite completa del proyecto (20 archivos) — **336/336**, sin regresiones. No se tocó
+`firestore.rules` (el coach ya escribía `planFitnessIA` completo por esta misma pantalla desde
+antes — este cambio solo abre dos campos más del mismo objeto que ya podía reescribir).
+
 ## 2026-10-08 — Auditoría de lecturas (Bloque C): medición y confirmación del botón Actualizar
 
 **Qué se hizo:** cada una de las 14 funciones `loadX()` que llama `loadAll()` ahora suma
