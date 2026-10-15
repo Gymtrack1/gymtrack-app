@@ -2580,11 +2580,23 @@ function _historialParaMeta(meta,pesos,registros){
 }
 function _tendenciaMetaDesdeHistorial(historial){
   if(!historial||historial.length<META_MIN_REGISTROS)return null;
-  const ordenado=[...historial].sort((a,b)=>a.fecha-b.fecha);
+  const ordenado=[...historial].filter(h=>typeof h.valor==='number'&&typeof h.fecha==='number').sort((a,b)=>a.fecha-b.fecha);
+  if(ordenado.length<META_MIN_REGISTROS)return null;
   const dias=(ordenado[ordenado.length-1].fecha-ordenado[0].fecha)/86400000;
   if(dias<META_MIN_DIAS_HISTORIAL)return null;
-  const cambioTotal=ordenado[ordenado.length-1].valor-ordenado[0].valor;
-  return Math.round((cambioTotal/(dias/7))*100)/100; // kg (o carga) por semana
+  // 2026-10-15 (ver CHANGELOG.md): pendiente por mínimos cuadrados sobre TODOS los registros, en
+  // vez de solo (último − primero). Antes, una sola pesada "rara" al principio o al final (agua,
+  // comida, otra báscula) movía todo el ritmo; con la recta de mejor ajuste cada registro pesa
+  // lo mismo y un punto atípico se diluye entre los demás.
+  const t0=ordenado[0].fecha;
+  const xs=ordenado.map(h=>(h.fecha-t0)/86400000);
+  const ys=ordenado.map(h=>h.valor);
+  const mx=xs.reduce((a,b)=>a+b,0)/xs.length;
+  const my=ys.reduce((a,b)=>a+b,0)/ys.length;
+  let num=0,den=0;
+  for(let i=0;i<xs.length;i++){num+=(xs[i]-mx)*(ys[i]-my);den+=(xs[i]-mx)**2;}
+  if(!den)return null;
+  return Math.round((num/den)*7*100)/100; // kg (o carga) por semana
 }
 function calcularTendenciaMeta(mid){
   const m=miembrosPorId.get(mid);
@@ -4692,6 +4704,7 @@ async function pedirRecomendacionIAPerfil(btn){
       meta:m.metaFitness,
       tendenciaSemanal:tendencia,
       planActual:m.planFitnessIA||null,
+      entrenamiento:_contextoEntrenamientoIA(registrosProgreso.filter(r=>r.miembroId===perfilActualId)),
     };
     toast('Consultando a la IA...');
     const planIA=await _solicitarPlanFitnessIA(payload);
@@ -7175,6 +7188,57 @@ function _fuerzaPorMusculo(registros){
   });
   return porMusculo;
 }
+// CONTEXTO DE ENTRENAMIENTO PARA EL PLAN IA (2026-10-15, ver CHANGELOG.md): además de peso/meta,
+// el plan de la IA ahora recibe lo que el cliente de verdad entrena — compartido entre el perfil
+// (staff) y el portal, cada uno le pasa sus propios registros de ese miembro. Solo datos de
+// entrenamiento, nada identificable (mismo criterio que el resto del payload del Worker).
+//  - fuerzaPorMusculo: mejor 1RM estimado (Epley) por músculo, con el ejercicio que lo generó.
+//  - gruposSinRegistro: músculos de BIBLIOTECA_EJERCICIOS (sin Cardio) que nunca ha trabajado.
+//  - ejerciciosRecientes: últimos IA_DIAS_EJERCICIOS_RECIENTES días, por ejercicio — sesiones,
+//    último peso×reps y cambio de 1RM entre la primera y la última sesión. Máx. IA_MAX_EJERCICIOS
+//    (los más frecuentes) para no inflar el prompt.
+//  - diasEntrenoPorSemana: días distintos con algún registro en las últimas 4 semanas ÷ 4.
+const IA_DIAS_EJERCICIOS_RECIENTES=30;
+const IA_MAX_EJERCICIOS=12;
+function _contextoEntrenamientoIA(registros){
+  const regs=Array.isArray(registros)?registros:[];
+  const r1=n=>Math.round(n*10)/10;
+  const porMusculo=_fuerzaPorMusculo(regs);
+  const fuerzaPorMusculo=[...porMusculo.entries()].map(([musculo,f])=>({musculo,valor:r1(f.valor),ejercicio:f.info.nombre}));
+  const gruposSinRegistro=Object.keys(BIBLIOTECA_EJERCICIOS).filter(m=>m!=='Cardio'&&!porMusculo.has(m));
+  const ahora=Date.now();
+  const corte=ahora-IA_DIAS_EJERCICIOS_RECIENTES*86400000;
+  const porEjercicio=new Map();
+  regs.forEach(r=>{
+    if(!r||typeof r.fecha!=='number'||r.fecha<corte)return;
+    const info=buscarEjercicioInfo(r.ejercicioId);
+    if(!info)return;
+    if(!porEjercicio.has(r.ejercicioId))porEjercicio.set(r.ejercicioId,{info,regs:[]});
+    porEjercicio.get(r.ejercicioId).regs.push(r);
+  });
+  const diaKey=f=>new Date(f).toDateString();
+  const ejerciciosRecientes=[...porEjercicio.values()].map(({info,regs:rs})=>{
+    rs.sort((a,b)=>a.fecha-b.fecha);
+    const sesiones=new Set(rs.map(r=>diaKey(r.fecha))).size;
+    const base={ejercicio:info.nombre,musculo:info.musculo,sesiones};
+    if(info.tipo==='cardio'){
+      const ult=rs[rs.length-1];
+      return{...base,tipo:'cardio',ultimoTiempoMin:typeof ult.tiempoMinutos==='number'?ult.tiempoMinutos:null};
+    }
+    const conPeso=rs.filter(r=>typeof r.peso==='number');
+    if(!conPeso.length)return{...base,tipo:'fuerza'};
+    const ult=conPeso[conPeso.length-1];
+    // 1RM de la primera y la última SESIÓN (el mejor de cada día), para ver si va subiendo
+    const mejorDelDia=k=>Math.max(...conPeso.filter(r=>diaKey(r.fecha)===k).map(r=>estimar1RM(r.peso,r.repeticiones)));
+    const primerDia=diaKey(conPeso[0].fecha),ultimoDia=diaKey(ult.fecha);
+    const cambio1RM=primerDia===ultimoDia?null:r1(mejorDelDia(ultimoDia)-mejorDelDia(primerDia));
+    return{...base,tipo:'fuerza',ultimoPeso:ult.peso,ultimasReps:ult.repeticiones||null,cambio1RM};
+  }).sort((a,b)=>b.sesiones-a.sesiones).slice(0,IA_MAX_EJERCICIOS);
+  const corte4=ahora-28*86400000;
+  const dias4=new Set(regs.filter(r=>r&&typeof r.fecha==='number'&&r.fecha>=corte4).map(r=>diaKey(r.fecha))).size;
+  const totalRegistrosFuerza=regs.filter(r=>{const i=buscarEjercicioInfo(r&&r.ejercicioId);return i&&i.tipo!=='cardio'&&typeof r.peso==='number';}).length;
+  return{fuerzaPorMusculo,gruposSinRegistro,ejerciciosRecientes,diasEntrenoPorSemana:r1(dias4/4),totalRegistrosFuerza};
+}
 function renderPortalFuerzaSeccion(){
   if(!portalRegistros.length)return''; // nunca ha registrado nada: cero cambio, no se muestra nada (mismo criterio que "Mi progreso")
   return`<div class="ec-card" style="margin-bottom:16px">
@@ -7394,6 +7458,7 @@ async function portalPedirRecomendacionIA(btn){
       meta:portalMiembro.metaFitness,
       tendenciaSemanal:tendencia,
       planActual:portalMiembro.planFitnessIA||null,
+      entrenamiento:_contextoEntrenamientoIA(portalRegistros),
     };
     toast('Consultando a la IA...');
     const planIA=await _solicitarPlanFitnessIA(payload);

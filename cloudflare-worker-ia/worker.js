@@ -61,6 +61,7 @@ REGLAS OBLIGATORIAS:
 - Si NO te dan un ritmo real (historial insuficiente todavía), estima con tu conocimiento general de fitness, pero deja explícito en resumenTexto que es un estimado inicial que se irá afinando conforme haya más historial registrado — nunca lo presentes como si fuera un cálculo preciso.
 - Si la meta implica un cambio de peso corporal significativo (más de aproximadamente 5% del peso actual, en cualquier dirección), incluye en resumenTexto una nota breve de que esto no sustituye a un entrenador personal ni a un médico.
 - Si te dan un "plan actual" con hitos/hábitos ya marcados como completados, NUNCA los reescribas, renombres, elimines ni los des por pendientes — trátalos como fijos e inamovibles, ni siquiera los repitas en tu respuesta. Genera o ajusta SOLO hitos nuevos para lo que sigue pendiente o para periodos futuros, considerando el progreso real ya mostrado.
+- Si te dan datos de ENTRENAMIENTO (ejercicios recientes, fuerza por músculo, días de entreno por semana), úsalos para personalizar los hábitos: nombra ejercicios concretos que el cliente YA hace (ej. "Sube 2.5 kg en Press de banca plano"), prioriza los grupos musculares sin registros o con menos fuerza relativa, y ajusta la exigencia a su frecuencia real (si entrena 2 días/semana, no le pidas 5 de golpe — súbela de forma gradual). Si un ejercicio muestra cambio de 1RM negativo o cero en varias sesiones, trátalo como estancamiento y sugiere un ajuste. Si tiene pocos registros de fuerza, trátalo como principiante (técnica antes que carga). Nunca inventes ejercicios o cifras que no te dieron como si fueran suyos.
 - Genera entre 3 y 5 hitos con periodos secuenciales y realistas (ej. "Semana 1-2", "Semana 3-4", "Mes 2"), cada uno con una meta intermedia concreta (metaIntermedia) y de 2 a 4 hábitos breves y accionables (texto de cada hábito: máximo ~10 palabras).`;
 
 // Esquema de salida estructurada de Gemini (subset de OpenAPI): fuerza a la API a devolver JSON
@@ -183,6 +184,44 @@ function buildUserPrompt(datos) {
     partes.push('Todavía no hay suficiente historial para medir un ritmo real — este cliente es nuevo o tiene pocos registros. Da un estimado inicial general y dilo explícitamente en resumenTexto.');
   }
 
+  // Contexto de entrenamiento (2026-10-15): lo que el cliente de verdad registra en el gym.
+  // Opcional — si index.html es una versión vieja y no lo manda, el prompt queda igual que antes.
+  const ent = datos.entrenamiento;
+  if (ent && typeof ent === 'object') {
+    if (typeof ent.diasEntrenoPorSemana === 'number') {
+      partes.push(`Frecuencia real de entreno (últimas 4 semanas): ${ent.diasEntrenoPorSemana} días por semana.`);
+    }
+    if (typeof ent.totalRegistrosFuerza === 'number') {
+      partes.push(`Total de series de fuerza registradas en su historial: ${ent.totalRegistrosFuerza}.`);
+    }
+    const recientes = Array.isArray(ent.ejerciciosRecientes) ? ent.ejerciciosRecientes.slice(0, 15) : [];
+    if (recientes.length) {
+      partes.push('Ejercicios que registró en los últimos 30 días:');
+      recientes.forEach((e) => {
+        if (!e || !e.ejercicio) return;
+        let d = `- ${e.ejercicio} (${e.musculo || 'sin músculo'}): ${e.sesiones || 0} sesiones`;
+        if (e.tipo === 'cardio') {
+          if (typeof e.ultimoTiempoMin === 'number') d += `, última vez ${e.ultimoTiempoMin} min`;
+        } else {
+          if (typeof e.ultimoPeso === 'number') d += `, última serie ${e.ultimoPeso === 0 ? 'con peso corporal' : e.ultimoPeso + ' kg'}${e.ultimasReps ? ' x ' + e.ultimasReps + ' reps' : ''}`;
+          if (typeof e.cambio1RM === 'number') d += `, cambio de 1RM estimado en el periodo: ${e.cambio1RM > 0 ? '+' : ''}${e.cambio1RM} kg`;
+        }
+        partes.push(d + '.');
+      });
+    } else {
+      partes.push('No registró ejercicios en los últimos 30 días.');
+    }
+    const fuerza = Array.isArray(ent.fuerzaPorMusculo) ? ent.fuerzaPorMusculo : [];
+    if (fuerza.length) {
+      partes.push('Fuerza estimada por grupo muscular (mejor 1RM vía Epley de todo su historial):');
+      fuerza.forEach((f) => {
+        if (f && f.musculo && typeof f.valor === 'number') partes.push(`- ${f.musculo}: ${f.valor} kg${f.ejercicio ? ' (' + f.ejercicio + ')' : ''}`);
+      });
+    }
+    const sinRegistro = Array.isArray(ent.gruposSinRegistro) ? ent.gruposSinRegistro : [];
+    if (sinRegistro.length) partes.push(`Grupos musculares que nunca ha trabajado: ${sinRegistro.join(', ')}.`);
+  }
+
   const planActual = datos.planActual;
   if (planActual && Array.isArray(planActual.hitos) && planActual.hitos.length) {
     partes.push('Plan actual del cliente (respeta EXACTAMENTE lo ya marcado como completado, no lo reescribas ni lo desmarques — genera hitos nuevos solo para lo pendiente o periodos futuros):');
@@ -217,6 +256,19 @@ function jsonResponse(body, status, origin) {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
+    try {
+      return await atender(request, env, origin);
+    } catch (e) {
+      // 2026-10-15: red de seguridad. Sin esto, una excepción no prevista (ej. Gemini regresa
+      // algo que no es JSON) hace que Cloudflare responda con su página de error SIN cabeceras
+      // CORS, y el navegador (Safari en iPhone) lo reporta solo como "Load failed", sin motivo.
+      return jsonResponse({ error: 'Error inesperado en el servicio de IA (intenta de nuevo)', detalle: String(e && e.message || e).slice(0, 200) }, 500, origin);
+    }
+  },
+};
+
+async function atender(request, env, origin) {
+  {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -343,5 +395,5 @@ export default {
       return jsonResponse({ error: 'El plan de Gemini no tiene el formato esperado (intenta de nuevo)' }, 502, origin);
     }
     return jsonResponse({ resumenTexto: resultado.resumenTexto.trim(), hitos: resultado.hitos }, 200, origin);
-  },
-};
+  }
+}

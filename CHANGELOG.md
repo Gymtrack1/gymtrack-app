@@ -4,6 +4,52 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-15 — Plan IA: ejercicios registrados, fuerza por músculo y ritmo con todos los registros
+
+**Qué se hizo:**
+- **Ritmo hacia la meta (`_tendenciaMetaDesdeHistorial`)**: ahora es la pendiente por mínimos
+  cuadrados sobre TODOS los registros (kg/semana), en vez de solo (último − primero). Antes una
+  sola pesada atípica al inicio o al final movía todo el ritmo; ahora cada registro pesa lo mismo.
+  Mismos mínimos de antes (`META_MIN_REGISTROS`=3, `META_MIN_DIAS_HISTORIAL`=10). Aplica igual al
+  perfil (staff) y al portal, porque los dos usan este núcleo compartido.
+- **Nuevo helper `_contextoEntrenamientoIA(registros)`**, que se manda como `entrenamiento` en el
+  payload del plan IA, desde el perfil y desde el portal:
+  - `fuerzaPorMusculo`: el mejor 1RM (Epley) por músculo, con el ejercicio que lo generó.
+  - `gruposSinRegistro`: músculos de la biblioteca (sin Cardio) que nunca ha trabajado.
+  - `ejerciciosRecientes`: últimos 30 días, máximo 12 (los más frecuentes). Incluye sesiones,
+    último peso × reps y el cambio de 1RM entre la primera y la última sesión. Para cardio, el
+    último tiempo.
+  - `diasEntrenoPorSemana`: días distintos con registros en las últimas 4 semanas ÷ 4.
+  - `totalRegistrosFuerza`.
+  Solo datos de entrenamiento, nada identificable.
+- **Worker (`cloudflare-worker-ia/worker.js`)**:
+  - `buildUserPrompt` describe ese contexto (es opcional: sin él, el prompt queda igual que antes).
+  - `SYSTEM_PROMPT` tiene una regla nueva: nombrar ejercicios que el cliente ya hace, priorizar
+    músculos sin registros o débiles, ajustar la exigencia a su frecuencia real y detectar
+    estancamientos.
+  - Red de seguridad: el handler va envuelto en `try/catch`, así que cualquier excepción no
+    prevista regresa un JSON con CORS. Antes Cloudflare respondía con su página de error sin
+    CORS, y Safari en iPhone lo mostraba solo como "Load failed".
+
+**Por qué:** el plan solo conocía peso/meta. Con esto la recomendación se basa en lo que el
+cliente de verdad entrena. Además, el ritmo ya no depende de una sola pesada.
+
+**Verificado:**
+- `node --check` sobre el script principal y sobre el Worker.
+- Pruebas aisladas en Node:
+  - Ritmo lineal exacto de −0.5 kg/sem → −0.5.
+  - Una pesada atípica al final → 0.25 (antes 0.33).
+  - <3 registros o <10 días → null.
+  - Contexto con registros de fuerza y cardio, un `ejercicioId` inexistente y registros de hace
+    más de 30 días; también con lista vacía y `undefined`, sin excepción.
+- `buildUserPrompt` con y sin `entrenamiento`.
+- La red de seguridad con un Gemini simulado que regresa HTML → 500 con
+  `Access-Control-Allow-Origin` correcto.
+
+**Despliegue:** el Worker se vuelve a desplegar (`npx wrangler deploy` en
+`cloudflare-worker-ia/`). Los dos lados son compatibles en cualquier orden: el Worker viejo
+ignora `entrenamiento`, y el Worker nuevo funciona sin él.
+
 ## 2026-10-08 — Auditoría de lecturas (Bloque C): medición y confirmación del botón Actualizar
 
 **Qué se hizo:** cada una de las 14 funciones `loadX()` que llama `loadAll()` ahora suma
