@@ -89,6 +89,16 @@
   .portal-header{text-align:center;margin-bottom:20px;}
   .portal-header .login-logo{margin-bottom:2px;}
   .portal-hello{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;}
+  /* BARRA DE PESTAÑAS DEL PORTAL (Mejoras de usabilidad, Fase 2, item 11) — solo se activa desde
+     JS (renderPortalHome agrega .portal-screen-tabs a #portal-screen), nunca desde el Modo
+     Check-in, el Portal de Empleados ni el buzón de sugerencias, así que esas pantallas no se ven
+     afectadas por este padding/barra extra. env(safe-area-inset-bottom) respeta el home
+     indicator de iPhone. */
+  .portal-screen-tabs{padding-bottom:86px!important;}
+  .portal-tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--surface);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);z-index:150;}
+  .portal-tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px;background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;cursor:pointer;padding:6px 0;}
+  .portal-tab-btn.activo{color:var(--text);}
+  .portal-tab-icon{font-size:20px;}
   /* MODO CHECK-IN (autoservicio, ver CHANGELOG.md) — pantalla completa, aparte de app-screen
      (misma familia que admin-screen/portal-screen), pensada para quedar fija en una tablet en
      recepción. Botones grandes (min 64px) para dedos, no solo para mouse.
@@ -332,18 +342,12 @@ contenedor, igual que app-screen/admin-screen. -->
   </div>
 </div>
 
-<!-- MODAL MI META (portal del cliente): la sección "Mi Meta" vivía siempre visible en el
-     scroll principal del portal; ahora vive aquí, oculta hasta que el cliente pulsa el botón
-     "🎯 Mi Meta" (ver abrirModalPortalMeta más abajo), que rellena #portal-meta-modal-contenido
-     con exactamente el mismo contenido que antes se mostraba inline. -->
-<div class="modal-overlay" id="modal-portal-meta">
-  <div class="modal">
-    <h2>🎯 Mi Meta</h2>
-    <div id="portal-meta-modal-contenido"></div>
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick="closeModal('modal-portal-meta')">Cerrar</button>
-    </div>
-  </div>
+<!-- GUÍA DE BIENVENIDA DEL PORTAL (Mejoras de usabilidad, Fase 2, item 13): overlay de 3 pasos,
+     solo la primera vez que este celular entra a este gimnasio (ver _portalMostrarGuiaSiPrimeraVez/
+     _portalGuiaYaVista más abajo). Reemplaza al modal "Mi Meta" de antes (esa sección ahora vive
+     directo en su propia pestaña, sin modal — ver renderPortalMetaSeccion). -->
+<div class="modal-overlay" id="modal-portal-guia">
+  <div class="modal" id="portal-guia-contenido" style="max-width:360px;text-align:center"></div>
 </div>
 
 <!-- LOGIN -->
@@ -6212,6 +6216,31 @@ const DESCRIPCION_TIPO_SERIE={
   'Súper serie':'La hiciste justo después de otro ejercicio, sin descansar entre los dos.'
 };
 
+// BOTONES GRANDES −/+ EN LOS CAMPOS NUMÉRICOS DEL PORTAL (Mejoras de usabilidad, item 5): más
+// cómodos para el pulgar que escribir en el teclado para un ajuste chico — el input sigue
+// aceptando escritura directa, esto es solo un atajo. min=0 (peso/minutos/km) nunca deja bajar de
+// cero; min=1 (reps/series) nunca deja bajar de 1. Si el input está vacío o con algo no numérico,
+// parte de `min` (así +step siempre deja un valor válido en vez de NaN).
+function _portalAjustarCampo(id,delta,min){
+  const input=document.getElementById(id);
+  if(!input)return;
+  const actual=parseFloat(input.value);
+  const base=isNaN(actual)?min:actual;
+  let nuevo=Math.round((base+delta)*100)/100;
+  if(nuevo<min)nuevo=min;
+  input.value=nuevo;
+}
+// `valorInicial` null/undefined deja el input vacío (con su placeholder) — mismo criterio que
+// los inputs de este formulario desde siempre.
+function _portalStepperHtml(id,valorInicial,step,min,inputmode,placeholder){
+  const val=(valorInicial===null||valorInicial===undefined||isNaN(valorInicial))?'':valorInicial;
+  return`<div style="display:flex;align-items:center;gap:6px">
+    <button type="button" class="btn btn-ghost" style="min-height:44px;min-width:44px;padding:0;font-size:18px;flex:0 0 auto" onclick="_portalAjustarCampo('${id}',${-step},${min})">−</button>
+    <input type="number" inputmode="${inputmode}" id="${id}" placeholder="${placeholder}" style="text-align:center;flex:1;min-width:0" value="${val}">
+    <button type="button" class="btn btn-ghost" style="min-height:44px;min-width:44px;padding:0;font-size:18px;flex:0 0 auto" onclick="_portalAjustarCampo('${id}',${step},${min})">+</button>
+  </div>`;
+}
+
 // BIBLIOTECA DE EJERCICIOS (Parte 3, ver CHANGELOG.md): contenido estático embebido aquí, NO
 // vive en Firestore — es genérico, no varía por gimnasio, así que no tiene sentido guardarlo ni
 // sincronizarlo por cuenta. Reemplaza el modelo anterior de "un QR por máquina": ahora el
@@ -6434,17 +6463,35 @@ let portalPesos=[];         // pesoCorporal del miembro identificado (solo los s
 let portalMusculoSel='';    // navegación "Registrar serie": músculo elegido en el menú (Parte 3)
 let portalEjercicioSel='';  // navegación "Registrar serie": ejercicio elegido dentro del músculo
 let portalBuscarEjercicioTexto=''; // búsqueda de ejercicio en el menú "Registrar serie" (Parte 3)
-let portalTipoSel='';       // tipo de serie elegido en "Registrar serie"
-let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo
-// Peso/repeticiones de la ÚLTIMA serie guardada de ESTE ejercicio (ver CHANGELOG.md, auditoría
-// punto 10) — se prellenan en el formulario para que capturar la siguiente serie sea solo tocar
-// "Guardar" de nuevo (series del mismo peso/reps son lo más común). Se limpian al cambiar de
-// ejercicio/músculo (portalElegirEjercicio y similares) para no arrastrar un peso que no tiene
-// nada que ver con el ejercicio nuevo.
-let portalUltimoPesoCapturado=null,portalUltimoReps=null;
+// "Normal" por default (Mejoras de usabilidad, ver CHANGELOG.md): antes empezaba vacío y exigía
+// elegir tipo antes de poder guardar — Normal es, por mucho, el tipo más común, así que ahora
+// viene preseleccionado y solo hace falta cambiarlo cuando de verdad aplica otro. Se repone a
+// 'Normal' cada vez que cambia el ejercicio/músculo (mismo lugar donde ya se limpiaban
+// portalUltimoPesoCapturado/Reps/Series).
+let portalTipoSel='Normal';
+let portalTipoOtroAbierto=false; // el panel "Otro tipo ▾" (Calentamiento/PR/Dropset/Al fallo/Súper serie/Otro) está desplegado
+let portalUnidadPeso='kg';  // 'kg' o 'lb' — unidad en la que se está capturando el peso ahora mismo; se restaura de localStorage (_portalLeerUnidadGuardada) al identificarse
+// Peso/repeticiones/series de la ÚLTIMA serie guardada de ESTE ejercicio EN ESTA SESIÓN (ver
+// CHANGELOG.md, auditoría punto 10, y Mejoras de usabilidad) — se prellenan en el formulario para
+// que capturar la siguiente serie sea solo tocar "Guardar" de nuevo (series del mismo peso/reps
+// son lo más común). Se limpian al cambiar de ejercicio/músculo (portalElegirEjercicio y
+// similares) para no arrastrar un peso que no tiene nada que ver con el ejercicio nuevo — en ese
+// caso el formulario prellena con el último registro HISTÓRICO del ejercicio en su lugar (ver
+// _portalPrefillSerie).
+let portalUltimoPesoCapturado=null,portalUltimoReps=null,portalUltimasSeries=null;
 let portalProgresoEjercicioSel='',portalFiltroTipo='',portalProgresoBusqueda=''; // filtros activos en "Mi progreso"
 let portalFuerzaMusculoSel=''; // músculo elegido en "Fuerza por músculo" — mismo patrón que portalProgresoEjercicioSel
 let chartPortalProgreso=null,chartPortalPeso=null,chartPortalFuerza=null;
+// Pestaña activa del portal (Mejoras de usabilidad, Fase 2, ver CHANGELOG.md): reemplaza el
+// scroll único que apilaba Registrar serie + Mi progreso + Fuerza + Mi Meta + Perfil Físico todo
+// junto — ahora cada pestaña pinta SOLO su contenido. 'entrenar' es el default porque registrar
+// una serie es, con mucho, lo que más se usa al abrir el portal.
+let portalTabSel='entrenar';
+// Selector segmentado de la pestaña Progreso (Fase 2): combina "Mi progreso" (por ejercicio) y
+// "Fuerza por músculo" en una sola tarjeta en vez de dos tarjetas apiladas.
+let portalProgresoVista='ejercicio';
+// Paso actual de la guía de bienvenida (Fase 2, item 13) — ver _portalGuiaYaVista/PORTAL_GUIA_PASOS.
+let portalGuiaPaso=0;
 
 function normalizarNombreComparacion(s){
   return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
@@ -6486,6 +6533,54 @@ function lbAKg(lb){return Math.round((lb/2.20462)*10)/10;}
 // CHANGELOG.md, auditoría punto 10): se muestra "Peso corporal" en vez de "0kg/0lb", que no
 // significa nada para el cliente.
 function formatearPeso(pesoKg,unidad){return pesoKg===0?'Peso corporal':(unidad==='lb'?`${escAttr(kgALb(pesoKg))}lb`:`${escAttr(pesoKg)}kg`);}
+
+// "hace N días" para la franja "Última vez" (Mejoras de usabilidad) — solo se necesita en el
+// portal del cliente, por eso no se reusa fmtDate (que da la fecha absoluta, usada en tablas/
+// tarjetas donde sí importa el día exacto).
+function _portalFormatoRelativo(ts){
+  if(!ts)return'';
+  const dias=Math.floor((Date.now()-ts)/86400000);
+  if(dias<=0)return'hoy';
+  if(dias===1)return'hace 1 día';
+  return`hace ${dias} días`;
+}
+
+// RECORDAR kg/lb EN ESTE CELULAR (Mejoras de usabilidad, item 8) — mismo patrón que
+// _portalStorageKey (identidad guardada): clave prefijada por gymId, try/catch porque
+// localStorage puede no estar disponible (modo privado/bloqueado), sin romper nada si falla.
+function _portalUnidadStorageKey(){return'gymtrackPortalUnidad_'+window._portalGym;}
+function _portalLeerUnidadGuardada(){
+  try{
+    const v=localStorage.getItem(_portalUnidadStorageKey());
+    if(v==='kg'||v==='lb')return v;
+  }catch(e){}
+  return null;
+}
+function _portalGuardarUnidad(unidad){
+  try{localStorage.setItem(_portalUnidadStorageKey(),unidad);}catch(e){}
+}
+
+// ERRORES EN LÍNEA (Mejoras de usabilidad, item 7): reemplaza los alert()/confirm-de-error del
+// portal del cliente — un alert() bloquea toda la pantalla en celular, mucho más brusco que un
+// mensaje rojo debajo del campo/botón, que es el mismo patrón que ya usaba "Identifícate"
+// (portal-identify-error). Cada pestaña/formulario del portal tiene su propio div de error ya
+// declarado en el HTML (oculto por default); _portalMostrarErrorEnAlguna se usa cuando el error
+// puede originarse desde más de una pestaña a la vez (ej. borrar un registro desde "Hoy en este
+// ejercicio" o desde la pestaña Progreso) — como las pestañas nunca coexisten en el DOM, a lo
+// más uno de los ids existe de verdad.
+function _portalMostrarError(id,msg){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.textContent=msg;
+  el.style.display='block';
+}
+function _portalOcultarError(id){
+  const el=document.getElementById(id);
+  if(el)el.style.display='none';
+}
+function _portalMostrarErrorEnAlguna(msg){
+  ['portal-serie-error','portal-progreso-error','portal-meta-error','portal-perfil-error'].forEach(id=>_portalMostrarError(id,msg));
+}
 
 // AGENTE DE IA: PLAN DE FITNESS (Parte 6/7, ver CHANGELOG.md). El Worker de Cloudflare que
 // consulta a Gemini vive APARTE de index.html (código en cloudflare-worker-ia/ de este mismo
@@ -6858,8 +6953,16 @@ async function _portalIntentarIdentificar(numero,nombre,onError){
     }
     portalMiembro=match;
     _portalGuardarIdentidad(numero,nombre);
+    // Unidad kg/lb recordada en este celular (Mejoras de usabilidad, item 8) — se restaura antes
+    // del primer render para que el formulario/perfil ya se vean en la unidad de siempre, sin
+    // que el cliente tenga que volver a tocar el toggle en cada visita.
+    const unidadGuardada=_portalLeerUnidadGuardada();
+    if(unidadGuardada)portalUnidadPeso=unidadGuardada;
     await portalCargarDatos();
     renderPortalHome();
+    // Guía de bienvenida (Fase 2, item 13) — solo la primera vez que este celular entra a este
+    // gimnasio (ver _portalGuiaYaVista); en cualquier visita posterior no hace nada.
+    _portalMostrarGuiaSiPrimeraVez();
     return'ok';
   }catch(e){
     console.error('_portalIntentarIdentificar error:',e);
@@ -6908,33 +7011,59 @@ function portalCalcularTendenciaMeta(){
   return _tendenciaMetaDesdeHistorial(historial);
 }
 
-// Orden de las secciones = qué tan seguido se usan: 1) Registrar serie (elegir músculo ->
-// ejercicio -> guardar), lo que motiva la visita al portal; 2) Mi progreso, para revisar la
-// bitácora justo después de registrar; 3) Mi Perfil Físico al final, porque se edita con mucha
-// menos frecuencia.
+// PESTAÑAS DEL PORTAL (Mejoras de usabilidad, Fase 2, item 11): reemplaza el scroll único que
+// apilaba Registrar serie + Mi progreso + Fuerza + Mi Meta + Perfil Físico todo junto — ahora
+// cada pestaña pinta SOLO su contenido (portalTabSel decide cuál). La barra de pestañas vive
+// fija abajo (igual que una app nativa), por eso #portal-screen necesita el padding-bottom extra
+// de la clase .portal-screen-tabs (ver CSS) mientras se muestre esta pantalla — nunca se agrega
+// en renderPortalStaffIdentify/renderPortalSugerenciasForm, así que esos dos modos nunca la ven.
+const PORTAL_TABS=[{id:'entrenar',icon:'🏋️',label:'Entrenar'},{id:'progreso',icon:'📈',label:'Progreso'},{id:'meta',icon:'🎯',label:'Mi meta'},{id:'perfil',icon:'👤',label:'Perfil'}];
 function renderPortalHome(){
   const el=document.getElementById('portal-content');
-  let html=`<div class="portal-hello" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)}) <button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 10px" onclick="portalOlvidarIdentidad()">No soy yo</button></div>`;
-  html+=renderPortalNavegacionSeccion();
-  html+=renderPortalProgresoSeccion();
-  html+=renderPortalFuerzaSeccion();
-  html+=renderPortalMetaSeccion();
-  html+=renderPortalPerfilFisicoSeccion();
+  document.getElementById('portal-screen').classList.add('portal-screen-tabs');
+  let html=`<div class="portal-hello" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
+  html+=_portalTabContenidoHtml();
+  html+=_portalTabBarHtml();
   el.innerHTML=html;
-  const otro=document.getElementById('portal-tipo-otro');
-  if(otro)otro.style.display=portalTipoSel==='__otro__'?'block':'none';
-  const ayuda=document.getElementById('portal-tipo-ayuda');
-  if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':'');
+  _portalDespuesDeRenderTab();
+}
+function _portalTabContenidoHtml(){
+  if(portalTabSel==='progreso')return renderPortalProgresoYFuerzaSeccion();
+  if(portalTabSel==='meta')return renderPortalMetaSeccion();
+  if(portalTabSel==='perfil')return renderPortalPerfilFisicoSeccion();
+  return renderPortalNavegacionSeccion();
+}
+// Las gráficas de Chart.js (Fase 2) solo se dibujan DESPUÉS de mostrar su pestaña — dibujarlas en
+// un <canvas> oculto (display:none, tamaño 0) las deja en blanco para siempre. Cada dibujarChartX
+// ya se protege solo si su canvas no existe en esta pestaña (if(!canvas)return;), así que llamar
+// a las tres siempre es seguro — dibuja la que corresponda y ninguna de las otras hace nada.
+function _portalDespuesDeRenderTab(){
+  if(portalTabSel==='entrenar'){
+    const otro=document.getElementById('portal-tipo-otro');
+    if(otro)otro.style.display=portalTipoSel==='__otro__'?'block':'none';
+  }
+  if(portalTabSel==='meta'){
+    renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
+    _portalCargarNotasMeta();
+  }
   dibujarChartPortalPeso();
   dibujarChartPortalProgreso();
   dibujarChartPortalFuerza();
-  renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
+}
+function portalCambiarTab(tab){
+  if(tab===portalTabSel)return;
+  portalTabSel=tab;
+  renderPortalHome();
+}
+function _portalTabBarHtml(){
+  return`<div class="portal-tabbar">${PORTAL_TABS.map(t=>`<button type="button" class="portal-tab-btn${t.id===portalTabSel?' activo':''}" onclick="portalCambiarTab('${t.id}')"><span class="portal-tab-icon">${t.icon}</span><span>${escAttr(t.label)}</span></button>`).join('')}</div>`;
 }
 
-// NAVEGACIÓN "Registrar serie" (Parte 3): reemplaza el modelo anterior de un QR por máquina.
-// Con un solo QR por gimnasio, el cliente elige músculo -> ejercicio desde BIBLIOTECA_EJERCICIOS
-// (contenido estático, no vive en Firestore) y ahí llega al mismo formulario de siempre. Tres
-// pasos controlados por portalMusculoSel/portalEjercicioSel (ambos '' = menú de músculos).
+// NAVEGACIÓN "Registrar serie" (Parte 3, pestaña "Entrenar"): reemplaza el modelo anterior de un
+// QR por máquina. Con un solo QR por gimnasio, el cliente elige músculo -> ejercicio desde
+// BIBLIOTECA_EJERCICIOS (contenido estático, no vive en Firestore) y ahí llega al mismo
+// formulario de siempre. Tres pasos controlados por portalMusculoSel/portalEjercicioSel (ambos
+// '' = menú de músculos).
 function renderPortalNavegacionSeccion(){
   if(!portalMusculoSel)return renderPortalMusculosMenu();
   const ejercicio=portalEjercicioSel?buscarEjercicioInfo(portalEjercicioSel):null;
@@ -6956,10 +7085,34 @@ function renderPortalMusculosMenu(){
 function _todosLosEjercicios(){
   return Object.entries(BIBLIOTECA_EJERCICIOS).flatMap(([musculo,arr])=>arr.map(ex=>({...ex,musculo})));
 }
+// "Recientes" (Fase 2, item 12): los últimos 5 ejercicios DISTINTOS que el cliente registró,
+// más nuevo primero — un atajo para no tener que navegar músculo -> ejercicio cada vez que
+// repite la misma rutina. Ejercicios que ya no existen en la biblioteca (buscarEjercicioInfo
+// devuelve null) se excluyen, igual que en el resto del portal.
+function _portalEjerciciosRecientes(){
+  const vistos=new Set();
+  const recientes=[];
+  [...portalRegistros].sort((a,b)=>b.fecha-a.fecha).forEach(r=>{
+    if(vistos.has(r.ejercicioId))return;
+    vistos.add(r.ejercicioId);
+    const info=buscarEjercicioInfo(r.ejercicioId);
+    if(info)recientes.push(info);
+  });
+  return recientes.slice(0,5);
+}
+function _portalRecientesHtml(){
+  const recientes=_portalEjerciciosRecientes();
+  if(!recientes.length)return''; // nunca ha registrado nada: sin fila de Recientes, cero cambio
+  return`<div style="margin-bottom:14px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Recientes</div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">${recientes.map(ex=>`<button type="button" class="btn btn-ghost btn-sm" style="flex:0 0 auto;white-space:nowrap" onclick="portalElegirEjercicioDirecto('${escAttr(ex.musculo)}','${escAttr(ex.id)}')">${escAttr(ex.nombre)}</button>`).join('')}</div>
+  </div>`;
+}
 function _portalMusculosMenuResultadosHtml(){
   if(!portalBuscarEjercicioTexto){
     const musculos=Object.keys(BIBLIOTECA_EJERCICIOS);
-    return`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">¿Qué vas a entrenar hoy?</div>
+    return`${_portalRecientesHtml()}
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">¿Qué vas a entrenar hoy?</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px">${musculos.map(m=>`<button type="button" class="btn btn-ghost" style="flex:1 1 calc(50% - 8px);min-width:120px" onclick="portalElegirMusculo('${m}')">${m}</button>`).join('')}</div>`;
   }
   const coincidencias=_todosLosEjercicios().filter(ex=>coincideBusquedaEjercicio(ex.nombre,portalBuscarEjercicioTexto));
@@ -6972,8 +7125,9 @@ function portalBuscarEjercicioNav(texto){
   if(cont)cont.innerHTML=_portalMusculosMenuResultadosHtml();
 }
 // Un resultado de búsqueda ya trae músculo Y ejercicio decididos de una vez -- salta directo al
-// formulario de registrar serie, sin pasar por la lista de ejercicios de ese músculo.
-function portalElegirEjercicioDirecto(musculo,id){portalMusculoSel=musculo;portalEjercicioSel=id;portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
+// formulario de registrar serie, sin pasar por la lista de ejercicios de ese músculo. "Normal"
+// vuelve a ser el tipo por default (item 1) cada vez que cambia el ejercicio/músculo.
+function portalElegirEjercicioDirecto(musculo,id){portalMusculoSel=musculo;portalEjercicioSel=id;portalUltimoPesoCapturado=null;portalUltimoReps=null;portalUltimasSeries=null;portalTipoSel='Normal';portalTipoOtroAbierto=false;renderPortalHome();}
 function renderPortalEjerciciosLista(musculo){
   const ejercicios=BIBLIOTECA_EJERCICIOS[musculo]||[];
   return`<div class="ec-card" style="margin-bottom:16px">
@@ -6984,10 +7138,67 @@ function renderPortalEjerciciosLista(musculo){
     <div>${ejercicios.map(ex=>`<div class="ec-row" style="cursor:pointer" onclick="portalElegirEjercicio('${ex.id}')"><span><strong>${escAttr(ex.nombre)}</strong><div style="font-size:11px;color:var(--muted)">${escAttr(ex.parte)}</div></span><span>›</span></div>`).join('')}</div>
   </div>`;
 }
-function portalElegirMusculo(musculo){portalMusculoSel=musculo;portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
-function portalElegirEjercicio(id){portalEjercicioSel=id;portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
-function portalVolverMusculos(){portalMusculoSel='';portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
-function portalVolverEjercicios(){portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;renderPortalHome();}
+function portalElegirMusculo(musculo){portalMusculoSel=musculo;portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;portalUltimasSeries=null;portalTipoSel='Normal';portalTipoOtroAbierto=false;renderPortalHome();}
+function portalElegirEjercicio(id){portalEjercicioSel=id;portalUltimoPesoCapturado=null;portalUltimoReps=null;portalUltimasSeries=null;portalTipoSel='Normal';portalTipoOtroAbierto=false;renderPortalHome();}
+function portalVolverMusculos(){portalMusculoSel='';portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;portalUltimasSeries=null;portalTipoSel='Normal';portalTipoOtroAbierto=false;renderPortalHome();}
+function portalVolverEjercicios(){portalEjercicioSel='';portalUltimoPesoCapturado=null;portalUltimoReps=null;portalUltimasSeries=null;portalTipoSel='Normal';portalTipoOtroAbierto=false;renderPortalHome();}
+
+// "ÚLTIMA VEZ" (Fase 1, item 2): el registro más reciente de ESTE ejercicio (de portalRegistros,
+// que ya está cargado — no es una lectura nueva a Firestore), para que el cliente vea de un
+// vistazo qué hizo la última vez sin tener que ir a la pestaña Progreso. También es la base del
+// prellenado del formulario (item 3, ver _portalPrefillSerie).
+function _portalUltimoRegistroDeEjercicio(ejercicioId){
+  const delEjercicio=portalRegistros.filter(r=>r.ejercicioId===ejercicioId).sort((a,b)=>b.fecha-a.fecha);
+  return delEjercicio.length?delEjercicio[0]:null;
+}
+function _portalUltimaVezHtml(ejercicio){
+  const ultimo=_portalUltimoRegistroDeEjercicio(ejercicio.id);
+  const esCardio=ejercicio.tipo==='cardio';
+  const estilo='background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px';
+  if(!ultimo)return`<div style="${estilo}">Primera vez con este ejercicio 💪</div>`;
+  const detalle=esCardio?`${escAttr(ultimo.tiempoMinutos)} min · ${escAttr(ultimo.distancia)} km`:_detalleRegistroTexto(ultimo,false);
+  return`<div style="${estilo}">Última vez: ${detalle} · ${_portalFormatoRelativo(ultimo.fecha)}</div>`;
+}
+// Prellenado del formulario (Fase 1, item 3): si ya se capturó algo EN ESTA SESIÓN para este
+// ejercicio (portalUltimoPesoCapturado/Reps/Series), se usa eso — es lo más reciente de verdad.
+// Si no, se prellena con el último registro HISTÓRICO (convertido a la unidad actual con
+// kgALb, porque `peso` siempre vive en kg) para que el cliente no tenga que recordar cuánto
+// levantó la vez pasada.
+function _portalPrefillSerie(ejercicio){
+  if(portalUltimoPesoCapturado!==null||portalUltimoReps!==null){
+    return{peso:portalUltimoPesoCapturado,reps:portalUltimoReps,series:portalUltimasSeries!==null?portalUltimasSeries:1};
+  }
+  const ultimo=_portalUltimoRegistroDeEjercicio(ejercicio.id);
+  if(!ultimo)return{peso:null,reps:null,series:1};
+  return{peso:portalUnidadPeso==='lb'?kgALb(ultimo.peso):ultimo.peso,reps:ultimo.repeticiones||null,series:ultimo.series||1};
+}
+// "HOY EN ESTE EJERCICIO" (Fase 1, item 6): bitácora de HOY nada más, justo debajo de Guardar —
+// ver cada serie que ya se registró en esta misma visita, con su hora y su botón Borrar.
+function _portalRegistrosHoyDeEjercicio(ejercicioId){
+  return portalRegistros.filter(r=>r.ejercicioId===ejercicioId&&new Date(r.fecha).toDateString()===new Date().toDateString()).sort((a,b)=>b.fecha-a.fecha);
+}
+function _portalHoyEjercicioHtml(ejercicio){
+  const regs=_portalRegistrosHoyDeEjercicio(ejercicio.id);
+  if(!regs.length)return'';
+  const esCardio=ejercicio.tipo==='cardio';
+  return`<div style="margin-top:18px">
+    <div style="font-weight:700;font-size:13px;margin-bottom:8px">Hoy en este ejercicio</div>
+    ${regs.map(r=>`<div class="registro-card" style="padding:10px 12px;margin-bottom:8px">
+      <div class="registro-card-top">${esCardio?'':_badgeTipoSerieHtml(r.tipo)}<span class="registro-fecha">${new Date(r.fecha).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span></div>
+      <div class="registro-card-detalle">${_detalleRegistroTexto(r,esCardio)}</div>
+      ${_portalBotonBorrarRegistroHtml(r)}
+    </div>`).join('')}
+  </div>`;
+}
+// Tras guardar (item 6) o borrar una serie de HOY, solo se actualizan estos dos bloques por DOM
+// directo — nunca renderPortalHome()/renderPortalNavegacionSeccion() completos, para que la
+// pantalla no brinque ni se pierda el scroll ni el foco de los demás campos.
+function _portalRefrescarEntrenarTrasCambio(ejercicio){
+  const uv=document.getElementById('portal-ultima-vez-wrap');
+  if(uv)uv.innerHTML=_portalUltimaVezHtml(ejercicio);
+  const hoy=document.getElementById('portal-hoy-ejercicio-wrap');
+  if(hoy)hoy.innerHTML=_portalHoyEjercicioHtml(ejercicio);
+}
 
 // REGISTRAR SERIE (Parte 1d/3): mismo formulario de siempre, ahora encabezado por el ejercicio
 // elegido en la navegación de arriba en vez de por el nombre de una máquina escaneada.
@@ -6996,90 +7207,128 @@ function portalVolverEjercicios(){portalEjercicioSel='';portalUltimoPesoCapturad
 // serie" (Normal/PR/Dropset/etc. no tienen sentido en una caminadora).
 function renderPortalRegistrarSerieSeccion(ejercicio){
   const esCardio=ejercicio.tipo==='cardio';
+  const pre=_portalPrefillSerie(ejercicio);
+  const pasoPeso=portalUnidadPeso==='lb'?5:2.5;
   const camposHtml=esCardio?`
-    <div class="form-row">
-      <div class="form-group"><label>Duración (minutos)</label><input type="number" id="portal-serie-tiempo" placeholder="30"></div>
-      <div class="form-group"><label>Distancia (km)</label><input type="number" step="0.1" id="portal-serie-distancia" placeholder="5"></div>
-    </div>`:`
+    <div class="form-group"><label>Duración (minutos)</label>${_portalStepperHtml('portal-serie-tiempo',null,5,0,'decimal','30')}</div>
+    <div class="form-group"><label>Distancia (km)</label>${_portalStepperHtml('portal-serie-distancia',null,0.5,0,'decimal','5')}</div>`:`
     <div class="form-group">
       <label>Tipo de serie</label>
-      <div style="display:flex;gap:6px;flex-wrap:wrap" id="portal-tipo-botones">
-        ${TIPOS_SERIE.map(t=>`<button type="button" class="btn ${t===portalTipoSel?'btn-primary':'btn-ghost'} btn-sm" data-tipo="${t}" onclick="portalElegirTipo('${t}')">${t}</button>`).join('')}
-        <button type="button" class="btn ${portalTipoSel==='__otro__'?'btn-primary':'btn-ghost'} btn-sm" data-tipo="__otro__" onclick="portalElegirTipo('__otro__')">Otro</button>
-      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center" id="portal-tipo-chips">${_portalTipoChipsHtml()}</div>
+      <div id="portal-tipo-otros-panel" style="display:${portalTipoOtroAbierto?'block':'none'};margin-top:8px">${_portalTipoOtrosPanelHtml()}</div>
       <div id="portal-tipo-ayuda" style="font-size:11px;color:var(--muted);margin-top:6px;min-height:14px">${escAttr(DESCRIPCION_TIPO_SERIE[portalTipoSel]||(portalTipoSel==='__otro__'?'Escribe el nombre del tipo de serie.':''))}</div>
-      <input type="text" id="portal-tipo-otro" placeholder="Escribe el tipo" style="display:none;margin-top:8px;width:100%">
+      <input type="text" id="portal-tipo-otro" placeholder="Escribe el tipo" style="display:${portalTipoSel==='__otro__'?'block':'none'};margin-top:8px;width:100%">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Peso <span id="portal-unidad-peso-toggle" style="display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle"><button type="button" class="btn ${portalUnidadPeso==='kg'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('kg')">kg</button><button type="button" class="btn ${portalUnidadPeso==='lb'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('lb')">lb</button></span></label>
-        <input type="number" id="portal-serie-peso" placeholder="${portalUnidadPeso==='lb'?'132':'60'}" value="${portalUltimoPesoCapturado!==null?portalUltimoPesoCapturado:''}">
-      </div>
-      <div class="form-group"><label>Repeticiones</label><input type="number" id="portal-serie-reps" placeholder="10" value="${portalUltimoReps!==null?portalUltimoReps:''}"></div>
+    <div class="form-group">
+      <label>Peso <span id="portal-unidad-peso-toggle" style="display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle"><button type="button" class="btn ${portalUnidadPeso==='kg'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('kg')">kg</button><button type="button" class="btn ${portalUnidadPeso==='lb'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('lb')">lb</button></span></label>
+      ${_portalStepperHtml('portal-serie-peso',pre.peso,pasoPeso,0,'decimal',portalUnidadPeso==='lb'?'132':'60')}
     </div>
-    <div class="form-group"><label>Series (opcional — déjalo vacío si es una sola)</label><input type="number" id="portal-serie-series" placeholder="1"></div>`;
+    <div class="form-group"><label>Repeticiones</label>${_portalStepperHtml('portal-serie-reps',pre.reps,1,1,'numeric','10')}</div>
+    <div class="form-group"><label>Series (cuántas hiciste con este peso y reps)</label>${_portalStepperHtml('portal-serie-series',pre.series,1,1,'numeric','1')}</div>`;
   return`<div class="ec-card" style="margin-bottom:16px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
       <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverEjercicios()">‹ ${escAttr(portalMusculoSel)}</button>
     </div>
     <h3 style="margin-top:8px">🏋️ ${escAttr(ejercicio.nombre)}</h3>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${escAttr(ejercicio.parte)}</div>
+    <div id="portal-ultima-vez-wrap">${_portalUltimaVezHtml(ejercicio)}</div>
     ${camposHtml}
+    <div id="portal-serie-error" class="login-error"></div>
     <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="portalGuardarSerie()">${esCardio?'Guardar registro':'Guardar serie'}</button>
+    <div id="portal-hoy-ejercicio-wrap">${_portalHoyEjercicioHtml(ejercicio)}</div>
   </div>`;
 }
-// Convierte el número YA ESCRITO en el input al cambiar de unidad (para no perder lo que el
-// cliente ya tecleó) y actualiza solo el toggle/placeholder por DOM directo — NO vuelve a
-// pintar todo el formulario, para no perder el foco de otros campos (reps, tipo "Otro").
+// TIPO DE SERIE (Fase 1, item 1): "Normal" es, con mucho, el tipo más común — se muestra siempre
+// como chip seleccionable, junto a un botón "Otro tipo ▾" que despliega el resto
+// (Calentamiento/PR/Dropset/Al fallo/Súper serie/Otro) con su descripción de
+// DESCRIPCION_TIPO_SERIE. El botón "Otro tipo" muestra el nombre del tipo elegido cuando no es
+// Normal, para que quede claro qué está seleccionado sin tener que abrir el panel.
+function _portalTipoChipsHtml(){
+  const esOtroTipo=portalTipoSel!=='Normal';
+  const etiqueta=esOtroTipo?(portalTipoSel==='__otro__'?'Otro':portalTipoSel):'Otro tipo';
+  return`<button type="button" class="btn ${portalTipoSel==='Normal'?'btn-primary':'btn-ghost'} btn-sm" onclick="portalElegirTipo('Normal')">Normal</button>
+    <button type="button" class="btn ${esOtroTipo?'btn-primary':'btn-ghost'} btn-sm" onclick="portalToggleTipoOtros()">${escAttr(etiqueta)} ${portalTipoOtroAbierto?'▴':'▾'}</button>`;
+}
+function _portalTipoOtrosPanelHtml(){
+  const otros=TIPOS_SERIE.filter(t=>t!=='Normal').concat(['__otro__']);
+  return`<div style="display:flex;flex-direction:column;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px">${otros.map(t=>{
+    const nombre=t==='__otro__'?'Otro':t;
+    const desc=t==='__otro__'?'Escribe el nombre del tipo de serie.':(DESCRIPCION_TIPO_SERIE[t]||'');
+    return`<button type="button" class="btn ${t===portalTipoSel?'btn-primary':'btn-ghost'} btn-sm" style="text-align:left" onclick="portalElegirTipo('${t}')">
+      <div>${escAttr(nombre)}</div>${desc?`<div style="font-size:10.5px;font-weight:400;opacity:0.8;margin-top:2px">${escAttr(desc)}</div>`:''}
+    </button>`;
+  }).join('')}</div>`;
+}
+function portalToggleTipoOtros(){
+  portalTipoOtroAbierto=!portalTipoOtroAbierto;
+  const chips=document.getElementById('portal-tipo-chips');
+  if(chips)chips.innerHTML=_portalTipoChipsHtml();
+  const panel=document.getElementById('portal-tipo-otros-panel');
+  if(panel){panel.innerHTML=_portalTipoOtrosPanelHtml();panel.style.display=portalTipoOtroAbierto?'block':'none';}
+}
+// Convierte el número YA ESCRITO en los inputs de peso al cambiar de unidad (para no perder lo
+// que el cliente ya tecleó) y actualiza solo el toggle/placeholder por DOM directo — NO vuelve a
+// pintar todo el formulario, para no perder el foco de otros campos. Actualiza CUALQUIERA de los
+// dos inputs de peso que exista en esta pestaña (Registrar serie o Mi Perfil Físico — nunca
+// coexisten, cada pestaña pinta solo su contenido) y recuerda la elección en localStorage
+// (item 8, _portalGuardarUnidad) para no tener que repetirla en la próxima visita.
 function portalCambiarUnidadPeso(unidad){
   if(unidad===portalUnidadPeso)return;
-  const input=document.getElementById('portal-serie-peso');
-  const actual=input?parseFloat(input.value):NaN;
-  if(input&&!isNaN(actual)&&actual>0)input.value=unidad==='lb'?kgALb(actual):lbAKg(actual);
   portalUnidadPeso=unidad;
-  const toggle=document.getElementById('portal-unidad-peso-toggle');
-  if(toggle)toggle.querySelectorAll('button').forEach(b=>{
-    const sel=b.textContent.trim()===unidad;
-    b.classList.toggle('btn-primary',sel);
-    b.classList.toggle('btn-ghost',!sel);
+  _portalGuardarUnidad(unidad);
+  [{inputId:'portal-serie-peso',toggleId:'portal-unidad-peso-toggle',ph:{kg:'60',lb:'132'}},
+   {inputId:'portal-peso-valor',toggleId:'portal-unidad-peso-perfil-toggle',ph:{kg:'70.5',lb:'155'}}].forEach(cfg=>{
+    const input=document.getElementById(cfg.inputId);
+    if(input){
+      const actual=parseFloat(input.value);
+      if(!isNaN(actual)&&actual>0)input.value=unidad==='lb'?kgALb(actual):lbAKg(actual);
+      input.placeholder=cfg.ph[unidad];
+    }
+    const toggle=document.getElementById(cfg.toggleId);
+    if(toggle)toggle.querySelectorAll('button').forEach(b=>{
+      const sel=b.textContent.trim()===unidad;
+      b.classList.toggle('btn-primary',sel);
+      b.classList.toggle('btn-ghost',!sel);
+    });
   });
-  if(input)input.placeholder=unidad==='lb'?'132':'60';
 }
 function portalElegirTipo(t){
   portalTipoSel=t;
-  document.querySelectorAll('#portal-tipo-botones button').forEach(b=>{
-    const sel=b.dataset.tipo===t;
-    b.classList.toggle('btn-primary',sel);
-    b.classList.toggle('btn-ghost',!sel);
-  });
+  portalTipoOtroAbierto=false;
+  const chips=document.getElementById('portal-tipo-chips');
+  if(chips)chips.innerHTML=_portalTipoChipsHtml();
+  const panel=document.getElementById('portal-tipo-otros-panel');
+  if(panel){panel.innerHTML=_portalTipoOtrosPanelHtml();panel.style.display='none';}
   const otro=document.getElementById('portal-tipo-otro');
   if(otro)otro.style.display=t==='__otro__'?'block':'none';
   const ayuda=document.getElementById('portal-tipo-ayuda');
   if(ayuda)ayuda.textContent=DESCRIPCION_TIPO_SERIE[t]||(t==='__otro__'?'Escribe el nombre del tipo de serie.':'');
 }
 async function portalGuardarSerie(){
+  _portalOcultarError('portal-serie-error');
   const info=buscarEjercicioInfo(portalEjercicioSel);
   const esCardio=info&&info.tipo==='cardio';
   let data;
   if(esCardio){
     const tiempoMinutos=parseFloat(document.getElementById('portal-serie-tiempo').value);
     const distancia=parseFloat(document.getElementById('portal-serie-distancia').value);
-    if(!tiempoMinutos||!distancia)return alert('Escribe la duración y la distancia');
+    if(!tiempoMinutos||!distancia)return _portalMostrarError('portal-serie-error','Escribe la duración y la distancia.');
     data={miembroId:portalMiembro.id,ejercicioId:portalEjercicioSel,musculo:portalMusculoSel,tiempoMinutos,distancia,fecha:Date.now()};
   }else{
-    if(!portalTipoSel)return alert('Elige el tipo de serie');
+    // portalTipoSel ya nunca queda vacío (default 'Normal', item 1) — el único caso que todavía
+    // necesita texto escrito a mano es "Otro".
     const tipo=portalTipoSel==='__otro__'?document.getElementById('portal-tipo-otro').value.trim():portalTipoSel;
-    if(!tipo)return alert('Escribe el tipo de serie');
+    if(!tipo)return _portalMostrarError('portal-serie-error','Escribe el tipo de serie.');
     const pesoCapturado=parseFloat(document.getElementById('portal-serie-peso').value);
     const repeticiones=parseInt(document.getElementById('portal-serie-reps').value);
     // peso 0 es válido (ejercicios de peso corporal: dominadas, flexiones, fondos, plancha,
     // burpees, etc. — ver CHANGELOG.md, auditoría punto 10) — por eso isNaN()/<0, NUNCA
     // "!pesoCapturado" (0 es falsy en JS y antes rechazaba cualquier ejercicio de peso corporal).
-    if(isNaN(pesoCapturado)||pesoCapturado<0||!repeticiones)return alert('Escribe el peso (puede ser 0 para ejercicios de peso corporal) y las repeticiones');
-    // Series (Parte 15) es opcional — dejarlo vacío significa "una sola serie", igual que
-    // siempre se pudo registrar antes de que existiera este campo (no se vuelve obligatorio
-    // escribir "1" cada vez que el cliente solo hizo una serie).
-    const series=parseInt(document.getElementById('portal-serie-series').value)||1;
+    if(isNaN(pesoCapturado)||pesoCapturado<0||!repeticiones)return _portalMostrarError('portal-serie-error','Escribe el peso (puede ser 0 para ejercicios de peso corporal) y las repeticiones.');
+    // Series (item 4) ya no es "opcional vacío = 1" silencioso — ahora se valida como entero
+    // ≥1 de verdad, con el mismo criterio que repeticiones.
+    const series=parseInt(document.getElementById('portal-serie-series').value);
+    if(!Number.isInteger(series)||series<1)return _portalMostrarError('portal-serie-error','Escribe un número de series válido (1 o más).');
     // Siempre se guarda en kg (no rompe cálculos ni comparaciones históricas) — unidadOriginal
     // guarda con qué unidad lo capturó el cliente, para poder mostrárselo tal cual después.
     const peso=portalUnidadPeso==='lb'?lbAKg(pesoCapturado):pesoCapturado;
@@ -7090,26 +7339,55 @@ async function portalGuardarSerie(){
     // resetea aquí (se queda igual, no como antes) — se limpia al cambiar de ejercicio/músculo.
     portalUltimoPesoCapturado=pesoCapturado;
     portalUltimoReps=repeticiones;
+    portalUltimasSeries=series;
   }
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
     portalRegistros.push({id:ref.id,...data});
     toast(esCardio?'Registro guardado ✓':'Serie guardada ✓');
-    renderPortalHome();
-  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+    // NO renderPortalHome() (Fase 1, item 6): recargar toda la pantalla hace que el scroll y el
+    // teclado del celular brinquen. Solo se actualizan "Última vez" y "Hoy en este ejercicio" —
+    // los campos del formulario se quedan con lo que el cliente ya escribió (que ahora es también
+    // lo "recordado" para la siguiente serie).
+    if(info)_portalRefrescarEntrenarTrasCambio(info);
+  }catch(e){_portalMostrarError('portal-serie-error','No se pudo guardar. Intenta de nuevo.');}
 }
 
+// PESTAÑA "PROGRESO" (Fase 2, item 11): combina "Mi progreso" (por ejercicio) y "Fuerza por
+// músculo" en UNA sola tarjeta con un selector segmentado, en vez de dos tarjetas apiladas en el
+// scroll de siempre — reusa _portalProgresoResultadosHtml/_portalFuerzaResultadosHtml tal cual,
+// solo cambia cómo se envuelven. Estado vacío amable (sin registros todavía) con un botón que
+// manda directo a la pestaña Entrenar, en vez de no mostrar nada (como antes).
+function renderPortalProgresoYFuerzaSeccion(){
+  if(!portalRegistros.length){
+    return`<div class="ec-card" style="margin-bottom:16px">
+      <h3>📈 Progreso</h3>
+      <div class="empty"><div class="empty-icon">📈</div><div>Todavía no tienes registros.</div>
+      <button type="button" class="btn btn-primary" style="margin-top:14px" onclick="portalCambiarTab('entrenar')">Registrar mi primera serie</button></div>
+    </div>`;
+  }
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>📈 Progreso</h3>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button type="button" class="btn ${portalProgresoVista==='ejercicio'?'btn-primary':'btn-ghost'} btn-sm" style="flex:1" onclick="portalCambiarProgresoVista('ejercicio')">Por ejercicio</button>
+      <button type="button" class="btn ${portalProgresoVista==='musculo'?'btn-primary':'btn-ghost'} btn-sm" style="flex:1" onclick="portalCambiarProgresoVista('musculo')">Por músculo</button>
+    </div>
+    <div id="portal-progreso-error" class="login-error"></div>
+    ${portalProgresoVista==='ejercicio'?_portalProgresoBloqueHtml():_portalFuerzaBloqueHtml()}
+  </div>`;
+}
+function _portalProgresoBloqueHtml(){
+  return`<div class="form-group"><input type="text" placeholder="Buscar ejercicio o máquina..." value="${escAttr(portalProgresoBusqueda)}" oninput="portalBuscarProgreso(this.value)"></div>
+    <div id="portal-progreso-resultados">${_portalProgresoResultadosHtml()}</div>`;
+}
+function portalCambiarProgresoVista(v){
+  if(v===portalProgresoVista)return;
+  portalProgresoVista=v;
+  renderPortalHome();
+}
 // MI PROGRESO POR EJERCICIO (Parte 1e/3)
 // El buscador vive FUERA de #portal-progreso-resultados (que sí se reemplaza en cada cambio de
 // selector/búsqueda) para no perder el foco/cursor del input cada vez que se escribe una letra.
-function renderPortalProgresoSeccion(){
-  if(!portalRegistros.length)return''; // nunca ha registrado nada: cero cambio, no se muestra nada
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>📈 Mi progreso</h3>
-    <div class="form-group"><input type="text" placeholder="Buscar ejercicio o máquina..." value="${escAttr(portalProgresoBusqueda)}" oninput="portalBuscarProgreso(this.value)"></div>
-    <div id="portal-progreso-resultados">${_portalProgresoResultadosHtml()}</div>
-  </div>`;
-}
 function _portalProgresoResultadosHtml(){
   const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
   const todos=[...new Set(portalRegistros.map(r=>r.ejercicioId))];
@@ -7148,17 +7426,27 @@ function _portalBotonBorrarRegistroHtml(r){
 }
 async function portalBorrarRegistro(id){
   if(!confirm('¿Borrar este registro? No se puede deshacer.'))return;
+  const ejercicioId=(portalRegistros.find(r=>r.id===id)||{}).ejercicioId;
   try{
     await deleteDoc(gymDoc(window._portalGym,'registrosProgreso',id));
     const i=portalRegistros.findIndex(r=>r.id===id);
     if(i>=0)portalRegistros.splice(i,1);
+    // El botón "Borrar" puede venir de "Hoy en este ejercicio" (pestaña Entrenar), de "Mi
+    // progreso" o de "Fuerza por músculo" (las dos dentro de la pestaña Progreso) — como las
+    // pestañas nunca coexisten en el DOM, cada refresco solo toca algo si de verdad existe.
     _refrescarPortalProgresoResultados();
+    _refrescarPortalFuerzaResultados();
+    if(ejercicioId&&portalEjercicioSel===ejercicioId){
+      const ej=buscarEjercicioInfo(ejercicioId);
+      if(ej)_portalRefrescarEntrenarTrasCambio(ej);
+    }
     toast('Registro borrado ✓');
-  }catch(e){alert('No se pudo borrar. Intenta de nuevo.');}
+  }catch(e){_portalMostrarErrorEnAlguna('No se pudo borrar. Intenta de nuevo.');}
 }
 function _refrescarPortalProgresoResultados(){
   const cont=document.getElementById('portal-progreso-resultados');
-  if(cont)cont.innerHTML=_portalProgresoResultadosHtml();
+  if(!cont)return;
+  cont.innerHTML=_portalProgresoResultadosHtml();
   dibujarChartPortalProgreso();
 }
 function portalBuscarProgreso(texto){portalProgresoBusqueda=texto;_refrescarPortalProgresoResultados();}
@@ -7253,12 +7541,12 @@ function _contextoEntrenamientoIA(registros){
   const totalRegistrosFuerza=regs.filter(r=>{const i=buscarEjercicioInfo(r&&r.ejercicioId);return i&&i.tipo!=='cardio'&&typeof r.peso==='number';}).length;
   return{fuerzaPorMusculo,gruposSinRegistro,ejerciciosRecientes,diasEntrenoPorSemana:r1(dias4/4),totalRegistrosFuerza};
 }
-function renderPortalFuerzaSeccion(){
-  if(!portalRegistros.length)return''; // nunca ha registrado nada: cero cambio, no se muestra nada (mismo criterio que "Mi progreso")
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>💪 Fuerza por músculo</h3>
-    <div id="portal-fuerza-resultados">${_portalFuerzaResultadosHtml()}</div>
-  </div>`;
+// Bloque "Por músculo" de la pestaña Progreso (Fase 2, item 11) — contraparte de
+// _portalProgresoBloqueHtml. "Fuerza máxima estimada" (Fase 1, item 9, antes "1RM estimado": el
+// término técnico no decía nada a la mayoría de los clientes) con su línea de ayuda.
+function _portalFuerzaBloqueHtml(){
+  return`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">El peso máximo que podrías levantar 1 vez, calculado con tus series.</div>
+    <div id="portal-fuerza-resultados">${_portalFuerzaResultadosHtml()}</div>`;
 }
 // Todos los registros de fuerza de UN músculo (puede venir de varios ejercicios distintos, a
 // diferencia de "Mi progreso" que filtra por un solo ejercicio) — mismo criterio de exclusión que
@@ -7275,7 +7563,7 @@ function _registrosDeMusculo(registros,musculo){
 function _fuerzaExtraHtml(r){
   const info=buscarEjercicioInfo(r.ejercicioId);
   const valor=estimar1RM(r.peso,r.repeticiones);
-  return`<div style="font-size:11px;color:var(--muted);margin-top:4px">${escAttr(info?info.nombre:'Ejercicio eliminado')} · 1RM estimado: ${formatearPeso(Math.round(valor*10)/10,r.unidadOriginal||'kg')}</div>`;
+  return`<div style="font-size:11px;color:var(--muted);margin-top:4px">${escAttr(info?info.nombre:'Ejercicio eliminado')} · Fuerza máxima estimada: ${formatearPeso(Math.round(valor*10)/10,r.unidadOriginal||'kg')}</div>`;
 }
 // Mismo patrón que _portalProgresoResultadosHtml de "Mi progreso" (petición del dueño, ver
 // CHANGELOG.md): selector (aquí de MÚSCULO en vez de ejercicio) + gráfica de tendencia + lista de
@@ -7314,7 +7602,7 @@ function portalCambiarFuerzaMusculoSel(musculo){portalFuerzaMusculoSel=musculo;_
 // un solo número comparable entre puntos (mismo motivo por el que el radar anterior también
 // graficaba siempre en kg).
 function _chartConfigFuerza(asc){
-  return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'1RM estimado (kg)',data:asc.map(r=>Math.round(estimar1RM(r.peso,r.repeticiones)*10)/10),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
+  return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Fuerza máxima estimada (kg)',data:asc.map(r=>Math.round(estimar1RM(r.peso,r.repeticiones)*10)/10),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
 }
 function dibujarChartPortalFuerza(){
   const canvas=document.getElementById('chart-portal-fuerza');
@@ -7347,34 +7635,35 @@ function _notasRecomendacionHtml(notas,onclickGuardar,idSufijo){
     <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="${onclickGuardar}">Agregar nota</button>
   </div>`;
 }
+// La gráfica respeta portalUnidadPeso (item 10) — `pesoCorporal` no guarda unidadOriginal por
+// registro (no cambia el modelo de datos), así que TODO el historial se convierte con la unidad
+// actual, a diferencia de las series (donde cada registro sí recuerda en qué unidad se capturó).
 function dibujarChartPortalPeso(){
   const canvas=document.getElementById('chart-portal-peso');
   if(!canvas)return;
   if(typeof Chart==='undefined')return;
   if(chartPortalPeso){chartPortalPeso.destroy();chartPortalPeso=null;}
   const datos=[...portalPesos].sort((a,b)=>a.fecha-b.fecha);
+  const convertir=kg=>portalUnidadPeso==='lb'?kgALb(kg):kg;
   chartPortalPeso=new Chart(canvas,{
     type:'line',
-    data:{labels:datos.map(p=>fmtDate(p.fecha)),datasets:[{label:'Peso (kg)',data:datos.map(p=>p.peso),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},
+    data:{labels:datos.map(p=>fmtDate(p.fecha)),datasets:[{label:`Peso (${portalUnidadPeso})`,data:datos.map(p=>convertir(p.peso)),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
   });
 }
 
-// MI META Y RECOMENDACIÓN IA (Parte 6, ver CHANGELOG.md): mismo patrón editable que Mi Perfil
-// Físico de abajo (formulario simple + botón Guardar), más el botón que dispara la consulta al
-// Worker de Cloudflare/Gemini. Va justo después de Mi progreso porque la recomendación depende
-// de ese historial (calcularTendenciaMeta/portalCalcularTendenciaMeta, más arriba).
-// Antes esta tarjeta se mostraba siempre completa en el scroll principal del portal; ahora es
-// solo el botón que abre el modal "Mi Meta" (ver abrirModalPortalMeta/_portalMetaModalHtml más
-// abajo), que arma exactamente el mismo contenido que antes vivía aquí.
+// PESTAÑA "MI META" (Parte 6, Fase 2 item 11, ver CHANGELOG.md): mismo formulario de siempre
+// (meta + recomendación IA + notas), pero ya DIRECTO en su propia pestaña en vez de detrás de un
+// modal — el modal "Mi Meta" (modal-portal-meta) se elimina del HTML junto con este cambio.
+// Las notas (portalMetaNotas) se cargan al mostrar esta pestaña (_portalCargarNotasMeta, llamada
+// desde _portalDespuesDeRenderTab), no en portalCargarDatos — solo hacen falta si el cliente de
+// verdad entra a Mi Meta.
 function renderPortalMetaSeccion(){
-  return`<div class="ec-card" style="margin-bottom:16px">
-    <button class="btn btn-ghost" style="width:100%" onclick="abrirModalPortalMeta()">🎯 Mi Meta</button>
-  </div>`;
-}
-function _portalMetaModalHtml(){
   const meta=portalMiembro.metaFitness||null;
-  return`<div class="form-row">
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <h3>🎯 Mi Meta</h3>
+    <div id="portal-meta-error" class="login-error"></div>
+    <div class="form-row">
       <div class="form-group"><label>Tipo de meta</label><select id="portal-meta-tipo" onchange="portalToggleMetaEjercicio()">
         <option value="">— Sin meta —</option>
         <option value="pesoCorporal" ${meta&&meta.tipo==='pesoCorporal'?'selected':''}>Peso corporal</option>
@@ -7392,17 +7681,14 @@ function _portalMetaModalHtml(){
     <div id="portal-meta-recomendacion-contenido"></div>
     <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA(this)">🤖 Actualizar recomendación</button>
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
-    <div id="portal-meta-notas-contenido"></div>`;
+    <div id="portal-meta-notas-contenido"></div>
+  </div>`;
 }
 // Notas de la Meta y Recomendación IA — el mismo cajón (recomendacionesIA/{miembroId}/notas) que
 // usa el coach desde "Ver recomendaciones IA" (más abajo, portalStaffAgregarNotaRecomendacion):
-// así lo que el coach le escribe a un cliente aparece aquí, y viceversa. Se cargan al abrir el
-// modal (no en portalCargarDatos) porque solo se necesitan si el cliente realmente abre "Mi Meta".
+// así lo que el coach le escribe a un cliente aparece aquí, y viceversa.
 let portalMetaNotas=[];
-async function abrirModalPortalMeta(){
-  document.getElementById('portal-meta-modal-contenido').innerHTML=_portalMetaModalHtml();
-  openModal('modal-portal-meta');
-  renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
+async function _portalCargarNotasMeta(){
   try{
     const s=await getDocs(gymCol(window._portalGym,`recomendacionesIA/${portalMiembro.id}/notas`));
     portalMetaNotas=s.docs.map(d=>({id:d.id,...d.data()}));
@@ -7414,16 +7700,17 @@ function _refrescarPortalMetaNotas(){
   if(cont)cont.innerHTML=_notasRecomendacionHtml(portalMetaNotas,'portalAgregarNotaMeta()','');
 }
 async function portalAgregarNotaMeta(){
+  _portalOcultarError('portal-meta-error');
   const input=document.getElementById('nota-recomendacion-texto');
   const texto=input?input.value.trim():'';
-  if(!texto)return alert('Escribe una nota');
+  if(!texto)return _portalMostrarError('portal-meta-error','Escribe una nota.');
   const data={texto,autorNombre:`${portalMiembro.nombre} (#${fmtNum(portalMiembro.numero||0)})`,autorTipo:'cliente',fecha:Date.now()};
   try{
     const ref=await addDoc(gymCol(window._portalGym,`recomendacionesIA/${portalMiembro.id}/notas`),data);
     portalMetaNotas.push({id:ref.id,...data});
     toast('Nota agregada ✓');
     _refrescarPortalMetaNotas();
-  }catch(e){alert('No se pudo guardar la nota. Intenta de nuevo.');}
+  }catch(e){_portalMostrarError('portal-meta-error','No se pudo guardar la nota. Intenta de nuevo.');}
 }
 function portalToggleMetaEjercicio(){
   const tipo=document.getElementById('portal-meta-tipo').value;
@@ -7431,6 +7718,7 @@ function portalToggleMetaEjercicio(){
   if(grupo)grupo.style.display=tipo==='ejercicio'?'block':'none';
 }
 async function portalGuardarMeta(){
+  _portalOcultarError('portal-meta-error');
   const tipo=document.getElementById('portal-meta-tipo').value;
   const gymId=window._portalGym;
   try{
@@ -7438,28 +7726,27 @@ async function portalGuardarMeta(){
       await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{metaFitness:null});
       await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{metaFitness:null});
       portalMiembro={...portalMiembro,metaFitness:null};
-      closeModal('modal-portal-meta');
       toast('Meta eliminada ✓');
       renderPortalHome();
       return;
     }
     const valorObjetivo=parseFloat(document.getElementById('portal-meta-valor').value);
-    if(!valorObjetivo)return alert('Escribe el valor objetivo');
+    if(!valorObjetivo)return _portalMostrarError('portal-meta-error','Escribe el valor objetivo.');
     const ejercicioObjetivo=tipo==='ejercicio'?document.getElementById('portal-meta-ejercicio').value:null;
-    if(tipo==='ejercicio'&&!ejercicioObjetivo)return alert('Elige un ejercicio');
+    if(tipo==='ejercicio'&&!ejercicioObjetivo)return _portalMostrarError('portal-meta-error','Elige un ejercicio.');
     const fechaStr=document.getElementById('portal-meta-fecha').value;
     const fechaObjetivo=fechaStr?new Date(fechaStr+'T12:00:00').getTime():null;
     const metaFitness={tipo,valorObjetivo,ejercicioObjetivo,fechaObjetivo,creadaEn:Date.now()};
     await updateDoc(gymDoc(gymId,'miembros',portalMiembro.id),{metaFitness});
     await updateDoc(gymDoc(gymId,'miembrosPublicos',portalMiembro.id),{metaFitness});
     portalMiembro={...portalMiembro,metaFitness};
-    closeModal('modal-portal-meta');
     toast('Meta guardada ✓');
     renderPortalHome();
-  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+  }catch(e){_portalMostrarError('portal-meta-error','No se pudo guardar. Intenta de nuevo.');}
 }
 async function portalPedirRecomendacionIA(btn){
-  if(!portalMiembro.metaFitness)return alert('Primero guarda tu meta');
+  _portalOcultarError('portal-meta-error');
+  if(!portalMiembro.metaFitness)return _portalMostrarError('portal-meta-error','Primero guarda tu meta.');
   if(btn&&btn.disabled)return; // ya hay una petición en curso — evita doble clic disparando dos consultas a la IA
   const textoOriginal=btn?btn.textContent:null;
   if(btn){btn.disabled=true;btn.textContent='Consultando...';}
@@ -7485,7 +7772,7 @@ async function portalPedirRecomendacionIA(btn){
     renderPlanFitnessIA('portal-meta-recomendacion-contenido',planFitnessIA,'portalToggleHabito');
     toast('Plan actualizado ✓');
   }catch(e){
-    alert(`No se pudo obtener el plan. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
+    _portalMostrarError('portal-meta-error',`No se pudo obtener el plan. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
   }finally{
     if(btn){btn.disabled=false;btn.textContent=textoOriginal;}
   }
@@ -7503,52 +7790,63 @@ async function portalToggleHabito(hitoId,habitoId,completado){
     portalMiembro={...portalMiembro,planFitnessIA};
     renderPlanFitnessIA('portal-meta-recomendacion-contenido',planFitnessIA,'portalToggleHabito');
   }catch(e){
-    alert('No se pudo actualizar. Intenta de nuevo.');
+    _portalMostrarError('portal-meta-error','No se pudo actualizar. Intenta de nuevo.');
     renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
   }
 }
 
-// MI PERFIL FÍSICO: fecha de nacimiento + estatura + IMC (Parte 2b/2c/2d) y peso corporal con
+// PESTAÑA "PERFIL": fecha de nacimiento + estatura + IMC (Parte 2b/2c/2d) y peso corporal con
 // historial (Parte 2a) en una sola tarjeta — son datos relacionados, y el IMC solo se puede
 // calcular con los dos juntos (peso más reciente + estatura), así que separarlos en dos
-// tarjetas obligaba a saltar entre ellas para ver el número completo. Va al final del portal
-// porque se edita con mucha menos frecuencia que registrar una serie o revisar el progreso.
+// tarjetas obligaba a saltar entre ellas para ver el número completo. "No soy yo" (Fase 2, item
+// 11) vive aquí debajo — antes aparecía arriba en TODAS las pestañas; ahora que cada pestaña
+// pinta solo su contenido, tiene más sentido junto con el resto de los datos de la cuenta.
 function renderPortalPerfilFisicoSeccion(){
   const edad=edadMostrar(portalMiembro);
   const imc=calcularIMC(portalUltimoPeso(),portalMiembro.estatura);
   const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
   return`<div class="ec-card" style="margin-bottom:16px">
     <h3>🧍 Mi Perfil Físico</h3>
+    <div id="portal-perfil-error" class="login-error"></div>
     <div class="form-row">
       <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
       <div class="form-group"><label>Estatura (cm)</label><input type="number" id="portal-estatura" placeholder="170" value="${escAttr(portalMiembro.estatura||'')}"></div>
     </div>
-    ${(edad||imc!==null)?`<div style="margin-bottom:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC: ${imc}`:''}</div>`:''}
+    ${(edad||imc!==null)?`<div style="margin-bottom:10px;font-size:13px;color:var(--muted)">${edad?`Edad: ${edad} años`:''}${edad&&imc!==null?' · ':''}${imc!==null?`IMC (índice de masa corporal): ${imc}`:''}</div>`:''}
 
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
 
-    <div class="form-group"><label>Peso (kg)</label><input type="number" id="portal-peso-valor" placeholder="70.5"></div>
+    <div class="form-group">
+      <label>Mi peso corporal <span id="portal-unidad-peso-perfil-toggle" style="display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle"><button type="button" class="btn ${portalUnidadPeso==='kg'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('kg')">kg</button><button type="button" class="btn ${portalUnidadPeso==='lb'?'btn-primary':'btn-ghost'} btn-sm" style="padding:1px 9px" onclick="portalCambiarUnidadPeso('lb')">lb</button></span></label>
+      <input type="number" inputmode="decimal" id="portal-peso-valor" placeholder="${portalUnidadPeso==='lb'?'155':'70.5'}">
+    </div>
 
     <button class="btn btn-primary" style="width:100%" onclick="portalGuardarPerfilFisico()">Guardar</button>
 
     ${historial.length?`
     <div class="chart-wrap" style="height:180px;margin-top:16px"><canvas id="chart-portal-peso"></canvas></div>
-    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${escAttr(p.peso)}kg</td></tr>`).join('')}</tbody></table></div>`
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${formatearPeso(p.peso,portalUnidadPeso)}</td></tr>`).join('')}</tbody></table></div>`
     :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
-  </div>`;
+  </div>
+  <div style="text-align:center"><button type="button" class="btn btn-ghost btn-sm" onclick="portalOlvidarIdentidad()">No soy yo</button></div>`;
 }
 // Un solo botón para toda la tarjeta "Mi Perfil Físico" (antes eran dos: "Guardar datos" y
 // "Guardar peso") — guarda lo que esté lleno y no toca lo que quede vacío, en vez de exigir
-// que las tres cosas (fecha, estatura, peso) se llenen juntas cada vez.
+// que las tres cosas (fecha, estatura, peso) se llenen juntas cada vez. El peso escrito está en
+// la unidad actual (portalUnidadPeso, item 10) — se convierte a kg antes de guardar, igual que
+// el peso de una serie: `pesoCorporal` sigue sin un campo `unidadOriginal` (no cambia el modelo
+// de datos), la unidad elegida solo decide en qué se escribe/muestra, nunca qué se guarda.
 async function portalGuardarPerfilFisico(){
+  _portalOcultarError('portal-perfil-error');
   const fechaStr=document.getElementById('portal-fecha-nacimiento').value;
   const estaturaVal=parseFloat(document.getElementById('portal-estatura').value)||null;
   const fechaNacimiento=fechaStr?new Date(fechaStr+'T12:00:00').getTime():null;
-  const pesoVal=parseFloat(document.getElementById('portal-peso-valor').value)||null;
+  const pesoEscrito=parseFloat(document.getElementById('portal-peso-valor').value)||null;
+  const pesoVal=pesoEscrito!==null?(portalUnidadPeso==='lb'?lbAKg(pesoEscrito):pesoEscrito):null;
   const cambiosPerfil={};
   if(estaturaVal!==null)cambiosPerfil.estatura=estaturaVal;
   if(fechaNacimiento!==null)cambiosPerfil.fechaNacimiento=fechaNacimiento;
-  if(!Object.keys(cambiosPerfil).length&&pesoVal===null)return alert('Escribe al menos un dato para guardar (fecha de nacimiento, estatura o peso).');
+  if(!Object.keys(cambiosPerfil).length&&pesoVal===null)return _portalMostrarError('portal-perfil-error','Escribe al menos un dato para guardar (fecha de nacimiento, estatura o peso).');
   const gymId=window._portalGym;
   try{
     if(Object.keys(cambiosPerfil).length){
@@ -7565,7 +7863,55 @@ async function portalGuardarPerfilFisico(){
     }
     toast('Guardado ✓');
     renderPortalHome();
-  }catch(e){alert('No se pudo guardar. Intenta de nuevo.');}
+  }catch(e){_portalMostrarError('portal-perfil-error','No se pudo guardar. Intenta de nuevo.');}
+}
+
+// GUÍA DE BIENVENIDA (Mejoras de usabilidad, Fase 2, item 13): overlay de 3 pasos que se puede
+// saltar, solo la PRIMERA vez que este celular entra al portal de este gimnasio — igual que la
+// unidad kg/lb (item 8), se recuerda en localStorage con el mismo prefijo por gymId, try/catch
+// porque puede no estar disponible (en ese caso, fail-safe: mejor no mostrarla nunca que
+// mostrarla en cada visita). Se dispara una sola vez, justo después de identificarse con éxito
+// (ver _portalIntentarIdentificar) — no en cada renderPortalHome, para no reaparecer si el
+// cliente cambia de pestaña antes de cerrarla.
+function _portalGuiaKey(){return'gymtrackPortalGuiaVista_'+window._portalGym;}
+function _portalGuiaYaVista(){
+  try{return localStorage.getItem(_portalGuiaKey())==='1';}catch(e){return true;}
+}
+function _portalMarcarGuiaVista(){
+  try{localStorage.setItem(_portalGuiaKey(),'1');}catch(e){}
+}
+const PORTAL_GUIA_PASOS=[
+  {titulo:'1. Elige tu ejercicio',texto:'En la pestaña Entrenar, toca un músculo y después el ejercicio que vas a trabajar.'},
+  {titulo:'2. Pon peso, repeticiones y series',texto:'Usa los botones − / + o escribe directo en el campo.'},
+  {titulo:'3. Toca Guardar',texto:'Y aquí mismo verás tu progreso la próxima vez que entres a este ejercicio.'},
+];
+function _portalMostrarGuiaSiPrimeraVez(){
+  if(_portalGuiaYaVista())return;
+  portalGuiaPaso=0;
+  const cont=document.getElementById('portal-guia-contenido');
+  if(!cont)return;
+  cont.innerHTML=_portalGuiaPasoHtml();
+  openModal('modal-portal-guia');
+}
+function _portalGuiaPasoHtml(){
+  const paso=PORTAL_GUIA_PASOS[portalGuiaPaso];
+  const esUltimo=portalGuiaPaso===PORTAL_GUIA_PASOS.length-1;
+  return`<div style="font-weight:700;font-size:16px;margin-bottom:8px">${escAttr(paso.titulo)}</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">${escAttr(paso.texto)}</div>
+    <div style="display:flex;justify-content:space-between;gap:8px">
+      <button type="button" class="btn btn-ghost" onclick="portalCerrarGuia()">Saltar</button>
+      <button type="button" class="btn btn-primary" onclick="portalSiguienteGuia()">${esUltimo?'Entendido':'Siguiente'}</button>
+    </div>`;
+}
+function portalSiguienteGuia(){
+  if(portalGuiaPaso>=PORTAL_GUIA_PASOS.length-1){portalCerrarGuia();return;}
+  portalGuiaPaso++;
+  const cont=document.getElementById('portal-guia-contenido');
+  if(cont)cont.innerHTML=_portalGuiaPasoHtml();
+}
+function portalCerrarGuia(){
+  _portalMarcarGuiaVista();
+  closeModal('modal-portal-guia');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -4,6 +4,115 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-10-30 — Usabilidad del Portal del Cliente (Fase 1: formulario + textos, Fase 2: pestañas + recientes + guía)
+
+**Pedido:** los clientes reportaron que el portal (el que se abre con el QR, `?gym=...`) es
+confuso y poco intuitivo. Se mejora solo el portal del cliente — `?staff=1` (Portal de
+Empleados), `?sugerencia=1` (Buzón de Sugerencias), el Modo Check-in, el panel de staff y el
+admin quedan exactamente igual que antes. **No se cambió el modelo de datos en Firestore**:
+`registrosProgreso` y `pesoCorporal` se siguen guardando con los mismos campos de siempre; lo
+nuevo (unidad kg/lb recordada, guía ya vista) vive en `localStorage`, con la misma clave
+prefijada por `gymId` que ya usaba `_portalStorageKey()`.
+
+**Fase 1 — Formulario de Registrar Serie:**
+- **Tipo de serie** (`portalTipoSel`) ahora empieza y vuelve a "Normal" cada vez que cambia el
+  ejercicio/músculo (antes vacío, obligaba a elegir uno antes de poder guardar). Solo se muestra
+  el chip "Normal" + un botón "Otro tipo ▾" que despliega el resto (Calentamiento/PR/Dropset/Al
+  fallo/Súper serie/Otro) con su descripción de `DESCRIPCION_TIPO_SERIE`. Ya no existe el error
+  "Elige el tipo de serie" (`_portalTipoChipsHtml`/`_portalTipoOtrosPanelHtml`/`portalElegirTipo`).
+- **"Última vez"** (`_portalUltimaVezHtml`): franja arriba del formulario con el último registro
+  de ESE ejercicio (de `portalRegistros`, ya cargado — sin lectura nueva a Firestore), en la
+  unidad original de ese registro. "Primera vez con este ejercicio 💪" si nunca lo hizo.
+- **Prellenado** (`_portalPrefillSerie`): si no hay nada capturado en esta sesión
+  (`portalUltimoPesoCapturado`/`Reps`/nueva `portalUltimasSeries`), el formulario se prellena con
+  el último registro histórico, convertido a la unidad actual.
+- **Series**: etiqueta más clara ("cuántas hiciste con este peso y reps"), default 1 (ya no vacío
+  silencioso), y se valida como entero ≥1 de verdad en vez de aceptar cualquier cosa con `||1`.
+- **Botones −/+** (`_portalStepperHtml`/`_portalAjustarCampo`, mínimo 44px de alto): Peso (±2.5kg
+  o ±5lb), Repeticiones/Series (±1), y en cardio Minutos (±5)/Km (±0.5) — nunca bajan de 0 (peso/
+  minutos/km) ni de 1 (reps/series). `inputmode="decimal"` en peso/minutos/km,
+  `inputmode="numeric"` en reps/series.
+- **"Hoy en este ejercicio"** (`_portalHoyEjercicioHtml`): lista de lo registrado HOY para ese
+  ejercicio, con hora y botón Borrar. Guardar ya NO llama a `renderPortalHome()` completo —
+  `_portalRefrescarEntrenarTrasCambio` solo actualiza "Última vez" y esta lista por DOM directo,
+  así la pantalla no brinca ni pierde el scroll ni lo que ya estaba escrito en los otros campos.
+- **Sin `alert()`**: `portalGuardarSerie`, `portalGuardarPerfilFisico`, `portalGuardarMeta`,
+  `portalAgregarNotaMeta`, `portalPedirRecomendacionIA`, `portalToggleHabito` y
+  `portalBorrarRegistro` ahora muestran el error en un div rojo debajo del campo/botón
+  (`_portalMostrarError`/`_portalOcultarError`/`_portalMostrarErrorEnAlguna`, mismo patrón que ya
+  usaba "Identifícate").
+- **Unidad kg/lb recordada** (`_portalLeerUnidadGuardada`/`_portalGuardarUnidad`, localStorage por
+  gym): ya no hay que volver a elegirla en cada visita. `portalCambiarUnidadPeso` se generalizó
+  para actualizar cualquiera de los dos inputs de peso que exista en la pestaña activa (Registrar
+  serie o Mi Perfil Físico).
+
+**Fase 1 — Textos:** "1RM estimado" → "Fuerza máxima estimada" (con la línea de ayuda "El peso
+máximo que podrías levantar 1 vez, calculado con tus series.") en `_fuerzaExtraHtml` y en el
+dataset de `_chartConfigFuerza` — estas funciones son exclusivas del portal, no las usa el staff.
+En Mi Perfil Físico, "Peso (kg)" → "Mi peso corporal" con el mismo toggle kg/lb de las series
+(se sigue guardando siempre en kg; `pesoCorporal` no gana un campo `unidadOriginal` — la unidad
+elegida solo decide en qué se escribe/muestra, el historial completo y la gráfica se convierten
+con la unidad actual al vuelo). "IMC" → "IMC (índice de masa corporal)".
+
+**Fase 2 — Pestañas:** `portalTabSel` (`'entrenar'` por default) reemplaza el scroll único que
+apilaba Registrar serie + Mi progreso + Fuerza + Mi Meta + Perfil Físico. Barra fija abajo
+(`.portal-tabbar`, `env(safe-area-inset-bottom)` para el home indicator de iPhone) con 4
+pestañas: 🏋️ Entrenar · 📈 Progreso · 🎯 Mi meta · 👤 Perfil — activada solo por
+`renderPortalHome` (agrega la clase `.portal-screen-tabs` a `#portal-screen`), nunca por
+`?staff=1`/`?sugerencia=1`. Cada pestaña pinta SOLO su contenido (`_portalTabContenidoHtml`); las
+gráficas de Chart.js se dibujan después de mostrar la pestaña (`_portalDespuesDeRenderTab`, cada
+`dibujarChartPortalX` ya se protege sola si su canvas no existe).
+- **Progreso**: `renderPortalProgresoYFuerzaSeccion` combina "Mi progreso" y "Fuerza por músculo"
+  en una tarjeta con selector segmentado "Por ejercicio / Por músculo"
+  (`portalProgresoVista`), reusando `_portalProgresoResultadosHtml`/`_portalFuerzaResultadosHtml`
+  tal cual. Estado vacío amable con botón "Registrar mi primera serie" que manda a Entrenar.
+- **Mi meta**: el modal `modal-portal-meta` se eliminó del HTML — el mismo contenido
+  (`_portalMetaModalHtml` renombrada a `renderPortalMetaSeccion`) vive directo en la pestaña. Las
+  notas se cargan al mostrar la pestaña (`_portalCargarNotasMeta`, antes `abrirModalPortalMeta`),
+  no en `portalCargarDatos`.
+- **Perfil**: Mi Perfil Físico + el botón "No soy yo" (antes vivía arriba, visible en todas las
+  pestañas; ahora solo aquí, junto con el resto de los datos de la cuenta).
+
+**Fase 2 — "Recientes"** (`_portalEjerciciosRecientes`/`_portalRecientesHtml`): fila arriba de los
+botones de músculo con los últimos 5 ejercicios distintos registrados (de `portalRegistros`, más
+reciente primero), que llevan directo al formulario con `portalElegirEjercicioDirecto`. No se
+muestra si todavía no hay ningún registro.
+
+**Fase 2 — Guía de bienvenida** (`_portalGuiaYaVista`/`_portalMarcarGuiaVista`, localStorage por
+gym, mismo patrón que la unidad): overlay de 3 pasos ("Elige tu ejercicio" · "Pon peso,
+repeticiones y series" · "Toca Guardar") con botones "Siguiente"/"Saltar", reusando el
+`openModal`/`closeModal` genéricos con un id nuevo (`modal-portal-guia`, reemplaza en el HTML al
+modal de Mi Meta que ya no se usa). Se dispara una sola vez, justo después de identificarse con
+éxito — no en cada `renderPortalHome` — y nunca vuelve a salir tras cerrarla (con "Siguiente"
+hasta el final o con "Saltar").
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores.
+- Suite nueva de Playwright en viewport de celular (375×812), `test_portal_usabilidad.mjs` —
+  **54/54**: identificarse entra a Entrenar con las 4 pestañas; "Normal" seleccionado por
+  default + panel "Otro tipo"; registrar una serie de fuerza (3 series) y un registro de cardio;
+  "Hoy en este ejercicio"/"Última vez" se actualizan sin perder lo escrito en los demás campos
+  (sin re-render completo); validación de Series (entero ≥1) con error en línea, sin `alert()`;
+  prellenado con el último registro histórico convertido de unidad; "Recientes" lleva directo al
+  formulario; borrar un registro lo quita de la lista y "Última vez" vuelve a "Primera vez";
+  pestaña Progreso con su segmentado y estado vacío; canvases de Chart.js por pestaña (se
+  destruyen/no se apilan al cambiar de segmento); "Fuerza máxima estimada" ya sin "1RM"; Mi Meta
+  sin modal; Perfil con "Mi peso corporal"/IMC con aclaración/"No soy yo"; unidad kg/lb persiste
+  tras recargar la página; guía de bienvenida sale la primera vez y nunca más tras cerrarla (con
+  "Siguiente" o con "Saltar"); `?staff=1` y `?sugerencia=1` se ven exactamente igual (sin barra de
+  pestañas ni el padding extra); cero errores de consola nuevos en las 17 pruebas.
+- **Limitación conocida de la prueba**: Chart.js/el buscador de ejercicios/xlsx se stubean vacíos
+  en Playwright (sin acceso a internet real en este entorno) — las gráficas se verificaron por la
+  presencia del `<canvas>` correcto en cada pestaña y por que `dibujarChartPortalX` no truena,
+  no por inspección visual de los píxeles dibujados. Mismo criterio de prueba que ya usaba este
+  proyecto en Bloque C (medición de lecturas) para Chart.js.
+- **No se pudo re-correr la suite completa de los cambios anteriores** (resumen de pagos, ventana
+  de carga, editar hito del plan) porque este contenedor es nuevo y esos archivos de prueba de
+  sesiones previas ya no existen en el disco — no se tocó ninguna de las funciones que esos
+  cambios cubren (todas del lado del staff/dueño o de `loadAll()`), así que el riesgo de
+  regresión ahí es bajo, pero no quedó verificado en esta sesión.
+- `firestore.rules` no se tocó (no hacía falta: ningún campo ni colección nueva).
+
 ## 2026-10-15 — Plan IA: ejercicios registrados, fuerza por músculo y ritmo con todos los registros
 
 **Qué se hizo:**
