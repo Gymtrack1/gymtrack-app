@@ -26,8 +26,9 @@ echo ""
 echo "1/2 — Instalando dependencias de la función..."
 cd functions
 npm install
+NPM_RC=$?
 cd ..
-if [ $? -ne 0 ]; then
+if [ $NPM_RC -ne 0 ]; then
   echo ""
   echo "❌ Algo falló instalando dependencias. Copia todo este mensaje y mándaselo a Claude."
   echo ""
@@ -39,9 +40,10 @@ fi
 echo ""
 echo "2/2 — Desplegando a Firebase (puede tardar uno o dos minutos)..."
 npx firebase-tools deploy --only functions
+DEPLOY_RC=$?
 
 echo ""
-if [ $? -eq 0 ]; then
+if [ $DEPLOY_RC -eq 0 ]; then
   echo "✅ Listo. Busca en el texto de arriba una línea con una URL que termina en /adms"
   echo "   (algo como https://us-central1-mi-gimnasio-8d528.cloudfunctions.net/adms)."
   echo "   Esa es la URL que tienes que poner en el equipo biométrico, SIN /iclock al final."
@@ -52,8 +54,9 @@ if [ $? -eq 0 ]; then
   echo "   - Configurar esa URL en el menú del equipo (Comm > Ajustes de Nube/ADMS)."
 else
   echo "❌ Algo falló en el despliegue. Copia TODO el texto de arriba (incluye el error)"
-  echo "   y mándaselo a Claude — normalmente es porque falta activar el plan Blaze"
-  echo "   o iniciar sesión con la cuenta correcta de Firebase."
+  echo "   y mándaselo a Claude — normalmente es porque falta activar el plan Blaze,"
+  echo "   iniciar sesión con la cuenta correcta de Firebase, o la versión de Node"
+  echo "   (engines en functions/package.json) ya no la acepta Google."
 fi
 echo ""
 echo "Presiona Enter para cerrar esta ventana."
