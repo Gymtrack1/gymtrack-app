@@ -96,9 +96,28 @@
      indicator de iPhone. */
   .portal-screen-tabs{padding-bottom:86px!important;}
   .portal-tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--surface);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);z-index:150;}
-  .portal-tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px;background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;cursor:pointer;padding:6px 0;}
-  .portal-tab-btn.activo{color:var(--text);}
-  .portal-tab-icon{font-size:20px;}
+  .portal-tab-btn{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px;background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;cursor:pointer;padding:6px 0;}
+  /* Pestaña activa: ícono y texto en var(--accent) (Portal premium, Fase 1, item 1) + una barrita
+     arriba del ícono (.portal-tab-indicador) — oculta por default, visible solo en .activo. */
+  .portal-tab-btn.activo{color:var(--accent);}
+  .portal-tab-indicador{position:absolute;top:2px;left:50%;width:18px;height:3px;border-radius:999px;background:var(--accent);transform:translateX(-50%) scaleX(0);transition:transform 0.2s ease-out;}
+  .portal-tab-btn.activo .portal-tab-indicador{transform:translateX(-50%) scaleX(1);}
+  @media (prefers-reduced-motion: reduce){.portal-tab-indicador{transition:none;}}
+  /* ESCALA DE ESPACIADO/RADIOS/SOMBRAS (Portal premium, Fase 1, item 3): 8/12/16/24px de
+     espaciado, 12px en tarjetas, 10px en botones normales, 999px en los chips (tipo de serie,
+     toggle kg/lb, segmentados) — todo con el selector "#portal-screen" para NO tocar
+     .ec-card/.btn del resto de la app (las usa igual el panel del dueño). Sombra en dos capas
+     (una corta y marcada, otra difusa y suave) con las MISMAS variables --shadow/--shadow-lg que
+     ya existían — nunca un color fijo, para que se vea bien con cualquier Personalización. */
+  #portal-screen .ec-card{border-radius:12px;box-shadow:0 1px 2px var(--shadow),0 8px 24px var(--shadow-lg);}
+  #portal-screen .btn{border-radius:10px;}
+  #portal-screen .btn-sm{border-radius:999px;}
+  /* NÚMEROS PROTAGONISTAS (item 2): Bebas Neue (misma fuente que .stat-num en el resto de la
+     app) + tabular-nums para que los dígitos no cambien de ancho entre sí — importante para el
+     count-up de la Fase 2, donde el número cambia varias veces por segundo durante ~600ms y no
+     debe "temblar" de ancho en cada cuadro. */
+  .portal-num{font-family:'Bebas Neue',sans-serif;font-variant-numeric:tabular-nums;letter-spacing:0.5px;}
+  .portal-empty-icon{display:flex;justify-content:center;margin-bottom:10px;color:var(--muted);}
   /* MODO CHECK-IN (autoservicio, ver CHANGELOG.md) — pantalla completa, aparte de app-screen
      (misma familia que admin-screen/portal-screen), pensada para quedar fija en una tablet en
      recepción. Botones grandes (min 64px) para dedos, no solo para mouse.
@@ -6305,19 +6324,19 @@ function _portalStepperIniciar(id,btn,min,ev){
 // actualizar el `data-delta` de sus botones cuando cambia la unidad de peso.
 function _portalStepperHtml(id,valorInicial,step,min,inputmode,placeholder){
   const val=(valorInicial===null||valorInicial===undefined||isNaN(valorInicial))?'':valorInicial;
-  const botonEstilo='min-height:44px;min-width:44px;padding:0;font-size:18px;flex:0 0 auto';
+  const botonEstilo='min-height:44px;min-width:44px;padding:0;display:flex;align-items:center;justify-content:center;flex:0 0 auto';
   return`<div class="portal-stepper-wrap" id="${id}-stepper" style="display:flex;align-items:center;gap:6px">
     <button type="button" class="btn btn-ghost portal-stepper-btn" data-delta="${-step}" style="${botonEstilo}"
       onpointerdown="_portalStepperIniciar('${id}',this,${min},event)"
       onpointerup="_portalStepperDetener(event)"
       onpointerleave="_portalStepperDetener(event)"
-      onpointercancel="_portalStepperDetener(event)">−</button>
+      onpointercancel="_portalStepperDetener(event)">${iconoPortal('menos',18)}</button>
     <input type="number" inputmode="${inputmode}" id="${id}" placeholder="${placeholder}" style="text-align:center;flex:1;min-width:0" value="${val}">
     <button type="button" class="btn btn-ghost portal-stepper-btn" data-delta="${step}" style="${botonEstilo}"
       onpointerdown="_portalStepperIniciar('${id}',this,${min},event)"
       onpointerup="_portalStepperDetener(event)"
       onpointerleave="_portalStepperDetener(event)"
-      onpointercancel="_portalStepperDetener(event)">+</button>
+      onpointercancel="_portalStepperDetener(event)">${iconoPortal('mas',18)}</button>
   </div>`;
 }
 
@@ -7028,7 +7047,7 @@ async function _portalIntentarIdentificar(numero,nombre,onError){
     // guardada NO se borra aquí (ver CHANGELOG.md, 2026-10-07) — en cuanto el miembro pague,
     // debe volver a entrar solo, sin tener que volver a escribir sus datos.
     if(!match.vencimientoTs||match.vencimientoTs<Date.now()){
-      document.getElementById('portal-content').innerHTML='<div class="ec-card"><div class="empty"><div class="empty-icon">🔒</div><div>Tu membresía está vencida. Pasa a recepción para ponerte al corriente y volver a usar esta función.</div></div></div>';
+      document.getElementById('portal-content').innerHTML=`<div class="ec-card"><div class="empty"><div class="portal-empty-icon">${iconoPortal('candado',40)}</div><div>Tu membresía está vencida. Pasa a recepción para ponerte al corriente y volver a usar esta función.</div></div></div>`;
       return'vencida';
     }
     portalMiembro=match;
@@ -7097,7 +7116,41 @@ function portalCalcularTendenciaMeta(){
 // fija abajo (igual que una app nativa), por eso #portal-screen necesita el padding-bottom extra
 // de la clase .portal-screen-tabs (ver CSS) mientras se muestre esta pantalla — nunca se agrega
 // en renderPortalStaffIdentify/renderPortalSugerenciasForm, así que esos dos modos nunca la ven.
-const PORTAL_TABS=[{id:'entrenar',icon:'🏋️',label:'Entrenar'},{id:'progreso',icon:'📈',label:'Progreso'},{id:'meta',icon:'🎯',label:'Mi meta'},{id:'perfil',icon:'👤',label:'Perfil'}];
+// SISTEMA DE ÍCONOS DEL PORTAL (Portal premium, Fase 1, item 1): reemplaza los emojis del portal
+// del cliente por íconos de línea estilo Lucide (stroke 2, sin relleno, esquinas redondeadas) —
+// se ven igual de nítidos en cualquier pantalla (a diferencia de un emoji, que cada sistema
+// operativo dibuja distinto) y toman el color del texto que los rodea (stroke="currentColor"),
+// así que combinan solos con cualquier Personalización que el gym haya elegido. Dibujados a mano
+// aquí (sin CDN ni archivo aparte, por la regla del proyecto) — no son copia exacta de Lucide,
+// pero sí su mismo estilo visual. Solo los que de verdad se usan en el portal.
+const PORTAL_ICONOS={
+  pesa:'<rect x="2" y="9" width="3" height="6" rx="1"/><rect x="19" y="9" width="3" height="6" rx="1"/><rect x="6" y="7" width="2" height="10" rx="1"/><rect x="16" y="7" width="2" height="10" rx="1"/><line x1="8" y1="12" x2="16" y2="12"/>',
+  grafica:'<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  meta:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/>',
+  usuario:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  reloj:'<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>',
+  buscar:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/>',
+  candado:'<rect x="4" y="11" width="16" height="9" rx="2"/><path d="M7.5 11V7.5a4.5 4.5 0 0 1 9 0V11"/>',
+  check:'<polyline points="20 6 9 17 4 12"/>',
+  trofeo:'<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M17 5h2a2 2 0 0 1 0 4h-1.3"/><path d="M7 5H5a2 2 0 0 0 0 4h1.3"/>',
+  fuego:'<path d="M8.5 14.5a2.5 2.5 0 0 0 2.5-2.5c0-1.4-.5-2-1-3-1-2 0-4 2-5.5.4 2.3 1.8 4.5 3.5 6 1.8 1.5 2.5 3 2.5 5a6.5 6.5 0 1 1-13 0c0-1 .4-2.2 1-3a2.5 2.5 0 0 0 2.5 3z"/>',
+  calendario:'<rect x="3" y="4.5" width="18" height="16" rx="2"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  atras:'<polyline points="15 18 9 12 15 6"/>',
+  mas:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  menos:'<line x1="5" y1="12" x2="19" y2="12"/>',
+  basura:'<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+  guardar:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 14 8"/>',
+  destellos:'<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>',
+};
+// `tamano` en px (default 20). Lleva `aria-hidden` porque siempre va junto a texto visible que ya
+// describe qué es — el ícono es decorativo, no el único medio de entender el botón/título.
+function iconoPortal(nombre,tamano){
+  const cuerpo=PORTAL_ICONOS[nombre];
+  if(!cuerpo)return'';
+  const t=tamano||20;
+  return`<svg xmlns="http://www.w3.org/2000/svg" width="${t}" height="${t}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex-shrink:0">${cuerpo}</svg>`;
+}
+const PORTAL_TABS=[{id:'entrenar',icon:'pesa',label:'Entrenar'},{id:'progreso',icon:'grafica',label:'Progreso'},{id:'meta',icon:'meta',label:'Mi meta'},{id:'perfil',icon:'usuario',label:'Perfil'}];
 function renderPortalHome(){
   const el=document.getElementById('portal-content');
   document.getElementById('portal-screen').classList.add('portal-screen-tabs');
@@ -7135,8 +7188,18 @@ function portalCambiarTab(tab){
   portalTabSel=tab;
   renderPortalHome();
 }
+// La pestaña activa va en var(--accent) (antes var(--text)) con un indicador — una barrita chica
+// arriba del ícono (.portal-tab-indicador, ::before sería más simple pero un <span> aparte deja
+// animarlo con transform más adelante sin tocar el layout del ícono).
 function _portalTabBarHtml(){
-  return`<div class="portal-tabbar">${PORTAL_TABS.map(t=>`<button type="button" class="portal-tab-btn${t.id===portalTabSel?' activo':''}" onclick="portalCambiarTab('${t.id}')"><span class="portal-tab-icon">${t.icon}</span><span>${escAttr(t.label)}</span></button>`).join('')}</div>`;
+  return`<div class="portal-tabbar">${PORTAL_TABS.map(t=>{
+    const activo=t.id===portalTabSel;
+    return`<button type="button" class="portal-tab-btn${activo?' activo':''}" onclick="portalCambiarTab('${t.id}')">
+      <span class="portal-tab-indicador"></span>
+      ${iconoPortal(t.icon,22)}
+      <span>${escAttr(t.label)}</span>
+    </button>`;
+  }).join('')}</div>`;
 }
 
 // NAVEGACIÓN "Registrar serie" (Parte 3, pestaña "Entrenar"): reemplaza el modelo anterior de un
@@ -7155,7 +7218,7 @@ function renderPortalNavegacionSeccion(){
 // de "Mi progreso" más abajo.
 function renderPortalMusculosMenu(){
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>🏋️ Registrar serie</h3>
+    <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('pesa',18)} Registrar serie</h3>
     <div class="form-group"><input type="text" placeholder="Buscar ejercicio..." value="${escAttr(portalBuscarEjercicioTexto)}" oninput="portalBuscarEjercicioNav(this.value)"></div>
     <div id="portal-musculos-resultados">${_portalMusculosMenuResultadosHtml()}</div>
   </div>`;
@@ -7196,7 +7259,7 @@ function _portalMusculosMenuResultadosHtml(){
     <div style="display:flex;flex-wrap:wrap;gap:8px">${musculos.map(m=>`<button type="button" class="btn btn-ghost" style="flex:1 1 calc(50% - 8px);min-width:120px" onclick="portalElegirMusculo('${m}')">${m}</button>`).join('')}</div>`;
   }
   const coincidencias=_todosLosEjercicios().filter(ex=>coincideBusquedaEjercicio(ex.nombre,portalBuscarEjercicioTexto));
-  if(!coincidencias.length)return'<div class="empty"><div class="empty-icon">🔍</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>';
+  if(!coincidencias.length)return`<div class="empty"><div class="portal-empty-icon">${iconoPortal('buscar',40)}</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>`;
   return`<div>${coincidencias.map(ex=>`<div class="ec-row" style="cursor:pointer" onclick="portalElegirEjercicioDirecto('${ex.musculo}','${ex.id}')"><span><strong>${escAttr(ex.nombre)}</strong><div style="font-size:11px;color:var(--muted)">${escAttr(ex.musculo)} · ${escAttr(ex.parte)}</div></span><span>›</span></div>`).join('')}</div>`;
 }
 function portalBuscarEjercicioNav(texto){
@@ -7212,8 +7275,8 @@ function renderPortalEjerciciosLista(musculo){
   const ejercicios=BIBLIOTECA_EJERCICIOS[musculo]||[];
   return`<div class="ec-card" style="margin-bottom:16px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverMusculos()">‹ Músculos</button>
-      <h3 style="margin:0">🏋️ ${escAttr(musculo)}</h3>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverMusculos()" style="display:flex;align-items:center;gap:4px">${iconoPortal('atras',16)} Músculos</button>
+      <h3 style="margin:0;display:flex;align-items:center;gap:8px">${iconoPortal('pesa',18)} ${escAttr(musculo)}</h3>
     </div>
     <div>${ejercicios.map(ex=>`<div class="ec-row" style="cursor:pointer" onclick="portalElegirEjercicio('${ex.id}')"><span><strong>${escAttr(ex.nombre)}</strong><div style="font-size:11px;color:var(--muted)">${escAttr(ex.parte)}</div></span><span>›</span></div>`).join('')}</div>
   </div>`;
@@ -7231,13 +7294,23 @@ function _portalUltimoRegistroDeEjercicio(ejercicioId){
   const delEjercicio=portalRegistros.filter(r=>r.ejercicioId===ejercicioId).sort((a,b)=>b.fecha-a.fecha);
   return delEjercicio.length?delEjercicio[0]:null;
 }
+// "ÚLTIMA VEZ" con números protagonistas (Portal premium, Fase 1, item 2): el valor principal
+// (peso o minutos) va grande en Bebas Neue, el detalle (reps/series/distancia/fecha relativa)
+// chico y gris debajo — mismo patrón que usan apps como Whoop/Strava para destacar el número que
+// de verdad importa de un vistazo, en vez de una sola línea de texto corrido.
 function _portalUltimaVezHtml(ejercicio){
   const ultimo=_portalUltimoRegistroDeEjercicio(ejercicio.id);
   const esCardio=ejercicio.tipo==='cardio';
-  const estilo='background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px';
-  if(!ultimo)return`<div style="${estilo}">Primera vez con este ejercicio 💪</div>`;
-  const detalle=esCardio?`${escAttr(ultimo.tiempoMinutos)} min · ${escAttr(ultimo.distancia)} km`:_detalleRegistroTexto(ultimo,false);
-  return`<div style="${estilo}">Última vez: ${detalle} · ${_portalFormatoRelativo(ultimo.fecha)}</div>`;
+  const estiloBase='background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px';
+  if(!ultimo)return`<div style="${estiloBase}"><div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">${iconoPortal('pesa',16)} Primera vez con este ejercicio</div></div>`;
+  const valorGrande=esCardio?`${escAttr(ultimo.tiempoMinutos)} MIN`:formatearPeso(ultimo.peso,ultimo.unidadOriginal||'kg').toUpperCase();
+  const series=ultimo.series||1;
+  const detalle=esCardio?`${escAttr(ultimo.distancia)} km`:`× ${escAttr(ultimo.repeticiones)} reps · ${escAttr(series)} serie${series===1?'':'s'}`;
+  return`<div style="${estiloBase}">
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Última vez</div>
+    <div class="portal-num" style="font-size:26px;line-height:1">${valorGrande}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px">${detalle} · ${_portalFormatoRelativo(ultimo.fecha)}</div>
+  </div>`;
 }
 // Prellenado del formulario (Fase 1, item 3): si ya se capturó algo EN ESTA SESIÓN para este
 // ejercicio (portalUltimoPesoCapturado/Reps/Series), se usa eso — es lo más reciente de verdad.
@@ -7257,6 +7330,29 @@ function _portalPrefillSerie(ejercicio){
 function _portalRegistrosHoyDeEjercicio(ejercicioId){
   return portalRegistros.filter(r=>r.ejercicioId===ejercicioId&&new Date(r.fecha).toDateString()===new Date().toDateString()).sort((a,b)=>b.fecha-a.fecha);
 }
+// Igual que _detalleRegistroTexto (compartida con el perfil del staff — por eso NO se toca esa,
+// se escribe esta aparte) pero separando el número principal — grande, en Bebas Neue — del
+// detalle (reps/series/distancia), chico y gris debajo (Portal premium, Fase 1, item 2,
+// "números protagonistas"). Exclusiva del portal del cliente.
+function _portalDetalleGrandeHtml(r,esCardio){
+  if(esCardio){
+    return`<span class="portal-num" style="font-size:20px">${escAttr(r.tiempoMinutos)} MIN</span><div style="font-size:12px;color:var(--muted);margin-top:2px">${escAttr(r.distancia)} km</div>`;
+  }
+  const series=r.series||1;
+  return`<span class="portal-num" style="font-size:20px">${formatearPeso(r.peso,r.unidadOriginal||'kg').toUpperCase()}</span><div style="font-size:12px;color:var(--muted);margin-top:2px">× ${escAttr(r.repeticiones)} reps · ${escAttr(series)} serie${series===1?'':'s'}</div>`;
+}
+// Igual que _tarjetaProgresoHtml (compartida con el perfil del staff y su Vista de Progreso — por
+// eso no se toca esa, se escribe esta aparte) pero con números protagonistas
+// (_portalDetalleGrandeHtml en vez de _detalleRegistroTexto). Exclusiva del portal del cliente —
+// la usan "Mi progreso" y "Fuerza por músculo".
+function _portalTarjetaProgresoHtml(r,esCardio,extraHtml=''){
+  const tipoHtml=esCardio?'':_badgeTipoSerieHtml(r.tipo);
+  return`<div class="registro-card">
+    <div class="registro-card-top">${tipoHtml}<span class="registro-fecha">${fmtDate(r.fecha)}</span></div>
+    ${_portalDetalleGrandeHtml(r,esCardio)}
+    ${extraHtml}
+  </div>`;
+}
 function _portalHoyEjercicioHtml(ejercicio){
   const regs=_portalRegistrosHoyDeEjercicio(ejercicio.id);
   if(!regs.length)return'';
@@ -7265,7 +7361,7 @@ function _portalHoyEjercicioHtml(ejercicio){
     <div style="font-weight:700;font-size:13px;margin-bottom:8px">Hoy en este ejercicio</div>
     ${regs.map(r=>`<div class="registro-card" style="padding:10px 12px;margin-bottom:8px">
       <div class="registro-card-top">${esCardio?'':_badgeTipoSerieHtml(r.tipo)}<span class="registro-fecha">${new Date(r.fecha).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span></div>
-      <div class="registro-card-detalle">${_detalleRegistroTexto(r,esCardio)}</div>
+      ${_portalDetalleGrandeHtml(r,esCardio)}
       ${_portalBotonBorrarRegistroHtml(r)}
     </div>`).join('')}
   </div>`;
@@ -7307,9 +7403,9 @@ function renderPortalRegistrarSerieSeccion(ejercicio){
     <div class="form-group"><label>Series (cuántas hiciste con este peso y reps)</label>${_portalStepperHtml('portal-serie-series',pre.series,1,1,'numeric','1')}</div>`;
   return`<div class="ec-card" style="margin-bottom:16px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverEjercicios()">‹ ${escAttr(portalMusculoSel)}</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="portalVolverEjercicios()" style="display:flex;align-items:center;gap:4px">${iconoPortal('atras',16)} ${escAttr(portalMusculoSel)}</button>
     </div>
-    <h3 style="margin-top:8px">🏋️ ${escAttr(ejercicio.nombre)}</h3>
+    <h3 style="margin-top:8px;display:flex;align-items:center;gap:8px">${iconoPortal('pesa',18)} ${escAttr(ejercicio.nombre)}</h3>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${escAttr(ejercicio.parte)}</div>
     <div id="portal-ultima-vez-wrap">${_portalUltimaVezHtml(ejercicio)}</div>
     ${camposHtml}
@@ -7452,13 +7548,13 @@ async function portalGuardarSerie(){
 function renderPortalProgresoYFuerzaSeccion(){
   if(!portalRegistros.length){
     return`<div class="ec-card" style="margin-bottom:16px">
-      <h3>📈 Progreso</h3>
-      <div class="empty"><div class="empty-icon">📈</div><div>Todavía no tienes registros.</div>
+      <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('grafica',18)} Progreso</h3>
+      <div class="empty"><div class="portal-empty-icon">${iconoPortal('grafica',40)}</div><div>Todavía no tienes registros.</div>
       <button type="button" class="btn btn-primary" style="margin-top:14px" onclick="portalCambiarTab('entrenar')">Registrar mi primera serie</button></div>
     </div>`;
   }
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>📈 Progreso</h3>
+    <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('grafica',18)} Progreso</h3>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <button type="button" class="btn ${portalProgresoVista==='ejercicio'?'btn-primary':'btn-ghost'} btn-sm" style="flex:1" onclick="portalCambiarProgresoVista('ejercicio')">Por ejercicio</button>
       <button type="button" class="btn ${portalProgresoVista==='musculo'?'btn-primary':'btn-ghost'} btn-sm" style="flex:1" onclick="portalCambiarProgresoVista('musculo')">Por músculo</button>
@@ -7483,7 +7579,7 @@ function _portalProgresoResultadosHtml(){
   const nombreEjercicio=id=>{const ex=buscarEjercicioInfo(id);return ex?ex.nombre:'Ejercicio eliminado';};
   const todos=[...new Set(portalRegistros.map(r=>r.ejercicioId))];
   const ejercicioIds=todos.filter(id=>coincideBusquedaEjercicio(nombreEjercicio(id),portalProgresoBusqueda));
-  if(!ejercicioIds.length)return'<div class="empty"><div class="empty-icon">🔍</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>';
+  if(!ejercicioIds.length)return`<div class="empty"><div class="portal-empty-icon">${iconoPortal('buscar',40)}</div><div>Sin ejercicios que coincidan con tu búsqueda</div></div>`;
   if(!portalProgresoEjercicioSel||!ejercicioIds.includes(portalProgresoEjercicioSel)){
     // La primera vez (portalProgresoEjercicioSel todavía vacío), prioriza el ejercicio que el
     // cliente está viendo/registrando en este momento (portalEjercicioSel) si ya tiene progreso
@@ -7498,8 +7594,8 @@ function _portalProgresoResultadosHtml(){
   if(portalFiltroTipo&&!tipos.includes(portalFiltroTipo))portalFiltroTipo='';
   const delEjercicio=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>b.fecha-a.fecha);
   const listaHtml=delEjercicio.length
-    ?delEjercicio.map(r=>_tarjetaProgresoHtml(r,esCardio,_portalBotonBorrarRegistroHtml(r))).join('')
-    :'<div class="empty"><div class="empty-icon">📈</div><div>Sin registros con este filtro</div></div>';
+    ?delEjercicio.map(r=>_portalTarjetaProgresoHtml(r,esCardio,_portalBotonBorrarRegistroHtml(r))).join('')
+    :`<div class="empty"><div class="portal-empty-icon">${iconoPortal('grafica',40)}</div><div>Sin registros con este filtro</div></div>`;
   return`
     <div class="form-row">
       <div class="form-group" style="${esCardio?'grid-column:span 2':''}"><label>Ejercicio</label><select id="portal-progreso-ejercicio" onchange="portalCambiarProgresoEjercicioSel(this.value)">${ejercicioIds.map(id=>`<option value="${escAttr(id)}" ${id===portalProgresoEjercicioSel?'selected':''}>${escAttr(nombreEjercicio(id))}</option>`).join('')}</select></div>
@@ -7513,7 +7609,7 @@ function _portalProgresoResultadosHtml(){
 // firestore.rules (registrosProgreso, allow delete) — pasadas las 24h el botón ya no aparece.
 function _portalBotonBorrarRegistroHtml(r){
   if(Date.now()-r.fecha>=86400000)return'';
-  return`<div style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px" onclick="portalBorrarRegistro('${_idParaAtributo(r.id)}')">Borrar</button></div>`;
+  return`<div style="margin-top:6px"><button type="button" class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 10px;display:inline-flex;align-items:center;gap:4px" onclick="portalBorrarRegistro('${_idParaAtributo(r.id)}')">${iconoPortal('basura',13)} Borrar</button></div>`;
 }
 async function portalBorrarRegistro(id){
   if(!confirm('¿Borrar este registro? No se puede deshacer.'))return;
@@ -7648,10 +7744,12 @@ function _registrosDeMusculo(registros,musculo){
     return info&&info.tipo!=='cardio'&&info.musculo===musculo&&typeof r.peso==='number';
   });
 }
-// Debajo del 1RM estimado de cada tarjeta se aclara DE QUÉ EJERCICIO salió — necesario aquí (y no
-// en "Mi progreso") porque un músculo agrupa varias tarjetas de ejercicios distintos, así que el
-// selector de arriba por sí solo no basta para saber cuál generó cada número.
-function _fuerzaExtraHtml(r){
+// Debajo de la fuerza máxima estimada de cada tarjeta se aclara DE QUÉ EJERCICIO salió —
+// necesario aquí (y no en "Mi progreso") porque un músculo agrupa varias tarjetas de ejercicios
+// distintos, así que el selector de arriba por sí solo no basta para saber cuál generó cada
+// número. Exclusiva del portal del cliente (único call site) — por eso lleva prefijo _portal
+// aunque sea una función chica.
+function _portalFuerzaExtraHtml(r){
   const info=buscarEjercicioInfo(r.ejercicioId);
   const valor=estimar1RM(r.peso,r.repeticiones);
   return`<div style="font-size:11px;color:var(--muted);margin-top:4px">${escAttr(info?info.nombre:'Ejercicio eliminado')} · Fuerza máxima estimada: ${formatearPeso(Math.round(valor*10)/10,r.unidadOriginal||'kg')}</div>`;
@@ -7665,7 +7763,7 @@ function _fuerzaExtraHtml(r){
 function _portalFuerzaResultadosHtml(){
   const porMusculo=_fuerzaPorMusculo(portalRegistros);
   const musculos=[...porMusculo.keys()].sort((a,b)=>a.localeCompare(b));
-  if(!musculos.length)return'<div class="empty"><div class="empty-icon">💪</div><div>Todavía no tienes registros de fuerza</div></div>';
+  if(!musculos.length)return`<div class="empty"><div class="portal-empty-icon">${iconoPortal('pesa',40)}</div><div>Todavía no tienes registros de fuerza</div></div>`;
   if(!portalFuerzaMusculoSel||!musculos.includes(portalFuerzaMusculoSel)){
     // Igual que "Mi progreso" prioriza el ejercicio que el cliente está viendo/registrando en
     // este momento (portalEjercicioSel): aquí prioriza el MÚSCULO elegido en "Registrar serie"
@@ -7674,8 +7772,8 @@ function _portalFuerzaResultadosHtml(){
   }
   const delMusculo=_registrosDeMusculo(portalRegistros,portalFuerzaMusculoSel).sort((a,b)=>b.fecha-a.fecha);
   const listaHtml=delMusculo.length
-    ?delMusculo.map(r=>_tarjetaProgresoHtml(r,false,_fuerzaExtraHtml(r))).join('')
-    :'<div class="empty"><div class="empty-icon">💪</div><div>Sin registros de este músculo</div></div>';
+    ?delMusculo.map(r=>_portalTarjetaProgresoHtml(r,false,_portalFuerzaExtraHtml(r))).join('')
+    :`<div class="empty"><div class="portal-empty-icon">${iconoPortal('pesa',40)}</div><div>Sin registros de este músculo</div></div>`;
   return`
     <div class="form-group"><label>Músculo</label><select id="portal-fuerza-musculo" onchange="portalCambiarFuerzaMusculoSel(this.value)">${musculos.map(m=>`<option value="${escAttr(m)}" ${m===portalFuerzaMusculoSel?'selected':''}>${escAttr(m)}</option>`).join('')}</select></div>
     <div class="chart-wrap" style="height:200px"><canvas id="chart-portal-fuerza"></canvas></div>
@@ -7752,7 +7850,7 @@ function dibujarChartPortalPeso(){
 function renderPortalMetaSeccion(){
   const meta=portalMiembro.metaFitness||null;
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>🎯 Mi Meta</h3>
+    <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('meta',18)} Mi Meta</h3>
     <div id="portal-meta-error" class="login-error"></div>
     <div class="form-row">
       <div class="form-group"><label>Tipo de meta</label><select id="portal-meta-tipo" onchange="portalToggleMetaEjercicio()">
@@ -7767,10 +7865,10 @@ function renderPortalMetaSeccion(){
       <select id="portal-meta-ejercicio">${_opcionesEjercicioSelectHtml(meta?meta.ejercicioObjetivo:null)}</select>
     </div>
     <div class="form-group"><label>Fecha objetivo (opcional)</label><input type="date" id="portal-meta-fecha" value="${meta&&meta.fechaObjetivo?fmtDateInputVal(meta.fechaObjetivo):''}"></div>
-    <button class="btn btn-primary" style="width:100%" onclick="portalGuardarMeta()">💾 Guardar meta</button>
+    <button class="btn btn-primary" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px" onclick="portalGuardarMeta()">${iconoPortal('guardar',16)} Guardar meta</button>
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
     <div id="portal-meta-recomendacion-contenido"></div>
-    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="portalPedirRecomendacionIA(this)">🤖 Actualizar recomendación</button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="portalPedirRecomendacionIA(this)">${iconoPortal('destellos',16)} Actualizar recomendación</button>
     <div style="border-top:1px solid var(--border);margin:16px 0"></div>
     <div id="portal-meta-notas-contenido"></div>
   </div>`;
@@ -7839,8 +7937,11 @@ async function portalPedirRecomendacionIA(btn){
   _portalOcultarError('portal-meta-error');
   if(!portalMiembro.metaFitness)return _portalMostrarError('portal-meta-error','Primero guarda tu meta.');
   if(btn&&btn.disabled)return; // ya hay una petición en curso — evita doble clic disparando dos consultas a la IA
-  const textoOriginal=btn?btn.textContent:null;
-  if(btn){btn.disabled=true;btn.textContent='Consultando...';}
+  // innerHTML (no textContent) para capturar/restaurar: el botón ahora lleva un ícono SVG
+  // adentro (Portal premium, Fase 1) — textContent lo habría borrado para siempre en el primer
+  // ciclo de "Consultando...".
+  const htmlOriginal=btn?btn.innerHTML:null;
+  if(btn){btn.disabled=true;btn.innerHTML='Consultando...';}
   try{
     const pesoActual=portalUltimoPeso();
     const tendencia=portalCalcularTendenciaMeta();
@@ -7865,7 +7966,7 @@ async function portalPedirRecomendacionIA(btn){
   }catch(e){
     _portalMostrarError('portal-meta-error',`No se pudo obtener el plan. Intenta de nuevo. (${e&&e.message?e.message:'error desconocido'})`);
   }finally{
-    if(btn){btn.disabled=false;btn.textContent=textoOriginal;}
+    if(btn){btn.disabled=false;btn.innerHTML=htmlOriginal;}
   }
 }
 // Marca/desmarca un hábito del plan desde el portal del cliente — mismo criterio de doble
@@ -7897,7 +7998,7 @@ function renderPortalPerfilFisicoSeccion(){
   const imc=calcularIMC(portalUltimoPeso(),portalMiembro.estatura);
   const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
   return`<div class="ec-card" style="margin-bottom:16px">
-    <h3>🧍 Mi Perfil Físico</h3>
+    <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('usuario',18)} Mi Perfil Físico</h3>
     <div id="portal-perfil-error" class="login-error"></div>
     <div class="form-row">
       <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>

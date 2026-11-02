@@ -4,6 +4,66 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-11-02 — Portal premium, Fase 1: íconos de línea y números protagonistas
+
+**Pedido:** que el portal del cliente (el del QR, `?gym=...`) se vea "premium", como Whoop/Strava/
+Nike Training Club. Primera de varias fases — esta cubre íconos y tipografía.
+
+**Qué se hizo:**
+- **Sistema de íconos** (`PORTAL_ICONOS`, `iconoPortal(nombre,tamano)`, nuevas): 17 íconos SVG de
+  línea dibujados a mano dentro del archivo (sin CDN, sin librería — stroke 2, sin relleno,
+  `stroke="currentColor"` para heredar el color del texto que los rodea, así combinan solos con
+  cualquier Personalización del gym). Reemplazan TODOS los emojis exclusivos del portal del
+  cliente: las 4 pestañas, los títulos de tarjeta (Registrar serie, Progreso, Mi Meta, Mi Perfil
+  Físico, nombre de músculo/ejercicio), los estados vacíos (buscador sin resultados, sin
+  registros de progreso/fuerza), "Primera vez con este ejercicio", membresía vencida, los botones
+  "‹ Volver", Guardar meta, Actualizar recomendación, Borrar, y los botones −/+ de los
+  contadores. **No se tocaron** los emojis de funciones COMPARTIDAS con el panel del dueño o el
+  Portal de Empleados (`renderPlanFitnessIA`, `_notasRecomendacionHtml`, el aviso de gym
+  suspendido en `portalReady`) — cambiarlos ahí habría afectado pantallas fuera del pedido.
+- **Pestaña activa**: ícono y texto en `var(--accent)` (antes `var(--text)`) con una barrita
+  (`.portal-tab-indicador`) arriba del ícono.
+- **Números protagonistas**: en "Última vez" y "Hoy en este ejercicio" (ambas reescritas) y en
+  "Mi progreso"/"Fuerza por músculo", el valor principal (peso o minutos) va grande en Bebas Neue
+  mayúsculas, el detalle (reps/series/distancia/fecha) chico y gris debajo — clase nueva
+  `.portal-num` con `font-variant-numeric:tabular-nums` (para el count-up de la Fase 2). Como
+  `_tarjetaProgresoHtml`/`_detalleRegistroTexto` son COMPARTIDAS con el perfil del staff y su
+  Vista de Progreso, se escribieron aparte `_portalTarjetaProgresoHtml`/`_portalDetalleGrandeHtml`
+  (exclusivas del portal) en vez de tocar las compartidas — alguna duplicación de lógica a
+  propósito, para no salirse del alcance pedido.
+- **Escala de espaciado/radios/sombras** (item 3): radios 12px en tarjetas / 10px en botones /
+  999px en chips (`btn-sm`), sombra en dos capas (`0 1px 2px var(--shadow), 0 8px 24px
+  var(--shadow-lg)`) en las tarjetas — todo con selectores `#portal-screen .ec-card`/`.btn`/
+  `.btn-sm` para NO tocar `.ec-card`/`.btn` del resto de la app (compartidas con el panel del
+  dueño).
+- **Bug de paso evitado al cambiar los botones −/+**: al mover el delta del contador de
+  `onclick="..."` a `data-delta` (necesario porque ahora el contenido del botón es un ícono SVG,
+  no un signo de texto), se mantuvo intacta la lógica de `portalCambiarUnidadPeso` que actualiza
+  ese `data-delta` al cambiar kg/lb — se verificó explícitamente que seguía funcionando.
+- **Arreglo de paso, encontrado al probar**: `portalPedirRecomendacionIA` guardaba/restauraba el
+  texto del botón "Actualizar recomendación" con `textContent`, lo que habría borrado el ícono
+  nuevo para siempre en el primer ciclo de "Consultando..." — se cambió a `innerHTML`.
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores.
+- Suite completa del portal (`test_portal_usabilidad.mjs`, 54 casos) — **54/54**, con las pocas
+  aserciones que esperaban el formato de texto viejo ("60kg × 10 reps × 3 series") actualizadas
+  al nuevo ("60KG" + "× 10 reps · 3 series" separado) — cambio de formato esperado de esta fase,
+  no una regresión.
+- Suite del arreglo de zoom en iPhone (`test_portal_ios_zoom.mjs`, 20 casos) — **20/20**, sin
+  regresiones por el cambio de los glifos −/+ a íconos SVG en los contadores.
+- Capturas en viewport de celular (390×844): menú de músculos con "Recientes", formulario de
+  Registrar serie con "Última vez" en números grandes, Mi progreso con tarjetas de números
+  grandes, Mi Meta, Mi Perfil Físico — revisadas visualmente, sin wallet de colores ni
+  solapamientos.
+- `?staff=1` y `?sugerencia=1` sin cambios (confirmado en la suite: sin barra de pestañas, sin el
+  padding extra de `.portal-screen-tabs`, contenido normal).
+- `firestore.rules` no se tocó (no hacía falta).
+
+**Pendiente de esta fase:** "⚠️" (el comentario de código del Worker, no visible al cliente),
+`prefers-reduced-motion` (no aplica todavía — Fase 1 no agrega animaciones nuevas, llega en la
+Fase 2).
+
 ## 2026-11-02 — iPhone/Safari: arregla el zoom al tocar los contadores −/+ y los inputs, y los hace repetir al mantener presionado
 
 **Problema reportado:** en la tarjeta de registrar serie (Peso/Repeticiones/Series, cada uno con
