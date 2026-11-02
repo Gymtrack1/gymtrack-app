@@ -4,6 +4,74 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-11-02 — iPhone/Safari: arregla el zoom al tocar los contadores −/+ y los inputs, y los hace repetir al mantener presionado
+
+**Problema reportado:** en la tarjeta de registrar serie (Peso/Repeticiones/Series, cada uno con
+botones "−"/"+"), en iPhone/Safari tocar "+"/"−" dos veces rápido hacía zoom a toda la pantalla
+(Safari lo interpreta como doble-tap), y tocar cualquier input numérico también disparaba zoom
+porque su `font-size` era menor a 16px.
+
+**Qué se cambió (solo estilos globales + el formulario de registrar serie del portal del
+cliente, nada más):**
+- **Viewport**: `<meta name="viewport">` ahora trae `maximum-scale=1` (bloquea el zoom manual de
+  pellizco, que no hacía falta en una app que ya no es un sitio de lectura) y `viewport-fit=cover`
+  (deja que el safe-area de iPhone — ver `.portal-screen-tabs`/`.portal-tabbar`, Fase 2 — se mida
+  bien contra los bordes reales de la pantalla).
+- **font-size de `input`/`select`/`textarea`**: 14px → 16px, GLOBAL (toda la app, no solo el
+  portal) — es la única forma de que Safari deje de hacer zoom automático al enfocar un campo; no
+  hay una propiedad CSS que lo desactive directo. Mismo padding/alto de siempre, solo el texto
+  queda un poco más grande.
+- **Zoom por doble-tap**: `touch-action:manipulation` + `-webkit-tap-highlight-color:transparent`
+  + `user-select:none` en `button,a,label,select,input` (toda la app) y, explícitamente también,
+  en `.portal-stepper-wrap`/`.portal-stepper-btn` (los contadores). `user-select:none` en un
+  `<input>` no bloquea seleccionar/pegar el texto que el cliente escribe a mano — eso lo controla
+  el widget nativo del campo, no esta propiedad.
+- **Mantener presionado para repetir** (`_portalStepperIniciar`/`_portalStepperDetener`, nuevas):
+  cambio inmediato al presionar, repite cada ~120ms a partir de los ~400ms, y acelera a cada
+  ~50ms después de ~1.5s sostenido — igual que los contadores nativos de iOS. Con
+  `pointerdown`/`pointerup`/`pointerleave`/`pointercancel` (no `click`), así sirve igual en touch
+  y en mouse, y los botones YA NO llevan `onclick` (antes lo tenían) — un `click` fantasma además
+  del `pointerdown` habría duplicado el conteo. `navigator.vibrate(10)` en cada cambio si el
+  navegador lo soporta (con try/catch — en los que no, como Safari de iPhone hoy, simplemente no
+  hace nada). Los valores se siguen clamp-eando a 0 (peso) / 1 (reps y series), igual que antes.
+- **Bug real encontrado al probar y corregido**: el paso del contador de Peso (2.5kg/5lb) quedaba
+  fijo en el HTML desde el primer render — cambiar de kg a lb con el toggle NO actualizaba el
+  paso del botón (seguía sumando 2.5 aunque ya mostrara lb). Se cambió a leer el paso de un
+  `data-delta` en cada botón (`_portalStepperHtml` ahora agrega `id="${id}-stepper"` al
+  contenedor), y `portalCambiarUnidadPeso` lo actualiza junto con el placeholder/toggle al
+  cambiar de unidad.
+- Repeticiones/Series siguen cambiando de 1 en 1; el peso en kg/lb según la unidad activa ya
+  funcionaba desde la Fase 1 de usabilidad (`pasoPeso`) — no se tocó esa parte, solo se arregló
+  que el paso no se actualizaba en caliente. El cliente puede seguir escribiendo el valor a mano.
+- No se tocó la lógica de "Guardar serie" ni cómo se guarda en Firestore.
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores.
+- Suite nueva de Playwright, `test_portal_ios_zoom.mjs` (viewport de celular, `hasTouch:true`) —
+  **20/20**: el `<meta viewport>` trae `maximum-scale=1`/`viewport-fit=cover`; los inputs de
+  Peso/Repeticiones/Series miden ≥16px; los contadores tienen `touch-action:manipulation` y
+  `user-select:none`; un tap corto suma exactamente 1 vez (sin doble conteo); mantener presionado
+  repite de inmediato y acelera tras 1.5s; soltar o `pointerleave` detiene la repetición sin
+  dejarla sumando sola; los valores no bajan de 0/1; el paso es 2.5 en kg y 5 en lb (incluso
+  cambiando de unidad a mitad de la prueba — el bug de arriba); 25 se muestra sin ".0" de más;
+  escribir el valor a mano en el input sigue funcionando. Cero errores de consola nuevos.
+- Suite completa del portal del cliente (`test_portal_usabilidad.mjs`, 54 casos de la entrada
+  anterior) — **54/54**, sin regresiones.
+- Prueba de humo del login/panel de staff con el CSS global nuevo (`test_smoke_login.mjs`) — los
+  inputs miden ≥16px y los botones llevan `touch-action:manipulation`/`user-select:none` ahí
+  también, se puede seguir escribiendo en los campos, cero errores de consola. No se volvió a
+  probar cada modal del panel del dueño uno por uno (fuera del alcance de este arreglo, que es de
+  estilos globales + el formulario del portal) — el cambio es CSS puro sin lógica nueva en esas
+  pantallas, así que el riesgo de regresión ahí es bajo.
+- `firestore.rules` no se tocó (no hacía falta).
+
+**Cómo probarlo en iPhone real:** entrar al portal (`?gym=...`), identificarse, ir a Entrenar →
+elegir un ejercicio de fuerza. (1) Tocar 10 veces rápido el "+" de Peso: no debe hacer zoom a la
+pantalla. (2) Mantener presionado el "+": el número debe empezar a subir solo a los ~0.4s y
+acelerar después de ~1.5s sosteniendo. (3) Tocar el input de Peso para escribir a mano: no debe
+hacer zoom. (4) Cambiar el toggle kg/lb y volver a tocar "+": debe saltar de 5 en lb y de 2.5 en
+kg.
+
 ## 2026-10-30 — Usabilidad del Portal del Cliente (Fase 1: formulario + textos, Fase 2: pestañas + recientes + guía)
 
 **Pedido:** los clientes reportaron que el portal (el que se abre con el QR, `?gym=...`) es

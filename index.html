@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>GymTrack</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
@@ -194,10 +194,29 @@
   .modal h2{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;margin-bottom:20px;}
   .form-group{margin-bottom:14px;min-width:0;}
   label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;}
-  input,select,textarea{width:100%;max-width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:14px;transition:border-color 0.2s;}
+  /* font-size:16px (no 14px) es a propósito (ver CHANGELOG.md, arreglo de zoom en iPhone/Safari):
+     Safari en iOS hace zoom automático al enfocar cualquier input/select/textarea con
+     font-size menor a 16px — subirlo es la única forma de evitarlo, no hay una propiedad CSS
+     que lo desactive directamente. padding/altura se mantienen igual; el único cambio visible
+     es texto un poco más grande dentro de los campos, en toda la app. */
+  input,select,textarea{width:100%;max-width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text-surface);font-family:'DM Sans',sans-serif;font-size:16px;transition:border-color 0.2s;}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
   input[type="date"]{-webkit-appearance:none;appearance:none;}
   select option{background:var(--surface2);}
+  /* Zoom por doble toque en iPhone/Safari (ver CHANGELOG.md): tocar el mismo botón dos veces
+     rápido (ej. el "+" de un contador) se interpreta como doble-tap y hace zoom a la página.
+     touch-action:manipulation le dice al navegador que este elemento no usa gestos de
+     zoom/doble-tap, así que los deshabilita ahí; -webkit-tap-highlight-color quita el recuadro
+     gris que Safari pinta al tocar; user-select:none evita que un toque sostenido (el "mantener
+     presionado" de los contadores) seleccione texto en vez de repetir el conteo. Se aplica a
+     TODA la app (no solo al portal del cliente) porque el problema es del navegador, no de una
+     pantalla en particular. */
+  button,a,label,select,input{touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;}
+  .portal-stepper-wrap,.portal-stepper-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;}
+  /* ...salvo el texto que el cliente SÍ necesita poder seleccionar/copiar dentro de un input —
+     user-select:none en el elemento <input> no bloquea esto en los navegadores modernos (el
+     contenido editable de un campo de texto es un widget nativo aparte, no sigue user-select),
+     así que seguir pudiendo seleccionar/pegar un número a mano no se pierde. */
   .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .form-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
   .form-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
@@ -6220,7 +6239,9 @@ const DESCRIPCION_TIPO_SERIE={
 // cómodos para el pulgar que escribir en el teclado para un ajuste chico — el input sigue
 // aceptando escritura directa, esto es solo un atajo. min=0 (peso/minutos/km) nunca deja bajar de
 // cero; min=1 (reps/series) nunca deja bajar de 1. Si el input está vacío o con algo no numérico,
-// parte de `min` (así +step siempre deja un valor válido en vez de NaN).
+// parte de `min` (así +step siempre deja un valor válido en vez de NaN). `nuevo` se asigna tal
+// cual al input (sin forzar decimales) — así 25 se queda en "25" y 22.5 en "22.5", JS no agrega
+// ceros de más al convertir el número a texto.
 function _portalAjustarCampo(id,delta,min){
   const input=document.getElementById(id);
   if(!input)return;
@@ -6230,14 +6251,73 @@ function _portalAjustarCampo(id,delta,min){
   if(nuevo<min)nuevo=min;
   input.value=nuevo;
 }
+// Vibración ligera en cada cambio de los contadores (mejoras de usabilidad, iPhone/Safari) — solo
+// si el navegador la soporta; en los que no (ej. Safari de iPhone no la soporta todavía) no hace
+// nada y no truena.
+function _portalVibrar(){
+  try{ if(navigator.vibrate)navigator.vibrate(10); }catch(e){}
+}
+// "MANTENER PRESIONADO" DE LOS CONTADORES −/+ (ver CHANGELOG.md, arreglo de zoom en iPhone): un
+// solo juego de variables basta — en este formulario solo hay un dedo tocando un botón a la vez.
+// Cambio inmediato al presionar, luego empieza a repetir a los ~400ms (cada ~120ms) y acelera a
+// cada ~50ms después de ~1.5s sostenido, igual que los contadores nativos de iOS. Pointer events
+// (no click) para que un mismo código sirva para touch y para mouse, y para que soltar el dedo
+// FUERA del botón (pointerleave) o una interrupción del sistema (pointercancel, ej. una llamada
+// entrante) también detengan la repetición — un setInterval que nunca se cancela dejaría el
+// contador subiendo solo para siempre.
+let _portalStepperTimer=null;
+let _portalStepperPointerId=null;
+function _portalStepperDetener(ev){
+  // Si el evento trae un pointerId distinto al que inició la repetición, no es el mismo dedo/
+  // botón de mouse — se ignora (defensivo, no debería pasar con un solo puntero a la vez).
+  if(ev&&ev.pointerId!==undefined&&_portalStepperPointerId!==null&&ev.pointerId!==_portalStepperPointerId)return;
+  if(_portalStepperTimer){clearTimeout(_portalStepperTimer);_portalStepperTimer=null;}
+  _portalStepperPointerId=null;
+}
+// `btn` es el botón que disparó el evento (pasado como `this` desde el atributo inline) — el
+// delta se lee de su `data-delta` en vez de ir fijo en el onpointerdown, porque el paso del Peso
+// cambia en caliente según la unidad (2.5kg/5lb, ver portalCambiarUnidadPeso): si el número
+// quedara fijo en el HTML desde el primer render, cambiar de kg a lb no actualizaría el paso del
+// contador (bug real, encontrado al probar: el "+" se quedaba sumando 2.5 aunque ya mostrara lb).
+function _portalStepperIniciar(id,btn,min,ev){
+  // preventDefault (además de touch-action:manipulation en CSS) corta el "doble tap = zoom" de
+  // Safari de raíz, y evita el click fantasma ~300ms después que duplicaría el conteo si
+  // hubiera, además, un onclick en el botón (aquí ya no lo hay — pointerdown es la única fuente).
+  if(ev&&ev.preventDefault)ev.preventDefault();
+  _portalStepperDetener();
+  if(ev&&ev.pointerId!==undefined)_portalStepperPointerId=ev.pointerId;
+  const delta=parseFloat(btn.dataset.delta);
+  _portalAjustarCampo(id,delta,min);
+  _portalVibrar();
+  const inicio=Date.now();
+  const repetir=()=>{
+    _portalAjustarCampo(id,delta,min);
+    _portalVibrar();
+    const intervalo=(Date.now()-inicio)>1500?50:120;
+    _portalStepperTimer=setTimeout(repetir,intervalo);
+  };
+  _portalStepperTimer=setTimeout(repetir,400);
+}
 // `valorInicial` null/undefined deja el input vacío (con su placeholder) — mismo criterio que
-// los inputs de este formulario desde siempre.
+// los inputs de este formulario desde siempre. Los botones no llevan onclick — pointerdown ya
+// hace el cambio inmediato (ver _portalStepperIniciar), agregar click además lo duplicaría. El
+// wrapper lleva `id="${id}-stepper"` para que portalCambiarUnidadPeso pueda encontrar y
+// actualizar el `data-delta` de sus botones cuando cambia la unidad de peso.
 function _portalStepperHtml(id,valorInicial,step,min,inputmode,placeholder){
   const val=(valorInicial===null||valorInicial===undefined||isNaN(valorInicial))?'':valorInicial;
-  return`<div style="display:flex;align-items:center;gap:6px">
-    <button type="button" class="btn btn-ghost" style="min-height:44px;min-width:44px;padding:0;font-size:18px;flex:0 0 auto" onclick="_portalAjustarCampo('${id}',${-step},${min})">−</button>
+  const botonEstilo='min-height:44px;min-width:44px;padding:0;font-size:18px;flex:0 0 auto';
+  return`<div class="portal-stepper-wrap" id="${id}-stepper" style="display:flex;align-items:center;gap:6px">
+    <button type="button" class="btn btn-ghost portal-stepper-btn" data-delta="${-step}" style="${botonEstilo}"
+      onpointerdown="_portalStepperIniciar('${id}',this,${min},event)"
+      onpointerup="_portalStepperDetener(event)"
+      onpointerleave="_portalStepperDetener(event)"
+      onpointercancel="_portalStepperDetener(event)">−</button>
     <input type="number" inputmode="${inputmode}" id="${id}" placeholder="${placeholder}" style="text-align:center;flex:1;min-width:0" value="${val}">
-    <button type="button" class="btn btn-ghost" style="min-height:44px;min-width:44px;padding:0;font-size:18px;flex:0 0 auto" onclick="_portalAjustarCampo('${id}',${step},${min})">+</button>
+    <button type="button" class="btn btn-ghost portal-stepper-btn" data-delta="${step}" style="${botonEstilo}"
+      onpointerdown="_portalStepperIniciar('${id}',this,${min},event)"
+      onpointerup="_portalStepperDetener(event)"
+      onpointerleave="_portalStepperDetener(event)"
+      onpointercancel="_portalStepperDetener(event)">+</button>
   </div>`;
 }
 
@@ -7290,6 +7370,17 @@ function portalCambiarUnidadPeso(unidad){
       b.classList.toggle('btn-primary',sel);
       b.classList.toggle('btn-ghost',!sel);
     });
+    // Si este input tiene contador −/+ (hoy solo portal-serie-peso — ver _portalStepperHtml), su
+    // paso también depende de la unidad (2.5kg/5lb) y tiene que actualizarse aquí, igual que el
+    // placeholder: si no, el botón se queda sumando el paso de la unidad vieja.
+    const stepperWrap=document.getElementById(cfg.inputId+'-stepper');
+    if(stepperWrap){
+      const paso=unidad==='lb'?5:2.5;
+      stepperWrap.querySelectorAll('.portal-stepper-btn').forEach(b=>{
+        const negativo=parseFloat(b.dataset.delta)<0;
+        b.dataset.delta=negativo?-paso:paso;
+      });
+    }
   });
 }
 function portalElegirTipo(t){
