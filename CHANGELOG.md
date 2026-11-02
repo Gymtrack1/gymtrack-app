@@ -4,6 +4,61 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-11-02 — Portal premium, Fase 3: acabados visuales
+
+**Qué se hizo** (continúa la Fase 1/2 del mismo pedido — portal del cliente, `?gym=...`).
+
+- **Modo oscuro por default** (item 10, `_portalAplicarTemaOscuroDefault`): si el gym NO
+  personalizó NINGÚN color propio (`colorAcento`/`colorFondo`/`colorTarjetas`, los tres vacíos o
+  el doc no existe), el portal ya no usa el beige/blanco de siempre — usa un tema oscuro
+  (fondo `#0A0A0A`, tarjetas `#161616`, bordes `#262626`, texto `#F5F5F0`, gris `#8A8A82`,
+  acento lima `#C6E600`). Si el gym SÍ personalizó al menos un color, se respeta tal cual — CERO
+  cambio de comportamiento para esos gyms. Reutiliza los mismos setters compartidos con el panel
+  de staff (`aplicarColorAcento`/`Fondo`/`Tarjetas`, variables CSS en `document.documentElement`)
+  con estos valores fijos en vez de los que escribiría el gym — así el contraste del texto se
+  recalcula solo (`colorTextoContraste`, ya existía) exactamente igual que con un color
+  personalizado de verdad, sin tener que reinventar esa lógica.
+- **Barra de pestañas tipo vidrio** (item 11): `backdrop-filter:blur(20px) saturate(180%)` +
+  `-webkit-backdrop-filter` sobre un fondo semitransparente (`color-mix(in srgb, var(--surface)
+  72%, transparent)`), envuelto en `@supports` — el fondo SÓLIDO de siempre queda como base y
+  nunca se quita, así que un navegador sin `backdrop-filter` (o sin `color-mix`) se queda viendo
+  la barra sólida de antes, nunca rota.
+- **Gráficas premium** (item 12): línea suave (`tension:0.35`), relleno con degradado vertical
+  del acento a transparente (`_portalGradienteAcento`, un `CanvasGradient` de verdad — Chart.js
+  no acepta un string como relleno degradado), sin cuadrícula vertical, cuadrícula horizontal muy
+  tenue, puntos ocultos salvo el último (resaltado, más grande) y tooltip con el estilo del
+  portal (fondo de tarjeta, esquinas redondeadas, número en Bebas Neue). Como
+  `_chartConfigProgreso`/`_opcionesChartProgreso` son COMPARTIDAS con el perfil del staff
+  (`chartProgresoPerfil`), se escribieron aparte `_portalChartConfigLinea`/`_portalOpcionesChart`/
+  `_portalChartConfigProgreso` — exclusivas del portal — y se usan en las 3 gráficas
+  (progreso por ejercicio, fuerza por músculo, peso corporal). La de peso corporal era azul fijo
+  antes; ahora usa el mismo degradado de acento que las otras dos, consistente con el resto del
+  portal premium (cambio de color intencional de esta fase).
+- **Encabezado** (item 13): logo más grande en el portal que en login/nav
+  (`.portal-header .login-logo-img`/`.login-logo`, escapado para no afectar esas otras
+  pantallas) y saludo según la hora LOCAL del dispositivo ("Buenos días/Buenas tardes/Buenas
+  noches, Nombre") en vez de "Hola, Nombre (#número)". El número de miembro pasa, chico, a la
+  pestaña Perfil (debajo de "Mi Perfil Físico") — ya no hace falta verlo en todas las pestañas.
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores.
+- Suite nueva `test_portal_premium_fase3.mjs` (viewport de celular) — **12/12**: sin
+  Personalización, `--bg`/`--surface`/`--border`/`--muted`/`--accent` quedan en los valores del
+  tema oscuro y el texto sobre el acento se calcula oscuro (buen contraste); CON Personalización
+  propia, se respeta tal cual (no entra el tema oscuro); la barra de pestañas siempre tiene un
+  fondo (el color-mix semitransparente se confirmó aplicado, con alpha ~0.72); el saludo cambia
+  según la hora (mañana) sin el número de miembro, que sí aparece chico en Perfil. Cero errores
+  de consola.
+- Las 3 suites de las fases/arreglos anteriores (`test_portal_usabilidad.mjs` 54/54,
+  `test_portal_ios_zoom.mjs` 20/20, `test_portal_premium_fase2.mjs` 13/13) — sin regresiones.
+  **99/99 en total** entre las 4 suites del portal.
+- Capturas en viewport de celular (390×844): tema oscuro por default (Entrenar, Registrar serie,
+  Progreso con el trofeo retroactivo de la Fase 2 ya visible sobre fondo oscuro) y un gym con
+  Personalización propia clara (naranja) — confirmado que NO entra el tema oscuro ahí.
+- `?staff=1`/`?sugerencia=1` no se tocaron en esta fase.
+- `firestore.rules` no se tocó — ningún campo ni colección nueva.
+
+
 ## 2026-11-02 — Portal premium, Fase 2: movimiento y microinteracciones
 
 **Qué se hizo** (continúa la Fase 1 del mismo pedido — portal del cliente, `?gym=...`, "se vea

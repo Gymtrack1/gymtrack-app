@@ -88,6 +88,11 @@
   .portal-box{max-width:480px;margin:0 auto;}
   .portal-header{text-align:center;margin-bottom:20px;}
   .portal-header .login-logo{margin-bottom:2px;}
+  /* Logo más protagonista en el portal que en login/nav (Fase 3, item 13) — escapado a
+     ".portal-header" para no cambiar el tamaño del logo en esas otras pantallas (comparten la
+     misma clase .login-logo-img/.login-logo, ver aplicarLogo). */
+  .portal-header .login-logo-img{max-height:88px;max-width:260px;}
+  .portal-header .login-logo{font-size:52px;}
   .portal-hello{font-size:14px;color:var(--muted);text-align:center;margin-bottom:24px;}
   /* BARRA DE PESTAÑAS DEL PORTAL (Mejoras de usabilidad, Fase 2, item 11) — solo se activa desde
      JS (renderPortalHome agrega .portal-screen-tabs a #portal-screen), nunca desde el Modo
@@ -96,6 +101,14 @@
      indicator de iPhone. */
   .portal-screen-tabs{padding-bottom:86px!important;}
   .portal-tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--surface);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);z-index:150;}
+  /* BARRA DE PESTAÑAS TIPO VIDRIO (Portal premium, Fase 3, item 11): fondo semitransparente +
+     blur, con la barra SÓLIDA de arriba como respaldo (@supports la mejora, nunca la reemplaza
+     de entrada) — en un navegador sin backdrop-filter la regla de abajo simplemente no aplica y
+     se queda con el fondo sólido, que siempre funciona igual de bien. -webkit-backdrop-filter
+     es obligatorio para Safari/iPhone (donde vive este portal la mayoría de las veces). */
+  @supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){
+    .portal-tabbar{background:color-mix(in srgb,var(--surface) 72%,transparent);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);}
+  }
   .portal-tab-btn{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px;background:none;border:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;cursor:pointer;padding:6px 0;}
   /* Pestaña activa: ícono y texto en var(--accent) (Portal premium, Fase 1, item 1) + una barrita
      arriba del ícono (.portal-tab-indicador) — oculta por default, visible solo en .activo. */
@@ -6993,6 +7006,21 @@ async function portalGymSuspendido(){
   }catch(e){return false;}
 }
 
+// MODO OSCURO POR DEFAULT (Portal premium, Fase 3, item 10): si el gym NO configuró NINGÚN
+// color propio, el portal ya no usa el beige/blanco de siempre — usa este tema oscuro en su
+// lugar. Reutiliza los mismos setters compartidos con el panel de staff
+// (aplicarColorAcento/Fondo/Tarjetas, variables CSS en document.documentElement) con valores
+// fijos en vez de los que escribiría el gym — así el contraste del texto se recalcula solo
+// (colorTextoContraste, ya existente en cada setter) exactamente igual que con un color
+// personalizado de verdad. --border y --muted no tienen una función "aplicarX" propia (el panel
+// de staff nunca deja personalizarlas), así que se escriben directo aquí.
+function _portalAplicarTemaOscuroDefault(){
+  aplicarColorFondo('#0A0A0A');
+  aplicarColorTarjetas('#161616');
+  aplicarColorAcento('#C6E600');
+  document.documentElement.style.setProperty('--border','#262626');
+  document.documentElement.style.setProperty('--muted','#8A8A82');
+}
 // Aplica la personalización visual del gimnasio (colorAcento/colorFondo/colorTarjetas/logoUrl)
 // al portal — lee usuarios/{gym}/config/personalizacion (espejo público, ver
 // sincronizarPersonalizacionPublica) y reutiliza EXACTAMENTE las mismas funciones que ya pinta
@@ -7000,18 +7028,26 @@ async function portalGymSuspendido(){
 // aplicarPersonalizacion()/guardarBrandingCache() — esas existen para la pantalla de login del
 // panel de staff, y usarlas aquí sobreescribiría el cache local de branding de esa pantalla si
 // alguien escanea un QR en el MISMO dispositivo que su staff a veces usa (ej. una tablet
-// compartida en recepción). Si el gimnasio nunca configuró nada, el doc no existe y el portal
-// se ve exactamente igual que siempre (verde/fondo por defecto) — cero cambio visual.
+// compartida en recepción). Si el gimnasio SÍ personalizó al menos un color, se respeta tal
+// cual (cero cambio de comportamiento para esos gyms) — el tema oscuro de arriba solo entra
+// cuando no hay NINGUNO de los tres.
 async function cargarPersonalizacionPortal(){
   try{
     const snap=await getDoc(gymDoc(window._portalGym,'config','personalizacion'));
-    if(!snap.exists())return;
-    const d=snap.data();
-    if(d.colorAcento)aplicarColorAcento(d.colorAcento);
-    if(d.colorFondo)aplicarColorFondo(d.colorFondo);
-    if(d.colorTarjetas)aplicarColorTarjetas(d.colorTarjetas);
-    if(d.logoUrl)aplicarLogo(d.logoUrl);
-  }catch(e){/* sin personalización o falló la lectura: el portal se ve default, no se rompe nada */}
+    const d=snap.exists()?snap.data():null;
+    const tienePersonalizacion=d&&(d.colorAcento||d.colorFondo||d.colorTarjetas);
+    if(!tienePersonalizacion)_portalAplicarTemaOscuroDefault();
+    if(d){
+      if(d.colorAcento)aplicarColorAcento(d.colorAcento);
+      if(d.colorFondo)aplicarColorFondo(d.colorFondo);
+      if(d.colorTarjetas)aplicarColorTarjetas(d.colorTarjetas);
+      if(d.logoUrl)aplicarLogo(d.logoUrl);
+    }
+  }catch(e){
+    // Sin conexión o falló la lectura: tema oscuro igual (es el default ahora, no el
+    // verde/blanco de antes) — no se rompe nada, solo no se sabe si el gym personalizó algo.
+    _portalAplicarTemaOscuroDefault();
+  }
 }
 
 // prellenado (opcional): {numero,nombre} para dejar los campos ya escritos — se usa cuando el
@@ -7247,10 +7283,19 @@ function iconoPortal(nombre,tamano){
   return`<svg xmlns="http://www.w3.org/2000/svg" width="${t}" height="${t}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex-shrink:0">${cuerpo}</svg>`;
 }
 const PORTAL_TABS=[{id:'entrenar',icon:'pesa',label:'Entrenar'},{id:'progreso',icon:'grafica',label:'Progreso'},{id:'meta',icon:'meta',label:'Mi meta'},{id:'perfil',icon:'usuario',label:'Perfil'}];
+// Saludo según la hora LOCAL del dispositivo (Portal premium, Fase 3, item 13) — reemplaza
+// "Hola, Nombre (#número)" de siempre. El número de miembro pasa en pequeño a la pestaña Perfil
+// (ver renderPortalPerfilFisicoSeccion) — ya no hace falta mostrarlo arriba en TODAS las
+// pestañas, es un dato de la cuenta, no algo que el cliente necesite ver a cada rato.
+function _portalSaludoHtml(){
+  const hora=new Date().getHours();
+  const saludo=hora<12?'Buenos días':hora<19?'Buenas tardes':'Buenas noches';
+  return`${saludo}, ${escAttr(portalMiembro.nombre)}`;
+}
 function renderPortalHome(){
   const el=document.getElementById('portal-content');
   document.getElementById('portal-screen').classList.add('portal-screen-tabs');
-  let html=`<div class="portal-hello" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
+  let html=`<div class="portal-hello" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">${_portalSaludoHtml()}</div>`;
   // .portal-tab-contenido anima su propia entrada (fade + 8px hacia arriba, ~200ms, Portal
   // premium Fase 2 item 4) — es un @keyframes, no una transition, porque dispara solo con
   // insertar el elemento en el DOM (innerHTML lo reemplaza entero cada vez, no hay un estado
@@ -7828,6 +7873,73 @@ function _refrescarPortalProgresoResultados(){
 function portalBuscarProgreso(texto){portalProgresoBusqueda=texto;_refrescarPortalProgresoResultados();}
 function portalCambiarProgresoEjercicioSel(id){portalProgresoEjercicioSel=id;portalFiltroTipo='';_refrescarPortalProgresoResultados();}
 function portalCambiarFiltroTipo(t){portalFiltroTipo=t;_refrescarPortalProgresoResultados();}
+// GRÁFICAS PREMIUM (Portal premium, Fase 3, item 12): línea suave (tension 0.35), relleno con
+// degradado vertical del acento a transparente, sin cuadrícula vertical, cuadrícula horizontal
+// muy tenue, puntos ocultos salvo el último (más grande, resaltado) y tooltip con el estilo del
+// portal (fondo de tarjeta, esquinas redondeadas, número en Bebas Neue). _chartConfigProgreso/
+// _opcionesChartProgreso son COMPARTIDAS con el perfil del staff (chartProgresoPerfil) — por eso
+// se escriben estas aparte, exclusivas del portal, en vez de tocar las compartidas. Los colores
+// se leen de las variables CSS (nunca fijos) para que respeten tanto una Personalización
+// propia del gym como el tema oscuro por default (item 10).
+function _portalGradienteAcento(ctx,altura){
+  const colorAcento=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#C6E600').trim();
+  const{r,g,b}=hexToRgb(colorAcento);
+  const grad=ctx.createLinearGradient(0,0,0,altura);
+  grad.addColorStop(0,`rgba(${r},${g},${b},0.35)`);
+  grad.addColorStop(1,`rgba(${r},${g},${b},0)`);
+  return grad;
+}
+function _portalOpcionesChart(){
+  const leer=v=>(getComputedStyle(document.documentElement).getPropertyValue(v)||'').trim();
+  const colorBorde=leer('--border')||'#E3E1D6',colorMuted=leer('--muted')||'#85847A';
+  const colorSurface=leer('--surface')||'#FFFFFF',colorTextoSurface=leer('--text-surface')||'#16160F';
+  return{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{backgroundColor:colorSurface,titleColor:colorMuted,bodyColor:colorTextoSurface,borderColor:colorBorde,borderWidth:1,cornerRadius:12,padding:10,displayColors:false,titleFont:{family:"'DM Sans',sans-serif",size:11},bodyFont:{family:"'Bebas Neue',sans-serif",size:18}},
+    },
+    scales:{
+      y:{beginAtZero:false,grid:{color:colorBorde},border:{display:false},ticks:{font:{size:9},color:colorMuted}},
+      x:{grid:{display:false},border:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9},color:colorMuted}},
+    },
+  };
+}
+// Radio de cada punto de la línea: 0 (invisible) salvo el último, resaltado — así la mirada va
+// directo al valor más reciente, que es casi siempre el único que de verdad importa.
+function _portalRadiosPuntos(cantidad){
+  return Array.from({length:cantidad},(_,i)=>i===cantidad-1?5:0);
+}
+// Constructor único para las 3 gráficas de línea del portal (progreso por ejercicio, fuerza por
+// músculo, peso corporal) — backgroundColor es una función (no un color fijo) porque Chart.js
+// solo sabe el alto real del área de dibujo DESPUÉS del primer layout; con el alto del canvas a
+// secas el degradado quedaría cortado o mal proporcionado.
+function _portalChartConfigLinea(labels,datos,etiqueta){
+  const colorAcento=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#C6E600').trim();
+  const colorSurface=(getComputedStyle(document.documentElement).getPropertyValue('--surface')||'#FFFFFF').trim();
+  return{
+    type:'line',
+    data:{labels,datasets:[{
+      label:etiqueta,data:datos,borderColor:colorAcento,
+      backgroundColor:(ctx)=>{
+        const area=ctx.chart.chartArea;
+        return area?_portalGradienteAcento(ctx.chart.ctx,area.bottom):'transparent';
+      },
+      tension:0.35,fill:true,
+      pointRadius:_portalRadiosPuntos(datos.length),pointHoverRadius:6,
+      pointBackgroundColor:colorAcento,pointBorderColor:colorSurface,pointBorderWidth:2,
+    }]},
+    options:_portalOpcionesChart(),
+  };
+}
+// Igual que _chartConfigProgreso (compartida con el perfil del staff) pero construida con
+// _portalChartConfigLinea — exclusiva del portal.
+function _portalChartConfigProgreso(asc,esCardio){
+  const labels=asc.map(r=>fmtDate(r.fecha));
+  if(esCardio)return _portalChartConfigLinea(labels,asc.map(r=>r.distancia),'Distancia (km)');
+  const unidadChart=asc.length?(asc[asc.length-1].unidadOriginal||'kg'):'kg';
+  return _portalChartConfigLinea(labels,asc.map(r=>unidadChart==='lb'?kgALb(r.peso):r.peso),`Peso (${unidadChart})`);
+}
 function dibujarChartPortalProgreso(){
   const canvas=document.getElementById('chart-portal-progreso');
   if(!canvas)return;
@@ -7835,7 +7947,7 @@ function dibujarChartPortalProgreso(){
   if(chartPortalProgreso){chartPortalProgreso.destroy();chartPortalProgreso=null;}
   const esCardio=_esCardioEjercicio(portalProgresoEjercicioSel);
   const datos=portalRegistros.filter(r=>r.ejercicioId===portalProgresoEjercicioSel&&(esCardio||!portalFiltroTipo||r.tipo===portalFiltroTipo)).sort((a,b)=>a.fecha-b.fecha);
-  chartPortalProgreso=new Chart(canvas,_chartConfigProgreso(datos,esCardio));
+  chartPortalProgreso=new Chart(canvas,_portalChartConfigProgreso(datos,esCardio));
 }
 
 // FUERZA POR MÚSCULO (petición del dueño, ver CHANGELOG.md): junto a "Mi progreso" (que muestra
@@ -7980,7 +8092,7 @@ function portalCambiarFuerzaMusculoSel(musculo){portalFuerzaMusculoSel=musculo;_
 // un solo número comparable entre puntos (mismo motivo por el que el radar anterior también
 // graficaba siempre en kg).
 function _chartConfigFuerza(asc){
-  return{type:'line',data:{labels:asc.map(r=>fmtDate(r.fecha)),datasets:[{label:'Fuerza máxima estimada (kg)',data:asc.map(r=>Math.round(estimar1RM(r.peso,r.repeticiones)*10)/10),borderColor:'#C6E600',backgroundColor:'rgba(198,230,0,0.15)',tension:0.2,pointRadius:3,fill:true}]},options:_opcionesChartProgreso()};
+  return _portalChartConfigLinea(asc.map(r=>fmtDate(r.fecha)),asc.map(r=>Math.round(estimar1RM(r.peso,r.repeticiones)*10)/10),'Fuerza máxima estimada (kg)');
 }
 function dibujarChartPortalFuerza(){
   const canvas=document.getElementById('chart-portal-fuerza');
@@ -8023,11 +8135,11 @@ function dibujarChartPortalPeso(){
   if(chartPortalPeso){chartPortalPeso.destroy();chartPortalPeso=null;}
   const datos=[...portalPesos].sort((a,b)=>a.fecha-b.fecha);
   const convertir=kg=>portalUnidadPeso==='lb'?kgALb(kg):kg;
-  chartPortalPeso=new Chart(canvas,{
-    type:'line',
-    data:{labels:datos.map(p=>fmtDate(p.fecha)),datasets:[{label:`Peso (${portalUnidadPeso})`,data:datos.map(p=>convertir(p.peso)),borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.12)',tension:0.2,pointRadius:3,fill:true}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false},x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:6,font:{size:9}}}}}
-  });
+  // Antes esta gráfica era azul fijo (distinta a las de fuerza, en acento) — con el tema
+  // oscuro por default y la Personalización del gym (item 10), un azul fijo ya no combinaba
+  // necesariamente con el resto; ahora usa el mismo degradado de acento que las otras dos
+  // (Fase 3, item 12), consistente con el resto del portal.
+  chartPortalPeso=new Chart(canvas,_portalChartConfigLinea(datos.map(p=>fmtDate(p.fecha)),datos.map(p=>convertir(p.peso)),`Peso (${portalUnidadPeso})`));
 }
 
 // PESTAÑA "MI META" (Parte 6, Fase 2 item 11, ver CHANGELOG.md): mismo formulario de siempre
@@ -8188,6 +8300,7 @@ function renderPortalPerfilFisicoSeccion(){
   const historial=[...portalPesos].sort((a,b)=>b.fecha-a.fecha);
   return`<div class="ec-card" style="margin-bottom:16px">
     <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('usuario',18)} Mi Perfil Físico</h3>
+    <div style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:14px">Miembro #${fmtNum(portalMiembro.numero||0)}</div>
     <div id="portal-perfil-error" class="login-error"></div>
     <div class="form-row">
       <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="portal-fecha-nacimiento" value="${fmtDateInputVal(portalMiembro.fechaNacimiento)}"></div>
