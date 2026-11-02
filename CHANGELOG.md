@@ -4,6 +4,67 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-11-02 — Portal premium, Fase 2: movimiento y microinteracciones
+
+**Qué se hizo** (continúa la Fase 1 del mismo pedido — portal del cliente, `?gym=...`, "se vea
+premium"). Todo lo nuevo anima solo `transform`/`opacity` (nunca `left`/`width`/
+`background-position`), sin ningún `transition:all`, y se apaga completo con
+`prefers-reduced-motion: reduce`.
+
+- **Transición entre pestañas** (item 4): el contenido nuevo entra con fade + 8px hacia arriba,
+  ~200ms (`.portal-tab-contenido`, `@keyframes portalTabEntrada`) — un `@keyframes`, no una
+  `transition`, porque dispara solo con insertar el elemento (cada cambio de pestaña reemplaza el
+  HTML entero, no hay un "antes" del que partir). Las gráficas se siguen dibujando después de
+  mostrar la pestaña (ya era así desde la Fase 2 de usabilidad).
+- **Botones** (item 5): `transform:scale(0.97)` de 100ms en `:active`, escapado a
+  `#portal-screen .btn` para no tocar el `.btn` del resto de la app.
+- **Palomita al guardar** (item 6, `_portalAnimarCheckGuardado`): el botón "Guardar serie"
+  reemplaza su texto por un ícono de check cuyo trazo se dibuja con `stroke-dashoffset`
+  (~350ms), se queda un momento y vuelve al texto a los ~800ms. `navigator.vibrate(15)` con
+  try/catch (en iPhone/Safari hoy no existe esa API).
+- **Nuevo récord** (item 7): al guardar una serie de fuerza, se compara su fuerza máxima
+  estimada (`estimar1RM`) contra el MEJOR registro anterior de ese mismo ejercicio en
+  `portalRegistros` (nunca contra cardio, nunca la primera vez que se hace el ejercicio — nada
+  que comparar). Si lo supera: tarjeta flotante "🏆 ¡Nuevo récord en [ejercicio]!" con el número
+  anterior → el nuevo (contando hacia arriba, ver item 8), confeti hecho a mano en un
+  `<canvas>` (~1.5s, partículas en `var(--accent)` y blanco, sin librerías) y vibración
+  `[20,50,20]` — un patrón distinto al check normal, para que se sienta diferente. Como
+  **no se guarda ningún campo nuevo en Firestore**, "fue récord" se recalcula siempre a partir
+  de `portalRegistros` (`_portalEsRecord`/`_portalMejor1RMAntesDe`) — esto también permite marcar
+  RETROACTIVAMENTE con un trofeo chico cualquier registro que ya era un récord en su momento, no
+  solo el que se acaba de guardar, tanto en "Hoy en este ejercicio" como en "Mi progreso"/"Fuerza
+  por músculo".
+- **Count-up** (item 8, `_portalContarHasta`, reutilizable): anima un número de un valor inicial
+  al final en ~600ms con `requestAnimationFrame` y una curva `easeOutQuad`. Se usa ya en el
+  número de la tarjeta de récord (del valor anterior al nuevo — es, con mucho, el momento donde
+  más se nota). `resumenSemanal`/`racha` (Fase 4, todavía no existen) lo reusarán tal cual
+  cuando se construyan — por eso la utilidad ya soporta una `clave` para no repetir el conteo en
+  cada re-render dentro de la misma visita, pensando en esos casos.
+- **Skeleton loading** (item 9): `renderPortalEntrando()` (el "⏳ Entrando..." de antes) ahora
+  pinta bloques grises con la forma de lo que va a aparecer (`_portalSkeletonBloque`,
+  `.portal-skeleton`) con un brillo que los recorre — el brillo es un `::after` con
+  `transform:translateX` (nunca `background-position`, para que siga siendo solo
+  transform/opacity).
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores.
+- Suite nueva `test_portal_premium_fase2.mjs` (viewport de celular, `reducedMotion` de
+  Playwright) — **13/13**: la pestaña nueva trae `.portal-tab-contenido`/`portalTabEntrada`;
+  `prefers-reduced-motion: reduce` la quita; guardar una serie muestra la palomita y la quita
+  sola, con `vibrate(15)`; una serie que rompe el 1RM anterior dispara la tarjeta de récord +
+  confeti + `vibrate([20,50,20])` (distinto del check); la primera vez que se hace un ejercicio
+  NUNCA dispara la celebración; un registro que fue récord se marca con trofeo tanto en "Hoy"
+  como en "Mi progreso" (retroactivo); `renderPortalEntrando()` pinta skeletons y ya no el emoji
+  ⏳. Cero errores de consola.
+- Suites de las fases/arreglos anteriores (`test_portal_usabilidad.mjs` 54/54,
+  `test_portal_ios_zoom.mjs` 20/20) — sin regresiones.
+- Capturas en viewport de celular (390×844): skeleton de carga, tarjeta de nuevo récord con
+  confeti y el count-up a medio avanzar, trofeo retroactivo en "Hoy en este ejercicio".
+- `?staff=1`/`?sugerencia=1` no se tocaron en esta fase (ningún cambio en esta entrada toca
+  código fuera de `portal*`/`_portal*`).
+- `firestore.rules` no se tocó — ningún campo ni colección nueva, "récord" es 100% calculado.
+
+
 ## 2026-11-02 — Portal premium, Fase 1: íconos de línea y números protagonistas
 
 **Pedido:** que el portal del cliente (el del QR, `?gym=...`) se vea "premium", como Whoop/Strava/

@@ -118,6 +118,41 @@
      debe "temblar" de ancho en cada cuadro. */
   .portal-num{font-family:'Bebas Neue',sans-serif;font-variant-numeric:tabular-nums;letter-spacing:0.5px;}
   .portal-empty-icon{display:flex;justify-content:center;margin-bottom:10px;color:var(--muted);}
+  /* MOVIMIENTO Y MICROINTERACCIONES (Portal premium, Fase 2). Solo transform/opacity (nunca
+     left/top/width/etc.) para que corra bien en celulares baratos — son las dos únicas
+     propiedades que el navegador puede animar sin recalcular el layout de toda la página.
+     Ningún "transition:all" en nada de esto, y todo se apaga con prefers-reduced-motion. */
+  @keyframes portalTabEntrada{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  .portal-tab-contenido{animation:portalTabEntrada 200ms ease-out;}
+  /* item 5: al presionar cualquier botón del portal, un achique sutil (100ms) — nada más que
+     transform, así que es prácticamente gratis para el navegador. */
+  #portal-screen .btn:active{transform:scale(0.97);transition:transform 100ms ease-out;}
+  /* item 6: palomita animada en el botón Guardar — el trazo se "dibuja" con stroke-dashoffset
+     (24 cubre de sobra el largo del trazo real, ~22.6). */
+  .portal-check-guardado{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-accent);}
+  .portal-check-trazo{stroke-dasharray:24;stroke-dashoffset:24;animation:portalCheckDibujar 350ms ease-out forwards;}
+  @keyframes portalCheckDibujar{to{stroke-dashoffset:0;}}
+  /* item 7: tarjeta flotante de "nuevo récord" — pointer-events:none para no bloquear nada
+     mientras se muestra (es informativa, no interactiva), encima de todo (z-index 300, más que
+     el 200 de los modales) porque es una celebración momentánea, no competir por atención. */
+  .portal-record-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:300;pointer-events:none;padding:24px;animation:portalRecordFade 3200ms ease-out forwards;}
+  .portal-record-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px 28px;text-align:center;box-shadow:0 1px 2px var(--shadow),0 8px 24px var(--shadow-lg);animation:portalRecordPop 300ms ease-out;color:var(--text-surface);}
+  .portal-record-confeti{position:absolute;top:-30px;left:50%;transform:translateX(-50%);pointer-events:none;}
+  @keyframes portalRecordPop{from{transform:scale(0.9);opacity:0;}to{transform:scale(1);opacity:1;}}
+  @keyframes portalRecordFade{0%,80%{opacity:1;}100%{opacity:0;}}
+  /* item 9: el brillo del skeleton es un ::after que se desliza con transform:translateX — NO
+     background-position (repintaría más seguido), sigue siendo solo transform/opacity. */
+  .portal-skeleton{position:relative;overflow:hidden;border-radius:10px;background:var(--surface2);}
+  .portal-skeleton::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--border),transparent);transform:translateX(-100%);animation:portalSkeletonBrillo 1.4s ease-in-out infinite;}
+  @keyframes portalSkeletonBrillo{100%{transform:translateX(100%);}}
+  @media (prefers-reduced-motion: reduce){
+    .portal-tab-contenido{animation:none;}
+    #portal-screen .btn:active{transform:none;transition:none;}
+    .portal-check-trazo{animation:none;stroke-dashoffset:0;}
+    .portal-record-overlay{animation:none;}
+    .portal-record-card{animation:none;}
+    .portal-skeleton::after{animation:none;display:none;}
+  }
   /* MODO CHECK-IN (autoservicio, ver CHANGELOG.md) — pantalla completa, aparte de app-screen
      (misma familia que admin-screen/portal-screen), pensada para quedar fija en una tablet en
      recepción. Botones grandes (min 64px) para dedos, no solo para mouse.
@@ -6276,6 +6311,53 @@ function _portalAjustarCampo(id,delta,min){
 function _portalVibrar(){
   try{ if(navigator.vibrate)navigator.vibrate(10); }catch(e){}
 }
+// PALOMITA ANIMADA AL GUARDAR (Portal premium, Fase 2, item 6): reemplaza el texto del botón por
+// un ícono de check cuyo trazo se "dibuja" con stroke-dashoffset (ver CSS, .portal-check-trazo)
+// durante ~350ms, se queda visible un momento y a los ~800ms en total vuelve a mostrar el texto
+// normal. navigator.vibrate(15) aparte — en iPhone/Safari hoy no existe esa API, por eso el
+// try/catch (sin eso, tronaría ahí en vez de simplemente no vibrar).
+function _portalAnimarCheckGuardado(btnId,textoId){
+  const btn=document.getElementById(btnId);
+  const texto=document.getElementById(textoId);
+  if(!btn||!texto)return;
+  try{ if(navigator.vibrate)navigator.vibrate(15); }catch(e){}
+  texto.style.visibility='hidden';
+  const check=document.createElement('span');
+  check.className='portal-check-guardado';
+  check.innerHTML=`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" class="portal-check-trazo"/></svg>`;
+  btn.appendChild(check);
+  setTimeout(()=>{
+    check.remove();
+    texto.style.visibility='';
+  },800);
+}
+// CONTAR HACIA ARRIBA (Portal premium, Fase 2, item 8): anima un número de `desde` (default 0) a
+// `valorFinal` en ~600ms con requestAnimationFrame, con una curva que empieza rápido y frena
+// suave (easeOutQuad) — se ve más "vivo" que una interpolación lineal. `clave` (opcional) evita
+// que se repita en cada re-render dentro de la misma visita: una vez animado con esa clave, las
+// siguientes veces el número aparece directo en su valor final, sin volver a contar.
+let portalNumerosYaAnimados=new Set();
+function _portalContarHasta(el,valorFinal,opts){
+  if(!el)return;
+  opts=opts||{};
+  const formatear=opts.formatear||(v=>String(Math.round(v)));
+  const yaVisto=opts.clave&&portalNumerosYaAnimados.has(opts.clave);
+  const sinMovimiento=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(yaVisto||sinMovimiento){
+    el.textContent=formatear(valorFinal);
+    return;
+  }
+  if(opts.clave)portalNumerosYaAnimados.add(opts.clave);
+  const desde=opts.desde||0;
+  const duracion=opts.duracion||600;
+  const inicio=Date.now();
+  (function paso(){
+    const t=Math.min(1,(Date.now()-inicio)/duracion);
+    const avance=1-Math.pow(1-t,2);
+    el.textContent=formatear(desde+(valorFinal-desde)*avance);
+    if(t<1)requestAnimationFrame(paso);
+  })();
+}
 // "MANTENER PRESIONADO" DE LOS CONTADORES −/+ (ver CHANGELOG.md, arreglo de zoom en iPhone): un
 // solo juego de variables basta — en este formulario solo hay un dedo tocando un botón a la vez.
 // Cambio inmediato al presionar, luego empieza a repetir a los ~400ms (cada ~120ms) y acelera a
@@ -6962,10 +7044,24 @@ function renderPortalIdentify(prellenado){
 // Se muestra mientras se intenta la entrada automática con lo guardado (ver CHANGELOG.md,
 // 2026-10-07) — antes se pintaba el formulario vacío de una vez y el cliente nunca se daba
 // cuenta de que un instante después sí lo reconocía; ahora ve que algo está pasando.
+// SKELETON LOADING (Portal premium, Fase 2, item 9): bloques grises con la misma forma del
+// contenido que va a aparecer, con un brillo que los recorre — reemplaza el "⏳ Entrando..." de
+// antes, que no daba ninguna pista de qué estaba cargando. El brillo es un ::after con
+// transform:translateX (ver CSS, .portal-skeleton) — nunca background-position/left/width, para
+// que la animación sea solo transform/opacity (más barata en celulares baratos).
+function _portalSkeletonBloque(alto,ancho){
+  return`<div class="portal-skeleton" style="height:${alto}px;width:${ancho||'100%'}"></div>`;
+}
 function renderPortalEntrando(){
   const el=document.getElementById('portal-content');
   if(!el)return;
-  el.innerHTML=`<div class="ec-card"><div class="empty"><div class="empty-icon">⏳</div><div>Entrando...</div></div></div>`;
+  el.innerHTML=`<div class="ec-card">
+    ${_portalSkeletonBloque(20,'140px')}
+    <div style="margin-top:16px">${_portalSkeletonBloque(44)}</div>
+    <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
+      ${_portalSkeletonBloque(48)}${_portalSkeletonBloque(48)}${_portalSkeletonBloque(48)}
+    </div>
+  </div>`;
 }
 
 // Clave de localStorage/cookie para "recordarme en este celular" (ver CHANGELOG.md, auditoría
@@ -7155,7 +7251,11 @@ function renderPortalHome(){
   const el=document.getElementById('portal-content');
   document.getElementById('portal-screen').classList.add('portal-screen-tabs');
   let html=`<div class="portal-hello" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">Hola, ${escAttr(portalMiembro.nombre)} (#${fmtNum(portalMiembro.numero||0)})</div>`;
-  html+=_portalTabContenidoHtml();
+  // .portal-tab-contenido anima su propia entrada (fade + 8px hacia arriba, ~200ms, Portal
+  // premium Fase 2 item 4) — es un @keyframes, no una transition, porque dispara solo con
+  // insertar el elemento en el DOM (innerHTML lo reemplaza entero cada vez, no hay un estado
+  // "anterior" del que partir). Respeta prefers-reduced-motion (ver CSS).
+  html+=`<div class="portal-tab-contenido">${_portalTabContenidoHtml()}</div>`;
   html+=_portalTabBarHtml();
   el.innerHTML=html;
   _portalDespuesDeRenderTab();
@@ -7330,16 +7430,93 @@ function _portalPrefillSerie(ejercicio){
 function _portalRegistrosHoyDeEjercicio(ejercicioId){
   return portalRegistros.filter(r=>r.ejercicioId===ejercicioId&&new Date(r.fecha).toDateString()===new Date().toDateString()).sort((a,b)=>b.fecha-a.fecha);
 }
+// NUEVO RÉCORD (Portal premium, Fase 2, item 7): se calcula siempre a partir de portalRegistros,
+// nunca se guarda un campo nuevo en Firestore. Mejor 1RM estimado entre los registros de
+// `ejercicioId` con fecha ANTERIOR a `antesDe` — null si no hay ninguno (ejercicio nuevo).
+function _portalMejor1RMAntesDe(ejercicioId,antesDe){
+  const anteriores=portalRegistros.filter(x=>x.ejercicioId===ejercicioId&&x.fecha<antesDe&&typeof x.peso==='number');
+  return anteriores.length?Math.max(...anteriores.map(x=>estimar1RM(x.peso,x.repeticiones))):null;
+}
+// ¿Este registro FUE un récord cuando se hizo? (para marcarlo con trofeo en las listas,
+// retroactivo — no solo el que se acaba de guardar). No es récord si es el primero del
+// ejercicio (no hay nada contra qué compararlo).
+function _portalEsRecord(r){
+  if(!r||typeof r.peso!=='number')return false;
+  const mejorAnterior=_portalMejor1RMAntesDe(r.ejercicioId,r.fecha);
+  return mejorAnterior!==null&&estimar1RM(r.peso,r.repeticiones)>mejorAnterior;
+}
+// Confeti discreto a mano, sin librerías (Fase 2, item 7): partículas en var(--accent) y blanco
+// que caen con gravedad y una leve rotación durante ~1.5s. Apagado si el sistema pide menos
+// movimiento (igual se ve la tarjeta de récord, solo sin el confeti).
+function _portalDibujarConfeti(canvas){
+  if(!canvas)return;
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return;
+  const colorAcento=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#C6E600').trim();
+  const W=canvas.width,H=canvas.height;
+  const particulas=Array.from({length:36},()=>({
+    x:W/2+(Math.random()-0.5)*40,y:H*0.25,
+    vx:(Math.random()-0.5)*4,vy:-Math.random()*3-1.5,
+    tam:3+Math.random()*3,rot:Math.random()*Math.PI*2,vrot:(Math.random()-0.5)*0.3,
+    color:Math.random()<0.5?colorAcento:'#FFFFFF',
+  }));
+  const gravedad=0.12,inicio=Date.now();
+  function paso(){
+    const t=Date.now()-inicio;
+    ctx.clearRect(0,0,W,H);
+    if(t>=1500)return;
+    particulas.forEach(p=>{
+      p.vy+=gravedad;p.x+=p.vx;p.y+=p.vy;p.rot+=p.vrot;
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle=p.color;
+      ctx.fillRect(-p.tam/2,-p.tam/2,p.tam,p.tam*0.6);ctx.restore();
+    });
+    requestAnimationFrame(paso);
+  }
+  requestAnimationFrame(paso);
+}
+// Tarjeta flotante de celebración — se inyecta en document.body (no en #portal-content) para
+// sobrevivir aunque el cliente cambie de pestaña mientras se muestra, y se quita sola a los
+// ~3.2s (pointer-events:none: nunca bloquea nada mientras tanto). Vibración [20,50,20] — un
+// patrón más largo que el check normal de Guardar (item 6), para que se sienta distinto.
+function _portalCelebrarRecord(ejercicioNombre,valorAnterior,valorNuevo,unidad){
+  try{if(navigator.vibrate)navigator.vibrate([20,50,20]);}catch(e){}
+  const u=unidad||'kg';
+  const antesTxt=formatearPeso(Math.round(valorAnterior*10)/10,u);
+  // El número nuevo se arma como span vacío + unidad aparte (en vez del texto completo de
+  // formatearPeso) para poder contarlo hacia arriba (item 8) — _portalContarHasta solo anima un
+  // número, necesita el nodo de texto para sí sola.
+  const numeroEnUnidad=u==='lb'?kgALb(Math.round(valorNuevo*10)/10):Math.round(valorNuevo*10)/10;
+  const numeroAntesEnUnidad=u==='lb'?kgALb(Math.round(valorAnterior*10)/10):Math.round(valorAnterior*10)/10;
+  const overlay=document.createElement('div');
+  overlay.className='portal-record-overlay';
+  overlay.innerHTML=`<div class="portal-record-card">
+    <canvas class="portal-record-confeti" width="300" height="200"></canvas>
+    <div style="font-size:30px;margin-bottom:6px">🏆</div>
+    <div style="font-weight:700;font-size:15px;margin-bottom:8px">¡Nuevo récord en ${escAttr(ejercicioNombre)}!</div>
+    <div style="font-size:13px;color:var(--muted)">${antesTxt} → <span class="portal-num" id="portal-record-numero" style="font-size:20px;color:var(--text-surface)"></span>${escAttr(u.toUpperCase())}</div>
+  </div>`;
+  document.body.appendChild(overlay);
+  _portalDibujarConfeti(overlay.querySelector('.portal-record-confeti'));
+  // Count-up (Fase 2, item 8): del valor anterior al nuevo, en ~600ms — justo donde más se
+  // siente (el momento del récord), sin necesitar las secciones de la Fase 4 (resumen semanal/
+  // racha) que todavía no existen.
+  _portalContarHasta(overlay.querySelector('#portal-record-numero'),numeroEnUnidad,{desde:numeroAntesEnUnidad,formatear:v=>Math.round(v*10)/10});
+  setTimeout(()=>overlay.remove(),3200);
+}
 // Igual que _detalleRegistroTexto (compartida con el perfil del staff — por eso NO se toca esa,
 // se escribe esta aparte) pero separando el número principal — grande, en Bebas Neue — del
 // detalle (reps/series/distancia), chico y gris debajo (Portal premium, Fase 1, item 2,
-// "números protagonistas"). Exclusiva del portal del cliente.
+// "números protagonistas"). También marca con un trofeo chico los registros que fueron récord
+// en su momento (Fase 2, item 7) — retroactivo, no solo el recién guardado. Exclusiva del
+// portal del cliente.
 function _portalDetalleGrandeHtml(r,esCardio){
   if(esCardio){
     return`<span class="portal-num" style="font-size:20px">${escAttr(r.tiempoMinutos)} MIN</span><div style="font-size:12px;color:var(--muted);margin-top:2px">${escAttr(r.distancia)} km</div>`;
   }
   const series=r.series||1;
-  return`<span class="portal-num" style="font-size:20px">${formatearPeso(r.peso,r.unidadOriginal||'kg').toUpperCase()}</span><div style="font-size:12px;color:var(--muted);margin-top:2px">× ${escAttr(r.repeticiones)} reps · ${escAttr(series)} serie${series===1?'':'s'}</div>`;
+  const trofeo=_portalEsRecord(r)?`<span style="color:var(--accent);margin-left:6px" title="Récord">${iconoPortal('trofeo',16)}</span>`:'';
+  return`<span class="portal-num" style="font-size:20px">${formatearPeso(r.peso,r.unidadOriginal||'kg').toUpperCase()}</span>${trofeo}<div style="font-size:12px;color:var(--muted);margin-top:2px">× ${escAttr(r.repeticiones)} reps · ${escAttr(series)} serie${series===1?'':'s'}</div>`;
 }
 // Igual que _tarjetaProgresoHtml (compartida con el perfil del staff y su Vista de Progreso — por
 // eso no se toca esa, se escribe esta aparte) pero con números protagonistas
@@ -7410,7 +7587,7 @@ function renderPortalRegistrarSerieSeccion(ejercicio){
     <div id="portal-ultima-vez-wrap">${_portalUltimaVezHtml(ejercicio)}</div>
     ${camposHtml}
     <div id="portal-serie-error" class="login-error"></div>
-    <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="portalGuardarSerie()">${esCardio?'Guardar registro':'Guardar serie'}</button>
+    <button class="btn btn-primary" id="portal-guardar-serie-btn" style="width:100%;margin-top:12px;position:relative" onclick="portalGuardarSerie()"><span id="portal-guardar-serie-texto">${esCardio?'Guardar registro':'Guardar serie'}</span></button>
     <div id="portal-hoy-ejercicio-wrap">${_portalHoyEjercicioHtml(ejercicio)}</div>
   </div>`;
 }
@@ -7528,15 +7705,27 @@ async function portalGuardarSerie(){
     portalUltimoReps=repeticiones;
     portalUltimasSeries=series;
   }
+  // Mejor 1RM ANTERIOR de este ejercicio (Fase 2, item 7) — se captura ANTES del addDoc/push
+  // para comparar contra el historial de verdad, nunca contra el registro que se está por
+  // guardar. null en cardio (no aplica) o si es la primera vez que se hace este ejercicio.
+  const mejorAnteriorValor=esCardio?null:_portalMejor1RMAntesDe(portalEjercicioSel,data.fecha);
   try{
     const ref=await addDoc(gymCol(window._portalGym,'registrosProgreso'),data);
     portalRegistros.push({id:ref.id,...data});
     toast(esCardio?'Registro guardado ✓':'Serie guardada ✓');
+    // Palomita animada en el botón (Fase 2, item 6) — reemplaza el texto con el trazo del check
+    // por ~800ms y vuelve solo. Vibración corta (15ms) aparte de la del toast visual.
+    _portalAnimarCheckGuardado('portal-guardar-serie-btn','portal-guardar-serie-texto');
     // NO renderPortalHome() (Fase 1, item 6): recargar toda la pantalla hace que el scroll y el
     // teclado del celular brinquen. Solo se actualizan "Última vez" y "Hoy en este ejercicio" —
     // los campos del formulario se quedan con lo que el cliente ya escribió (que ahora es también
     // lo "recordado" para la siguiente serie).
     if(info)_portalRefrescarEntrenarTrasCambio(info);
+    // Nuevo récord (Fase 2, item 7): compara contra el mejor 1RM anterior capturado arriba.
+    if(!esCardio&&mejorAnteriorValor!==null){
+      const valorNuevo=estimar1RM(data.peso,data.repeticiones);
+      if(valorNuevo>mejorAnteriorValor)_portalCelebrarRecord(info.nombre,mejorAnteriorValor,valorNuevo,data.unidadOriginal);
+    }
   }catch(e){_portalMostrarError('portal-serie-error','No se pudo guardar. Intenta de nuevo.');}
 }
 
