@@ -4,6 +4,75 @@ Registro de cambios funcionales de GymTrack (`index.html`). Cada entrada indica 
 
 Este archivo no existía antes de la entrada de 2026-08-24 — se crea a partir de ahí.
 
+## 2026-11-02 — Portal premium, Fase 4: racha, resumen semanal e instalable como app
+
+**Qué se hizo** (cierra las 4 fases obligatorias del pedido "portal premium" — la Fase 5, fondo
+animado con shaders, queda pendiente de que Luis la apruebe).
+
+- **Racha** (item 14, `_portalCalcularRacha`): semanas CONSECUTIVAS (lunes a domingo, hora
+  local) con al menos un registro en `portalRegistros`, contando hacia atrás desde la semana
+  actual. `setDate` (nunca restar milisegundos a mano) para que el cambio de horario de verano
+  no desalinee las semanas. Si la semana actual todavía no tiene nada, la racha NO se rompe
+  todavía (sigue corriendo hasta que la semana termine) — se cuenta desde la semana pasada en ese
+  caso. Arriba de la pestaña Entrenar (solo en el menú de músculos, no en los sub-pasos):
+  🔥 + "N semanas seguidas", o un mensaje motivador en vez de "0 semanas" cuando la racha está en
+  cero.
+- **Resumen de la semana** (item 15, misma semana lunes-domingo que la racha): días distintos
+  entrenados, kilos totales levantados (peso×reps×series, en la unidad que el cliente tenga
+  guardada) y récords de la semana (reusa `_portalEsRecord` de la Fase 2 — no hace falta volver a
+  calcular nada). Arriba de la pestaña Progreso; si no hay registros ESTA semana (aunque haya
+  historial viejo), un estado vacío amable con botón a Entrenar.
+- **Count-up** (item 8, de la Fase 2): la racha y el resumen semanal ya usan
+  `_portalContarHasta` — el número sube desde 0 la primera vez que aparece en la visita.
+- **Instalable como app** (item 16) — sin archivos nuevos: el manifest se arma en memoria y se
+  publica con `Blob`+`URL.createObjectURL`, inyectado como `<link rel="manifest">` SOLO cuando
+  `cargarPersonalizacionPortal()` corre en modo cliente puro (nunca en `?staff=1` ni en el buzón
+  de sugerencias, que comparten esa misma función solo para heredar colores/logo — verificado
+  explícitamente que ninguno de los dos trae el link ni las meta de iPhone). `start_url` trae el
+  `?gym=...` actual, para que abrir desde el ícono entre derecho al portal de ESE gym.
+  `theme_color`/`background_color` salen de las mismas variables CSS que ya pinta el resto del
+  portal (combinan con el tema oscuro por default de la Fase 3 o con la Personalización propia
+  del gym, lo que aplique). Ícono: el logo del gym si tiene uno, si no, uno generado en un
+  `<canvas>` con las iniciales "GT" sobre el color de acento actual. También
+  `apple-mobile-web-app-capable`/`-status-bar-style`/`-title` y un `apple-touch-icon` (mismo
+  ícono, como `href` — no hizo falta convertirlo a data URL aparte porque un logo de Storage ya
+  es una URL válida, y el canvas generado ya produce directamente una data URL). En Perfil, botón
+  "Instalar app": en Android/Chrome dispara el `prompt()` real capturado con
+  `beforeinstallprompt`; en iPhone (que no tiene ese evento) muestra un mini instructivo
+  "Compartir → Agregar a inicio"; si ya está instalada (`display-mode: standalone` o
+  `navigator.standalone` en iOS) el botón ni se muestra.
+- **Limitación conocida, por diseño del resto del sistema**: el manifest usa siempre "GymTrack"
+  como `name`/`short_name` — el nombre real de cada gym NO está en el espejo público que lee el
+  portal (`config/personalizacion` solo trae `colorAcento`/`colorFondo`/`colorTarjetas`/
+  `logoUrl`, ver `sincronizarPersonalizacionPublica`, código del panel del dueño); agregarle un
+  campo de nombre está fuera del alcance de este cambio (que solo toca `portal*`/`_portal*`). El
+  logo, cuando el gym sí tiene uno, sí sale correcto en el ícono.
+
+**Verificado:**
+- `node --check` sobre el script principal — sin errores.
+- Suite nueva `test_portal_premium_fase4.mjs` (viewport de celular, con una réplica en el propio
+  test del cálculo de "lunes de la semana" para armar fixtures sin depender de qué día sea hoy
+  cuando corre la suite) — **19/19**: racha de 3 semanas consecutivas; la semana actual sin nada
+  todavía no rompe la racha; un hueco de una semana sí la rompe (con el mensaje motivador, nunca
+  "0 semanas"); resumen semanal con los 3 números correctos (días/kilos/récords, incluida la
+  suma peso×reps×series); estado vacío cuando no hay nada ESTA semana aunque haya historial
+  viejo; el botón "Instalar app" existe por default y desaparece en modo standalone; el prompt de
+  Android se dispara de verdad al tocar el botón; el instructivo de iPhone aparece cuando no hay
+  `beforeinstallprompt`; el manifest y las meta de iPhone SOLO existen en el portal del cliente,
+  nunca en `?staff=1`. Cero errores de consola.
+- Las 4 suites de las fases/arreglos anteriores (`test_portal_usabilidad.mjs` 54/54,
+  `test_portal_ios_zoom.mjs` 20/20, `test_portal_premium_fase2.mjs` 13/13,
+  `test_portal_premium_fase3.mjs` 12/12) — sin regresiones. **118/118 en total** entre las 5
+  suites del portal.
+- Capturas en viewport de celular (390×844): la racha (🔥 3 semanas seguidas), el resumen de la
+  semana (2 días, 3300 KG, 1 récord 🏆) y la pestaña Perfil con el botón "Instalar app".
+- `?staff=1`/`?sugerencia=1`: no se tocó ninguna de sus pantallas; se verificó explícitamente
+  (suite nueva, prueba 10) que el manifest/meta tags de instalación nunca aparecen ahí, aunque
+  ambos modos SÍ siguen heredando colores/logo de `cargarPersonalizacionPortal()` como siempre.
+- `firestore.rules` no se tocó — ningún campo ni colección nueva, todo se calcula desde
+  `portalRegistros` ya cargado.
+
+
 ## 2026-11-02 — Portal premium, Fase 3: acabados visuales
 
 **Qué se hizo** (continúa la Fase 1/2 del mismo pedido — portal del cliente, `?gym=...`).

@@ -7021,6 +7021,76 @@ function _portalAplicarTemaOscuroDefault(){
   document.documentElement.style.setProperty('--border','#262626');
   document.documentElement.style.setProperty('--muted','#8A8A82');
 }
+// INSTALABLE COMO APP (Portal premium, Fase 4, item 16) — sin archivos nuevos: el manifest se
+// arma en memoria y se publica con un Blob + URL.createObjectURL, nunca como un .json aparte en
+// el repo. Solo se llama desde cargarPersonalizacionPortal() en modo cliente puro (ver ahí el
+// filtro) — por eso el <link rel="manifest"> y las meta de iPhone NUNCA existen en ?staff=1, en
+// el buzón de sugerencias, ni mucho menos en el panel del dueño/admin: esos modos nunca llaman a
+// esta función.
+//
+// name/short_name: el nombre REAL del gym no está disponible aquí — el espejo público que lee el
+// portal (config/personalizacion) solo trae colorAcento/colorFondo/colorTarjetas/logoUrl (ver
+// sincronizarPersonalizacionPublica, código del dueño — agregarle un campo de nombre está fuera
+// del alcance de este cambio). Por eso siempre se usa "GymTrack"; si el gym sí tiene logoUrl, al
+// menos el ícono del acceso directo sale con su logo real.
+function _portalIconoIniciales(){
+  const canvas=document.createElement('canvas');
+  canvas.width=512;canvas.height=512;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return null;
+  const colorAcento=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#C6E600').trim();
+  const colorTexto=(getComputedStyle(document.documentElement).getPropertyValue('--text-accent')||'#16160F').trim();
+  ctx.fillStyle=colorAcento;
+  ctx.fillRect(0,0,512,512);
+  ctx.fillStyle=colorTexto;
+  ctx.font="bold 240px 'DM Sans',sans-serif";
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillText('GT',256,276);
+  return canvas.toDataURL('image/png');
+}
+function _portalConfigurarInstalable(logoUrl){
+  try{
+    const icono=logoUrl||_portalIconoIniciales();
+    if(!icono)return; // canvas no disponible (no debería pasar en un navegador real) — sin instalable, el portal sigue funcionando normal
+    const colorFondo=(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'#FAF9F5').trim();
+    const colorAcento=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#C6E600').trim();
+    const manifest={
+      name:'GymTrack',short_name:'GymTrack',
+      start_url:location.pathname+location.search,
+      display:'standalone',
+      background_color:colorFondo,theme_color:colorAcento,
+      icons:[{src:icono,sizes:'512x512',type:'image/png'}],
+    };
+    const url=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'}));
+    let link=document.getElementById('portal-manifest-link');
+    if(!link){link=document.createElement('link');link.id='portal-manifest-link';link.rel='manifest';document.head.appendChild(link);}
+    link.href=url;
+    // iPhone: sin estas 3, "Agregar a pantalla de inicio" abre dentro de Safari normal en vez
+    // de en su propia ventana sin barras (modo standalone).
+    [['apple-mobile-web-app-capable','yes'],['apple-mobile-web-app-status-bar-style','black-translucent'],['apple-mobile-web-app-title','GymTrack']].forEach(([nombre,contenido])=>{
+      const id='portal-meta-'+nombre;
+      let meta=document.getElementById(id);
+      if(!meta){meta=document.createElement('meta');meta.id=id;meta.name=nombre;document.head.appendChild(meta);}
+      meta.content=contenido;
+    });
+    let appleIcon=document.getElementById('portal-apple-touch-icon');
+    if(!appleIcon){appleIcon=document.createElement('link');appleIcon.id='portal-apple-touch-icon';appleIcon.rel='apple-touch-icon';document.head.appendChild(appleIcon);}
+    appleIcon.href=icono;
+  }catch(e){/* si algo de esto falla, el portal sigue funcionando normal, solo sin poder instalarse */}
+}
+// Android/Chrome avisa con este evento que la página CALIFICA para instalarse (manifest válido +
+// algo de uso) — se guarda para disparar prompt() después, cuando el cliente toque "Instalar
+// app" en Perfil (nunca automático: un prompt nativo sin que el cliente lo pida se siente
+// invasivo). El filtro por window._portalGym evita capturarlo si alguien tiene abierta, en la
+// MISMA pestaña alguna vez, una sesión de staff/admin — no debería pasar nunca (son orígenes de
+// navegación distintos), pero es gratis y no hace daño.
+let portalPromptInstalacion=null;
+window.addEventListener('beforeinstallprompt',(e)=>{
+  if(!window._portalGym||window._portalStaff||window._portalSugerencia)return;
+  e.preventDefault();
+  portalPromptInstalacion=e;
+});
 // Aplica la personalización visual del gimnasio (colorAcento/colorFondo/colorTarjetas/logoUrl)
 // al portal — lee usuarios/{gym}/config/personalizacion (espejo público, ver
 // sincronizarPersonalizacionPublica) y reutiliza EXACTAMENTE las mismas funciones que ya pinta
@@ -7043,10 +7113,17 @@ async function cargarPersonalizacionPortal(){
       if(d.colorTarjetas)aplicarColorTarjetas(d.colorTarjetas);
       if(d.logoUrl)aplicarLogo(d.logoUrl);
     }
+    // Instalable como app (Fase 4, item 16) — esta función corre para los 3 modos del portal
+    // (cliente/sugerencias/staff, todos heredan colores/logo), pero el manifest/meta tags de
+    // instalación SOLO deben existir en el modo cliente — por eso el filtro aquí, no moviendo
+    // esta llamada a otro lado (necesita esperar a que la Personalización ya haya cargado, para
+    // saber si hay logoUrl).
+    if(!window._portalStaff&&!window._portalSugerencia)_portalConfigurarInstalable(d&&d.logoUrl?d.logoUrl:null);
   }catch(e){
     // Sin conexión o falló la lectura: tema oscuro igual (es el default ahora, no el
     // verde/blanco de antes) — no se rompe nada, solo no se sabe si el gym personalizó algo.
     _portalAplicarTemaOscuroDefault();
+    if(!window._portalStaff&&!window._portalSugerencia)_portalConfigurarInstalable(null);
   }
 }
 
@@ -7273,6 +7350,8 @@ const PORTAL_ICONOS={
   basura:'<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
   guardar:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 14 8"/>',
   destellos:'<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>',
+  compartir:'<path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><rect x="4" y="12" width="16" height="8" rx="2"/>',
+  descargar:'<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/>',
 };
 // `tamano` en px (default 20). Lleva `aria-hidden` porque siempre va junto a texto visible que ya
 // describe qué es — el ícono es decorativo, no el único medio de entender el botón/título.
@@ -7319,7 +7398,9 @@ function _portalDespuesDeRenderTab(){
   if(portalTabSel==='entrenar'){
     const otro=document.getElementById('portal-tipo-otro');
     if(otro)otro.style.display=portalTipoSel==='__otro__'?'block':'none';
+    _portalAnimarRacha(); // Fase 4, item 14/8
   }
+  if(portalTabSel==='progreso')_portalAnimarResumenSemana(); // Fase 4, item 15/8
   if(portalTabSel==='meta'){
     renderPlanFitnessIA('portal-meta-recomendacion-contenido',portalMiembro.planFitnessIA,'portalToggleHabito');
     _portalCargarNotasMeta();
@@ -7353,7 +7434,10 @@ function _portalTabBarHtml(){
 // formulario de siempre. Tres pasos controlados por portalMusculoSel/portalEjercicioSel (ambos
 // '' = menú de músculos).
 function renderPortalNavegacionSeccion(){
-  if(!portalMusculoSel)return renderPortalMusculosMenu();
+  // Racha (Fase 4, item 14) solo en el menú de músculos (la pantalla "de entrada" de Entrenar)
+  // — en la lista de ejercicios o en el formulario ya está enfocado en una tarea puntual, no
+  // hace falta repetirla ahí.
+  if(!portalMusculoSel)return _portalRachaHtml()+renderPortalMusculosMenu();
   const ejercicio=portalEjercicioSel?buscarEjercicioInfo(portalEjercicioSel):null;
   if(!ejercicio)return renderPortalEjerciciosLista(portalMusculoSel);
   return renderPortalRegistrarSerieSeccion(ejercicio);
@@ -7489,6 +7573,105 @@ function _portalEsRecord(r){
   if(!r||typeof r.peso!=='number')return false;
   const mejorAnterior=_portalMejor1RMAntesDe(r.ejercicioId,r.fecha);
   return mejorAnterior!==null&&estimar1RM(r.peso,r.repeticiones)>mejorAnterior;
+}
+// RACHA (Portal premium, Fase 4, item 14): semanas CONSECUTIVAS (lunes a domingo, hora local)
+// con al menos un registro, contando hacia atrás desde la semana actual. setDate (no restar
+// milisegundos a mano) para que el cambio de horario de verano nunca desalinee las semanas.
+function _portalInicioSemana(fecha){
+  const d=new Date(fecha===undefined?Date.now():fecha);
+  const dia=d.getDay(); // 0=domingo..6=sábado
+  const diffLunes=dia===0?-6:1-dia;
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()+diffLunes);
+  return d.getTime();
+}
+function _portalSemanaAnterior(ts){
+  const d=new Date(ts);
+  d.setDate(d.getDate()-7);
+  return d.getTime();
+}
+// Si la semana actual todavía no tiene ningún registro, la racha NO se considera rota todavía
+// (sigue corriendo hasta que la semana termine) — se empieza a contar desde la semana pasada en
+// ese caso, no desde la actual.
+function _portalCalcularRacha(){
+  if(!portalRegistros.length)return 0;
+  const semanasConRegistro=new Set(portalRegistros.map(r=>_portalInicioSemana(r.fecha)));
+  const inicioSemanaActual=_portalInicioSemana();
+  let cursor=semanasConRegistro.has(inicioSemanaActual)?inicioSemanaActual:_portalSemanaAnterior(inicioSemanaActual);
+  if(!semanasConRegistro.has(cursor))return 0;
+  let racha=0;
+  while(semanasConRegistro.has(cursor)){
+    racha++;
+    cursor=_portalSemanaAnterior(cursor);
+  }
+  return racha;
+}
+// Arriba de la pestaña Entrenar (item 14). Si la racha es 0, un mensaje motivador en vez de un
+// cero — "0 semanas" no anima a nadie a volver.
+function _portalRachaHtml(){
+  const racha=_portalCalcularRacha();
+  if(racha===0){
+    return`<div class="ec-card" style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+      <div style="color:var(--muted)">${iconoPortal('fuego',22)}</div>
+      <div style="font-size:13px;color:var(--muted)">Registra una serie esta semana para empezar tu racha</div>
+    </div>`;
+  }
+  return`<div class="ec-card" style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+    <div style="color:var(--accent)">${iconoPortal('fuego',24)}</div>
+    <div><span class="portal-num" id="portal-racha-numero" style="font-size:22px">${racha}</span> <span style="font-size:13px;color:var(--muted)">semana${racha===1?'':'s'} seguida${racha===1?'':'s'}</span></div>
+  </div>`;
+}
+// Count-up (item 8) de la racha — una sola vez por visita (clave fija: no depende de la semana,
+// así no se repite el conteo cada vez que el cliente abre Entrenar en la misma visita).
+function _portalAnimarRacha(){
+  const el=document.getElementById('portal-racha-numero');
+  if(el)_portalContarHasta(el,_portalCalcularRacha(),{clave:'portal-racha'});
+}
+// RESUMEN DE LA SEMANA (item 15): días distintos entrenados, kilos totales (peso×reps×series,
+// en la unidad que el cliente tenga guardada) y récords — misma semana lunes-domingo que la
+// racha. _portalEsRecord ya hace todo el cálculo "fue récord" sin guardar nada nuevo.
+function _portalRegistrosEstaSemana(){
+  const inicio=_portalInicioSemana();
+  return portalRegistros.filter(r=>r.fecha>=inicio);
+}
+function _portalResumenSemanaValores(){
+  const regs=_portalRegistrosEstaSemana();
+  const dias=new Set(regs.map(r=>new Date(r.fecha).toDateString())).size;
+  const kilosTotalKg=regs.reduce((acc,r)=>{
+    if(typeof r.peso!=='number'||typeof r.repeticiones!=='number')return acc;
+    return acc+r.peso*r.repeticiones*(r.series||1);
+  },0);
+  const kilos=Math.round((portalUnidadPeso==='lb'?kgALb(kilosTotalKg):kilosTotalKg)*10)/10;
+  const records=regs.filter(r=>_portalEsRecord(r)).length;
+  return{dias,kilos,records,hayRegistros:regs.length>0};
+}
+function _portalResumenSemanaHtml(){
+  const{dias,kilos,records,hayRegistros}=_portalResumenSemanaValores();
+  if(!hayRegistros){
+    return`<div class="ec-card" style="margin-bottom:16px">
+      <div class="empty" style="padding:20px 16px">
+        <div class="portal-empty-icon">${iconoPortal('calendario',32)}</div>
+        <div>Todavía no registras nada esta semana.</div>
+        <button type="button" class="btn btn-primary" style="margin-top:14px" onclick="portalCambiarTab('entrenar')">Ir a Entrenar</button>
+      </div>
+    </div>`;
+  }
+  return`<div class="ec-card" style="margin-bottom:16px">
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">Esta semana</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      <div><span class="portal-num" id="portal-resumen-dias" style="font-size:26px">${dias}</span><div style="font-size:11px;color:var(--muted);margin-top:2px">día${dias===1?'':'s'} entrenado${dias===1?'':'s'}</div></div>
+      <div><span class="portal-num" id="portal-resumen-kilos" style="font-size:26px">${kilos}</span><span style="font-size:13px"> ${escAttr(portalUnidadPeso.toUpperCase())}</span><div style="font-size:11px;color:var(--muted);margin-top:2px">levantados en total</div></div>
+      ${records>0?`<div><span class="portal-num" style="font-size:26px">${records}</span><div style="font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:3px">récord${records===1?'':'s'} ${iconoPortal('trofeo',12)}</div></div>`:''}
+    </div>
+  </div>`;
+}
+function _portalAnimarResumenSemana(){
+  const{dias,kilos,hayRegistros}=_portalResumenSemanaValores();
+  if(!hayRegistros)return;
+  const elDias=document.getElementById('portal-resumen-dias');
+  if(elDias)_portalContarHasta(elDias,dias,{clave:'portal-resumen-dias'});
+  const elKilos=document.getElementById('portal-resumen-kilos');
+  if(elKilos)_portalContarHasta(elKilos,kilos,{clave:'portal-resumen-kilos',formatear:v=>Math.round(v*10)/10});
 }
 // Confeti discreto a mano, sin librerías (Fase 2, item 7): partículas en var(--accent) y blanco
 // que caen con gravedad y una leve rotación durante ~1.5s. Apagado si el sistema pide menos
@@ -7787,7 +7970,10 @@ function renderPortalProgresoYFuerzaSeccion(){
       <button type="button" class="btn btn-primary" style="margin-top:14px" onclick="portalCambiarTab('entrenar')">Registrar mi primera serie</button></div>
     </div>`;
   }
-  return`<div class="ec-card" style="margin-bottom:16px">
+  // Resumen de la semana (Fase 4, item 15) arriba de todo — solo cuando ya hay AL MENOS un
+  // registro histórico (la rama de arriba ya cubre "nunca ha registrado nada" con su propio
+  // estado vacío; mostrar dos tarjetas vacías apiladas sería redundante).
+  return`${_portalResumenSemanaHtml()}<div class="ec-card" style="margin-bottom:16px">
     <h3 style="display:flex;align-items:center;gap:8px">${iconoPortal('grafica',18)} Progreso</h3>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <button type="button" class="btn ${portalProgresoVista==='ejercicio'?'btn-primary':'btn-ghost'} btn-sm" style="flex:1" onclick="portalCambiarProgresoVista('ejercicio')">Por ejercicio</button>
@@ -8322,7 +8508,42 @@ function renderPortalPerfilFisicoSeccion(){
     <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Fecha</th><th>Peso</th></tr></thead><tbody>${historial.map(p=>`<tr><td>${fmtDate(p.fecha)}</td><td>${formatearPeso(p.peso,portalUnidadPeso)}</td></tr>`).join('')}</tbody></table></div>`
     :'<div style="color:var(--muted);font-size:12px;margin-top:8px">Aún no tienes registros de peso.</div>'}
   </div>
+  ${_portalBotonInstalarHtml()}
   <div style="text-align:center"><button type="button" class="btn btn-ghost btn-sm" onclick="portalOlvidarIdentidad()">No soy yo</button></div>`;
+}
+// INSTALAR APP (Fase 4, item 16): si ya está instalada (modo standalone — Android/Chrome lo
+// expone con matchMedia, iPhone con navigator.standalone, no estandarizado pero es lo único que
+// hay), el botón ni se muestra. Si no, "Instalar app" dispara el prompt nativo en Android/Chrome
+// (portalPromptInstalacion, capturado por el listener de beforeinstallprompt) o, en iPhone/Safari
+// (que no tiene ese evento), un mini instructivo de Compartir -> Agregar a inicio.
+function _portalYaInstalado(){
+  return(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||window.navigator.standalone===true;
+}
+function _portalBotonInstalarHtml(){
+  if(_portalYaInstalado())return'';
+  return`<div class="ec-card" id="portal-instalar-card" style="margin-bottom:16px">
+    <button type="button" class="btn btn-ghost" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px" onclick="portalInstalarApp()">${iconoPortal('descargar',16)} Instalar app</button>
+    <div id="portal-instalar-instructivo" style="display:none;margin-top:10px;font-size:12px;color:var(--muted);text-align:center;align-items:center;justify-content:center;gap:6px"></div>
+  </div>`;
+}
+async function portalInstalarApp(){
+  if(portalPromptInstalacion){
+    portalPromptInstalacion.prompt();
+    const resultado=await portalPromptInstalacion.userChoice.catch(()=>null);
+    portalPromptInstalacion=null;
+    if(resultado&&resultado.outcome==='accepted'){
+      const card=document.getElementById('portal-instalar-card');
+      if(card)card.style.display='none';
+    }
+    return;
+  }
+  // iPhone (o cualquier navegador sin beforeinstallprompt, ej. Safari de escritorio): no hay
+  // ningún prompt nativo que disparar, así que se explica el camino manual en su lugar.
+  const cont=document.getElementById('portal-instalar-instructivo');
+  if(cont){
+    cont.style.display='flex';
+    cont.innerHTML=`Toca ${iconoPortal('compartir',14)} (Compartir) en Safari y elige "Agregar a inicio"`;
+  }
 }
 // Un solo botón para toda la tarjeta "Mi Perfil Físico" (antes eran dos: "Guardar datos" y
 // "Guardar peso") — guarda lo que esté lleno y no toca lo que quede vacío, en vez de exigir
